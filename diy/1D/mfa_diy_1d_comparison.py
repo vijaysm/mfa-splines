@@ -27,7 +27,7 @@ plt.rcParams.update(params)
 # --- set problem input parameters here ---
 nSubDomains    = 2
 degree         = 3
-nControlPoints = 20 #(3*degree + 1) #minimum number of control points
+nControlPoints = 40 #(3*degree + 1) #minimum number of control points
 useDecodedResidual = True
 overlapData    = 0
 overlapCP      = 0
@@ -136,6 +136,7 @@ elif problem == 2:
     nPoints = y.shape[0]
     x = np.linspace(Dmin, Dmax, nPoints)
 else:
+    '''
     Y = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
 
     def plot3D(fig, Z, x=None, y=None):
@@ -157,11 +158,12 @@ else:
 
     print (Y.shape)
     sys.exit(2)
+    '''
 
-    #Y = Y.reshape(200,200)
-    y = Y[100,:] # Y[:,150] # Y[110,:]
+    DJI = pd.read_csv("data/DJI.csv")
+    y = DJI['Close']
     Dmin           = 0
-    Dmax           = 1.
+    Dmax           = 100.
     nPoints = y.shape[0]
     x = np.linspace(Dmin, Dmax, nPoints)
 
@@ -587,7 +589,7 @@ def NonlinearOptimize(idom, N, W, ysl, U, t, degree, nSubDomains, constraintsAll
             residual_decoded = residual_decoded_full[:]
 
         if useDecodedResidual:
-            bc_penalty = 1e0
+            bc_penalty = 1e3
             ovRBFPower = 2.0
             overlapWeight = np.ones(overlapData+1)/( np.power(range(1, overlapData+2), ovRBFPower) )
             overlapWeightSum = np.sum(overlapWeight)
@@ -602,7 +604,7 @@ def NonlinearOptimize(idom, N, W, ysl, U, t, degree, nSubDomains, constraintsAll
                     if vverbose:
                         print('Left decoded delx: ', Pin, (decoded_data[0:overlapData+1]), (lconstraints))
                     # residual_decoded += np.sum( (decoded_data[0:overlapData+1] - (lconstraints))**2 )
-                    residual_decoded[0:overlapData+1] += np.dot( (decoded_data[0:overlapData+1] - 0.5*(decodedPrevIterate[0:overlapData+1] + lconstraints))**2, overlapWeight) / overlapWeightSum
+                    residual_decoded[0:overlapData+1] += bc_penalty * np.dot( (decoded_data[0:overlapData+1] - 0.5*(decodedPrevIterate[0:overlapData+1] + lconstraints))**2, overlapWeight) / overlapWeightSum
                 else:
                     if useDerivatives >= 0:
                         residual_decoded[0] += bc_penalty * ( Pin[0] - (constraints[1][0] + constraints[0][-1])/2 )
@@ -613,12 +615,12 @@ def NonlinearOptimize(idom, N, W, ysl, U, t, degree, nSubDomains, constraintsAll
 
             if idom < nSubDomains: # right constraint
                 if useDecodedResidual:
-#                     rconstraints = np.copy(constraints[2][:])
-                    rconstraints = np.flip(constraints[2][:])
+                    rconstraints = np.copy(constraints[2][:])
+                    # rconstraints = np.flip(constraints[2][:])
                     if vverbose:
                         print('Right decoded delx: ', Pin, decoded_data[-1-overlapData:], rconstraints)
                     # residual_decoded += np.sum( (decoded_data[-1-overlapData:] - (rconstraints))**2 )
-                    residual_decoded[-1-overlapData:] += np.dot( (decoded_data[-1-overlapData:] - 0.5*(decodedPrevIterate[-1-overlapData:] + rconstraints))**2, overlapWeight) / overlapWeightSum
+                    residual_decoded[-1-overlapData:] += bc_penalty * np.dot( (decoded_data[-1-overlapData:] - 0.5*(decodedPrevIterate[-1-overlapData:] + rconstraints))**2, overlapWeight) / overlapWeightSum
                 else:
                     if useDerivatives >= 0:
                         residual_decoded[-1] += bc_penalty * ( Pin[-1] - (constraints[1][-1] + constraints[2][0])/2 )
