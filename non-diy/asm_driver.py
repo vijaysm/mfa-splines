@@ -38,7 +38,7 @@ plt.plot(x, y)
 # Use the previous MAK solver solution as initial guess; Could do something clever later
 interface_constraints=[]
 
-print "Initial condition data: ", interface_constraints
+print ("Initial condition data: ", interface_constraints)
 errors = np.zeros([nmaxiter,2]) # Store L2, Linf errors as function of iteration
 
 for iterIdx in range(nmaxiter):
@@ -69,19 +69,19 @@ for iterIdx in range(nmaxiter):
     # Compute the error and convergence
     errors[iterIdx, 0] = math.sqrt(np.sum(iteratedelta**2)) if math.sqrt(np.sum(iteratedelta**2)) > 1e-16 else 1e-24
     errors[iterIdx, 1] = np.max(iteratedelta) if np.max(iteratedelta) > 1e-16 else 1e-24
-    print "\nIteration: ", iterIdx, " -- L2 error: ", errors[iterIdx, 0], ", Linf error: ", errors[iterIdx, 1]
+    print ("\nIteration: ", iterIdx, " -- L2 error: ", errors[iterIdx, 0], ", Linf error: ", errors[iterIdx, 1])
     if iterIdx == 0:
-        print "\tUnconstrained solution: ", interface_constraints
+        print ("\tUnconstrained solution: ", interface_constraints)
     else:
-        print "\tIterate delta: ", iteratedelta
-    print "------------------------\n"
+        print ("\tIterate delta: ", iteratedelta)
+    print ("------------------------\n")
 
     # Check for convergence
     if errors[iterIdx, 0] < maxErr:
-        print errors
+        print ('Errors: ', errors)
         break
 
-print "\tConverged solution: ", interface_constraints
+print ("\tConverged solution: ", interface_constraints)
 
 # Finally, let's show the plot with the newly computed solution
 newconstraints = compute_mak95_fit_with_constraints(nSubDomains, degree, nControlPoints, x, y,
@@ -100,3 +100,4 @@ if iterIdx > 1:
     plt.draw()
 
 plt.show()
+

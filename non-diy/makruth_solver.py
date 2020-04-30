@@ -42,7 +42,7 @@ def nullspace(A, eps=1e-15):
 
 def null_space(A, rcond=None):
     u, s, vh = svd(A, full_matrices=True)
-    print 'EigValues: ', s
+    print('EigValues: ', s)
     M, N = u.shape[0], vh.shape[1]
     if rcond is None:
         rcond = np.finfo(s.dtype).eps * max(M, N)
@@ -52,23 +52,23 @@ def null_space(A, rcond=None):
     return Q
 
 def pieceBezierDer22(P, W, U, T, degree):
-    bezierP = range(0, len(P)-degree, degree)
+    bezierP = list(range(0, len(P)-degree, degree))
     Q = []
     
     for ps in bezierP:
         pp = P[ps:ps+degree+1]
-        qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in xrange(len(pp)-1)])
+        qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in range(len(pp)-1)])
         Q.extend(qq)
 
     return Q
 
 def pieceBezierDDer22(P, W, U, T, degree):
-    bezierP = range(0, len(P)-degree, degree)
+    bezierP = list(range(0, len(P)-degree, degree))
     Q = []
     
     for ps in bezierP:
         pp = P[ps:ps+degree+1]
-        qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in xrange(len(pp)-1)])
+        qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in range(len(pp)-1)])
         Q.extend(qq)
 
     return Q
@@ -176,17 +176,17 @@ def LSQFit_Constrained(idom, N, W, y, U, t, spl, degree, nSubDomains, constraint
     else:
         if constraints is not None and len(constraints) > 0:
             if idom > 1:
-                print idom, ': Left constraint ', constraints[0][idom-1], constraints[-1][idom-2],
+                print(idom, ': Left constraint ', constraints[0][idom-1], constraints[-1][idom-2], end=' ')
                 cons.append( {'type': 'ineq', 'fun' : lambda x: np.array([ ( x[0] - (constraints[0][idom-1] + constraints[-1][idom-2])/2 ) ])} )
             if idom < nSubDomains:
-                print idom, ': Right constraint ', constraints[-1][idom-1] + constraints[0][idom]
+                print(idom, ': Right constraint ', constraints[-1][idom-1] + constraints[0][idom])
                 cons.append( {'type': 'ineq', 'fun' : lambda x: np.array([ ( x[-1] - (constraints[-1][idom-1] + constraints[0][idom])/2 ) ])} )
 
         res = minimize(ComputeL2Error, np.ones_like(W), method='COBYLA', args=(N, W, y, U, t, degree),
                        constraints=cons, #x0=constraints,
                        options={'disp': True, 'tol': 1e-6, 'catol': 1e-2})
 
-    print '[', idom, '] : ', res.message
+    print('[', idom, '] : ', res.message)
     return res.x
 
 
@@ -205,9 +205,9 @@ def compute_mak95_fit_with_constraints(nSubDomains, degree, nControlPoints, x, y
     Dmax = max(x)
     nControlPointSpans = nControlPoints - 1
     nInternalKnotSpans = nControlPointSpans - degree + 1
-    nPointsPerSubD = nPoints / nSubDomains
+    nPointsPerSubD = int(nPoints / nSubDomains)
     if nPoints % nSubDomains > 0:
-        print "[WARNING]: The total number of points do not divide equally with subdomains"
+        print("[WARNING]: The total number of points do not divide equally with subdomains")
 
     # The variable `additiveSchwartz` controls whether we use
     # Additive vs Multiplicative Schwartz scheme for DD resolution
@@ -231,14 +231,14 @@ def compute_mak95_fit_with_constraints(nSubDomains, degree, nControlPoints, x, y
         inc = (domEnd - domStart) / nInternalKnotSpans
         t   = np.linspace(domStart + inc, domEnd - inc, nInternalKnotSpans - 1)
         U   = np.linspace(domStart, domEnd, nPointsPerSubD)
-        dSpan = range( (iSubDom-1) * nPoints / nSubDomains, iSubDom * nPoints / nSubDomains )
+        dSpan = [(iSubDom-1) * nPointsPerSubD, iSubDom * nPointsPerSubD]
 
-        # print [U, x[dSpan]]
+        # print (U, dSpan)
 
         Dmini = Dmin + (Dmax - Dmin)*domStart
         Dmaxi = Dmin + (Dmax - Dmin)*domEnd
 
-        ySD = y[dSpan]
+        ySD = y[dSpan[0]:dSpan[1]]
 
         spl = LSQUnivariateSpline(U, ySD, t, k=degree)
 
@@ -268,7 +268,7 @@ def compute_mak95_fit_with_constraints(nSubDomains, degree, nControlPoints, x, y
 
         if not nosolveplot:
             errorMAK = L2LinfErrors(popt, W, ySD, U, knots, degree)
-            print "Subdomain: ", iSubDom, " -- L2 error: ", errorMAK[0], ", Linf error: ", errorMAK[1]
+            print("Subdomain: ", iSubDom, " -- L2 error: ", errorMAK[0], ", Linf error: ", errorMAK[1])
 
         POptDomain[:,iSubDom-1] = popt.copy()
 
@@ -308,9 +308,9 @@ def plot_derivatives(nSubDomains, degree, nControlPoints, x, y, interface_constr
     Dmax = max(x)
     nControlPointSpans = nControlPoints - 1
     nInternalKnotSpans = nControlPointSpans - degree + 1
-    nPointsPerSubD = nPoints / nSubDomains
+    nPointsPerSubD = int(nPoints / nSubDomains)
     if nPoints % nSubDomains > 0:
-        print "[WARNING]: The total number of points do not divide equally with subdomains"
+        print("[WARNING]: The total number of points do not divide equally with subdomains")
 
     # The variable `additiveSchwartz` controls whether we use
     # Additive vs Multiplicative Schwartz scheme for DD resolution
@@ -329,14 +329,14 @@ def plot_derivatives(nSubDomains, degree, nControlPoints, x, y, interface_constr
         inc = (domEnd - domStart) / nInternalKnotSpans
         t   = np.linspace(domStart + inc, domEnd - inc, nInternalKnotSpans - 1)
         U   = np.linspace(domStart, domEnd, nPointsPerSubD)
-        dSpan = range( (iSubDom-1) * nPoints / nSubDomains, iSubDom * nPoints / nSubDomains )
+        dSpan = [(iSubDom-1) * nPointsPerSubD, iSubDom * nPointsPerSubD]
 
         # print [U, x[dSpan]]
 
         Dmini = Dmin + (Dmax - Dmin)*domStart
         Dmaxi = Dmin + (Dmax - Dmin)*domEnd
 
-        ySD = y[dSpan]
+        ySD = y[dSpan[0]:dSpan[1]]
 
         spl = LSQUnivariateSpline(U, ySD, t, k=degree)
 
