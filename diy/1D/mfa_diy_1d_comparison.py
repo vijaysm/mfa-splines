@@ -121,14 +121,14 @@ if problem == 0:
     y = scale * (np.sinc(x) + np.sinc(2*x-1) + np.sinc(3*x+1.5))
     # y = scale * np.sin(math.pi * x/4)
 elif problem == 1:
-    y = np.fromfile("s3d.raw", dtype=np.float64) #
+    y = np.fromfile("data/s3d.raw", dtype=np.float64) #
     print('Real data shape: ', y.shape)
     nPoints = y.shape[0]
     Dmin           = 0
     Dmax           = 1.
     x = np.linspace(Dmin, Dmax, nPoints)
 elif problem == 2:
-    Y = np.fromfile("nek5000.raw", dtype=np.float64) #
+    Y = np.fromfile("data/nek5000.raw", dtype=np.float64) #
     Y = Y.reshape(200,200)
     y = Y[100,:] # Y[:,150] # Y[110,:]
     Dmin           = 0
@@ -136,7 +136,7 @@ elif problem == 2:
     nPoints = y.shape[0]
     x = np.linspace(Dmin, Dmax, nPoints)
 else:
-    Y = np.fromfile("FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
+    Y = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
 
     def plot3D(fig, Z, x=None, y=None):
         if x is None:

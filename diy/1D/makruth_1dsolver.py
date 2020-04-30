@@ -41,20 +41,13 @@ maxRelErr      = 1e9
 AdaptiveStrategy = 'reset'
 
 
-## Problematic settings
-# nSubDomains    = 4
-# degree         = 3
-# nControlPoints = (3*degree + 1) #minimum number of control points
-###
-
-
 if sincFunc:
     x = np.linspace(Dmin, Dmax, nPoints)
     y = scale * np.sinc(x)
     # y = scale * np.sin(math.pi * x/4)
 else:
-#     y = np.fromfile("s3d.raw", dtype=np.float64) #
-    y = np.fromfile("nek5000.raw", dtype=np.float64) #
+#     y = np.fromfile("data/s3d.raw", dtype=np.float64) #
+    y = np.fromfile("data/nek5000.raw", dtype=np.float64) #
     nPoints = y.shape[0]
     x = np.linspace(Dmin, Dmax, nPoints)
 
