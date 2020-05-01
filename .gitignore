@@ -3,4 +3,6 @@
 *.pvts
 __pycache__
 *.code-workspace
+diy/1D/diy
+diy/2D/diy
 
