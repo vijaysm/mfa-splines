@@ -1,0 +1,6 @@
+*.png
+*.vts
+*.pvts
+__pycache__
+*.code-workspace
+
