@@ -29,11 +29,11 @@ nSubDomains    = 4
 degree         = 3
 nControlPoints = 46 #(3*degree + 1) #minimum number of control points
 useDecodedResidual = True
-overlapData    = 50
+overlapData    = 0
 overlapCP      = 0
 problem        = 0
 scale          = 1
-showplot       = True
+showplot       = False
 nASMIterations = 5
 # Look at ovRBFPower param below if using useDecodedResidual = True
 #
@@ -59,7 +59,6 @@ globalTolerance = 1e-12
 AdaptiveStrategy = 'reset'
 
 # Initialize DIY
-w = diy.mpi.MPIComm()           # world
 commW = MPI.COMM_WORLD
 nprocs = commW.size
 rank = commW.rank
@@ -1111,13 +1110,14 @@ wrap = [False]
 ghosts = [overlapData]
 
 # Initialize DIY
+w = diy.mpi.MPIComm()           # world
 mc = diy.Master(w)         # master
 domain_control = diy.DiscreteBounds([0], [len(x)-1])
 
 d_control = diy.DiscreteDecomposer(1, domain_control, nSubDomains, share_face, wrap, ghosts)
-a_control = diy.ContiguousAssigner(w.size, nSubDomains)
+a_control = diy.ContiguousAssigner(nprocs, nSubDomains)
 
-d_control.decompose(w.rank, a_control, add_input_control_block)
+d_control.decompose(rank, a_control, add_input_control_block)
 
 mc.foreach(InputControlBlock.show)
 
