@@ -7,6 +7,10 @@
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{pgfplots}
+%\pgfplotsset{width=10cm,compat=1.9}
+
+
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
@@ -45,7 +49,7 @@ youssef.nashed@statsperform.com}
 \maketitle
 
 \begin{abstract}
-Compactly expressing large-scale datasets through multivariate functional approximations (MFA) can be critically important for analysis and visualization to drive scientific discovery. This paper presents a data and domain partitioning approach to scalably compute a MFA representation, by reducing the total work per task in combination with a nonlinear Schwartz-type, inner-outer iterative scheme for converging the interface data. For the underlying MFA, we utilize a tensorial expansion of non-uniform B-spline (NURBS) basis to adaptively reduce the functional approximation error in the input data. While previous work on adaptive NURBS-based MFA has been proven successful, the computational complexity for encoding large datasets on a single process can be prohibitive. We demonstrate effectiveness of the presented approach with an overlapping Jacobi-Schwartz based domain decomposition solver, with a nonlinear accelerator such as L-BFGS or Krylov (nCG, L-GMRes) to minimize the subdomain error residuals obtained from decoding the MFA, and more specifically to resolve the discontinuities at boundaries. The analysis of the presented scheme for some analytical and real scientific datasets in 1-D and 2-D are also presented. Additionally, scalability studies are also shown for some real-world 2-d datasets to evaluate the parallel speedup of the algorithm on large clusters.
+Compactly expressing large-scale datasets through multivariate functional approximations (MFA) can be critically important for analysis and visualization to drive scientific discovery. This paper presents a data and domain partitioning approach to scalably compute a MFA representation, by reducing the total work per task in combination with a nonlinear Schwarz-type, inner-outer iterative scheme for converging the interface data. For the underlying MFA, we utilize a tensorial expansion of non-uniform B-spline (NURBS) basis to adaptively reduce the functional approximation error in the input data. While previous work on adaptive NURBS-based MFA has been proven successful, the computational complexity for encoding large datasets on a single process can be prohibitive. We demonstrate effectiveness of the presented approach with an overlapping Jacobi-Schwarz based domain decomposition solver, with a nonlinear accelerator such as L-BFGS or Krylov (nCG, L-GMRes) to minimize the subdomain error residuals obtained from decoding the MFA, and more specifically to resolve the discontinuities at boundaries. The analysis of the presented scheme for some analytical and real scientific datasets in 1-D and 2-D are also presented. Additionally, scalability studies are also shown for some real-world 2-d datasets to evaluate the parallel speedup of the algorithm on large clusters.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -54,7 +58,10 @@ functional approximation, domain decomposition, scalable methods
 
 \section{Introduction}
 
-Large scale discrete data analysis from various scientific computational simulations often require high-order continuous functional representations that have to be evaluated anywhere in the domain. Such expansions described as Multivariate Functional Approximations (MFA) in arbitrary dimensions \cite{nurbs-book} allow the original discrete data to be compressed, and expressed in a compact closed form in addition to supporting higher-order derivative queries. One particular option is to use NURBS bases for the MFA encoding of scattered data \cite{peterka-mfa}. Due to the potentially large datasets that need to be encoded into a MFA, the need for computationally efficient algorithms (in both time and memory) to partition the work into subtasks is critically important. In the current paper, we utilize domain decomposition techniques \cite{smith-ddm} with data partitioning strategies to produce scalable algorithms to adaptively compute the MFA to reproduce a given dataset within user-specified tolerances. In such partitions, it is imperative to ensure that the continuity of the data across subdomains is maintained and consistent with the degree of the underlying bases used in the MFA. The interface data at subdomain boundaries are iteratively converged through an outer Schwartz-type iterative scheme in order to ensure continuity and overall error that stays bounded as number of subdomains are increased (subdomain size decreases).
+Large scale discrete data analysis from various scientific computational simulations often require high-order continuous functional representations that have to be evaluated anywhere in the domain. Such expansions described as Multivariate Functional Approximations (MFA) in arbitrary dimensions \cite{nurbs-book} allow the original discrete data to be compressed, and expressed in a compact closed form in addition to supporting higher-order derivative queries. One particular option is to use NURBS bases for the MFA encoding of scattered data \cite{peterka-mfa}. Due to the potentially large datasets that need to be encoded into a MFA, the need for computationally efficient algorithms (in both time and memory) to partition the work into subtasks is critically important. 
+
+In the current paper, we utilize domain decomposition (DD) techniques \cite{smith-ddm} with data partitioning strategies to produce scalable algorithms to adaptively compute the MFA to reproduce a given dataset within user-specified tolerances. In such partitions, it is imperative to ensure that the continuity of the data across subdomain interfaces are maintained and is consistent with the degree of the underlying bases used in the MFA. 
+We present an iterative DD scheme with an outer Schwarz-type iterative scheme in order to ensure that continuity is recovered, and the overall error stays bounded when number of subdomains are increased (subdomain size decreases).
 
 %{\color{red}THIS IS A DRAFT}
 
@@ -65,14 +72,37 @@ Large scale discrete data analysis from various scientific computational simulat
 %	\item What are the other approaches to address this issue; pros and cons
 %\end{itemize}
 
-Domain decomposition techniques for parallel interpolation of scattered data has been explored previously with Radial Basis Functions (RBF) \cite{mai-approx-rbf}, yielding good scalability to create a MFA that closely replicates underlying profile. Additionally, use of restricted Additive-Schwartz preconditioners with GMRes iterative solvers have been shown to be scalable \cite{yokota-rasm-rbf} for such problems. However, using NURBS-basis to compute MFA in parallel, while maintaining higher-order continuity across subdomains has not been explored previously in this context. To overcome the issues with discontinuities along NURBS patches, \cite{zhang-nurbs-continuity} have proposed to use a gradient projection scheme to constrain the value (G0), the gradient (G1) and the hessian (G2) at a small number of test points for optimal shape recovery. 
+The paper is organized as follows. Section 2 summarizes the related work in using variations of the Schwarz scheme for scalably interpolating data, and using constraints for recovering continuity along discontinuous patches. Section 3 provides details about the constrained optimization problem to resolve subdomain boundary discontinuities, along with the outer-inner DD based solver setup to compute the continuous MFA. Next the application of the DD solver for 1-D/2-D analytical problems are provided to verify error convergence, and scalability of the hierarchical scheme with decreasing subdomain size under overlap specifications. Finally, the parallel scalability of the scheme is presented for some real-world cases to adaptively compute the MFA within user-specified tolerances.
 
 
+\section{Related Work}
 
-While it is also possible to create such a constrained recovery during the actual post-processing stage i.e., decoding of the MFA through blending techniques \cite{grindeanu-blending}, the underlying MFA representation would remain discontinuous, and would become more so with increasing number of subdomains. In contrast, we propose an extension to the constrained solvers used by \cite{zhang-nurbs-continuity, xu-jahn-discrete-adjoint} by utilizing a recursive domain-decomposition (DD) based outer-inner iterative scheme to resolve continuity prescriptions as required by the user. The outer iteration utilizes a flavor of the restricted Additive-Schwartz scheme, Jacobi-Schwartz \cite{smith-ddm}, with an efficient, inner subdomain solver using L-BFGS as used in \cite{zheng-bo-bspline-bfgs}, or Krylov-type schemes to minimize the decoded residual within acceptable error tolerances. This DD solver has low memory requirements that scales with growing subdomains, and only imposes nearest neighbor communication of the interface data once per outer iteration. 
+DD techniques for parallel interpolation of scattered data has been explored previously with Radial Basis Functions (RBF) \cite{mai-approx-rbf}, yielding good scalability to create a MFA that closely replicates underlying profile. Additionally, use of restricted Additive-Schwarz preconditioners with GMRes iterative solvers have been shown to be scalable \cite{yokota-rasm-rbf} for such problems. However, using NURBS-basis to compute MFA in parallel, while maintaining higher-order continuity across subdomains has not been explored previously in this context. To overcome the issues with discontinuities along NURBS patches, \cite{zhang-nurbs-continuity} have proposed to use a gradient projection scheme to constrain the value (G0), the gradient (G1) and the hessian (G2) at a small number of test points for optimal shape recovery. 
 
+
+While it is also possible to create such a constrained recovery during the actual post-processing stage i.e., decoding of the MFA through blending techniques \cite{grindeanu-blending}, the underlying MFA representation would remain discontinuous, and would become more so with increasing number of subdomains. In contrast, we propose an extension to the constrained solvers used by \cite{zhang-nurbs-continuity, xu-jahn-discrete-adjoint} by utilizing a recursive DD-based parallel outer-inner iterative scheme to resolve continuity prescriptions as required by the user. The outer iteration utilizes a flavor of the restricted Additive-Schwarz method (RASM) \cite{gander-rasm}, Jacobi-Schwarz \cite{smith-ddm}, with an efficient, inner subdomain solver using L-BFGS as used in \cite{zheng-bo-bspline-bfgs}, or Krylov-type schemes to minimize the decoded residual within acceptable error tolerances. This DD solver has low memory requirements that scales with growing subdomains, and only imposes nearest neighbor communication of the interface data once per outer iteration. 
+
+** talk about nearest neighbor communication is done once per outer iteration; better than say multiplicative schwarz even if convergence is slightly slower; 
+
+** think about MFA refs and DIY ?
+
+** PetIGA and other parallel NURBS algos/software
 
 \section{Approach}
+
+Domain decomposition techniques in general rely on the idea of splitting a larger domain into smaller subdomains that are coupled through an interface layer. Typical applications in Boundary-Value problems (BVP) \cite{smith-ddm} have been employed successfully for efficiently computing the solution to large Partial Differential Equations (PDEs) and the approach employed in the current work is to utilize such schemes to compute consistent and accurate MFA representations in parallel. Similar to DD for PDE applications, the amount of overlap in the data for MFA controls the convergence speed and scalability of the overall algorithm.
+
+For illustration, consider a 1-D domain with two partitions as shown in Fig. \ref{fig:DD-subdomain-illiustration}.
+
+\begin{tikzpicture}
+\begin{axis}[cycle list name=exotic, legend style={draw=none}, axis lines=none, xtick=\empty, ytick=\empty]
+%\addplot coordinates {(0,1) (0.1,1) (0.2,1) (0.3,1) (0.4,1) (0.5,1) (0.6,1) (0.7,1) (0.8,1) (0.9,1) (1,1)};
+\addplot[domain=0:0.5, samples=6, color=blue, mark=halfcircle] {1};
+\addplot[domain=0.5:1, samples=6, color=red, mark=halfcircle] {1};
+\end{axis}
+\label{fig:DD-subdomain-illiustration}
+\end{tikzpicture}
+
 
 \begin{itemize}
 	\item What are we proposing and why this can be a stable technique to recover high-order continuity in parallel ?
@@ -210,6 +240,10 @@ Acknowledge funding sources: DOE ECRP and others ?
 \bibitem{xu-jahn-discrete-adjoint} Xu, Shenren, Wolfram Jahn, and Jens‐Dominik Müller. "CAD‐based shape optimisation with CFD using a discrete adjoint." International Journal for Numerical Methods in Fluids 74, no. 3 (2014): 153-168.
 
 \bibitem{zhang-nurbs-continuity} Zhang, Xingchen, Yang Wang, Mateusz Gugala, and Jens-Dominik Müller. "Geometric continuity constraints for adjacent NURBS patches in shape optimisation." In ECCOMAS Congress, vol. 2, p. 9316. 2016.
+
+\bibitem{lions-asm} Lions, Pierre-Louis. "On the Schwarz alternating method. I." In First international symposium on domain decomposition methods for partial differential equations, vol. 1, p. 42. 1988.
+
+\bibitem{gander-rasm} Efstathiou, Evridiki, and Martin J. Gander. "Why restricted additive Schwarz converges faster than additive Schwarz." BIT Numerical Mathematics 43, no. 5 (2003): 945-959.
 
 \end{thebibliography}
 
