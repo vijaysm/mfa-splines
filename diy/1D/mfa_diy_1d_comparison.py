@@ -25,11 +25,11 @@ params = {"ytick.color" : "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomains    = 4
+nSubDomains    = 16
 degree         = 3
-nControlPoints = 46 #(3*degree + 1) #minimum number of control points
+nControlPoints = 24 #(3*degree + 1) #minimum number of control points
 useDecodedResidual = True
-overlapData    = 0
+overlapData    = 64
 overlapCP      = 0
 problem        = 0
 scale          = 1
@@ -47,7 +47,7 @@ disableAdaptivity = True
 # 
 #                            0        1         2        3     4       5          6           7
 subdomainSolverSchemes = ['LCLSQ', 'SLSQP', 'L-BFGS-B', 'CG', 'lm', 'krylov', 'broyden2', 'anderson']
-subdomainSolver = subdomainSolverSchemes[2]
+subdomainSolver = subdomainSolverSchemes[5]
 
 maxAbsErr       = 1e-5
 maxRelErr       = 1e-8
@@ -62,6 +62,7 @@ AdaptiveStrategy = 'reset'
 commW = MPI.COMM_WORLD
 nprocs = commW.size
 rank = commW.rank
+isASMConverged = 0
 
 if rank == 0: print('Argument List:', str(sys.argv))
 
@@ -312,7 +313,7 @@ class InputControlBlock:
                         o = np.array([self.pAdaptive.shape[0], self.knotsAdaptive.shape[0], self.pAdaptive[:], self.knotsAdaptive[:]])
                         # o = self.pAdaptive[-1-overlapCP:]
                 # print("%d sending to %d: %s" % (cp.gid()+1, target.gid+1, o))
-                print("%d sending to %d" % (cp.gid()+1, target.gid+1))
+                # print("%d sending to %d" % (cp.gid()+1, target.gid+1))
             else: # target is to the left of current subdomain
                 if len(self.pAdaptive):
                     if useDecodedResidual:
@@ -325,7 +326,7 @@ class InputControlBlock:
                         o = np.array([self.pAdaptive.shape[0], self.knotsAdaptive.shape[0], self.pAdaptive[:], self.knotsAdaptive[:]])
                         # o = self.pAdaptive[0:overlapCP+1]
                 # print("%d sending to %d: %s" % (cp.gid()+1, target.gid+1, o))
-                print("%d sending to %d" % (cp.gid()+1, target.gid+1))
+                # print("%d sending to %d" % (cp.gid()+1, target.gid+1))
             cp.enqueue(target, o) 
 
     def recv(self, cp):
@@ -350,7 +351,7 @@ class InputControlBlock:
                     self.leftconstraint = np.array(o[2]) if nc else np.zeros(1)
                     self.leftconstraintKnots = np.array(o[3]) if nk else np.zeros(1)
             # print("%d received from %d: %s" % (cp.gid()+1, tgid+1, o))
-            print("%d received from %d" % (cp.gid()+1, tgid+1))
+            # print("%d received from %d" % (cp.gid()+1, tgid+1))
 
 
     def WeightedConstrainedLSQ_PT(self, idom, Nall, Wall, ysloc, U, t, degree, nSubDomains, constraintsAll=None, useDerivatives=0, solver='SLSQP'):
@@ -768,7 +769,7 @@ class InputControlBlock:
                     if useDecodedResidual:
                         lconstraints = np.copy(constraints[0][:])
                         # lconstraints = np.flip(constraints[0][:])
-                        if vverbose or True:
+                        if vverbose:
                             print('Left decoded delx: ', (decoded_data[0:overlapData+1]), (lconstraints))
                         # residual_decoded += np.sum( (decoded_data[0:overlapData+1] - (lconstraints))**2 )
                         residual_decoded[0:overlapData+1] += bc_penalty * np.multiply( (decoded_data[0:overlapData+1] - 0.5*(decodedPrevIterate[0:overlapData+1] + lconstraints)), overlapWeight) / overlapWeightSum
@@ -817,9 +818,10 @@ class InputControlBlock:
         def print_iterate(P, res=None):
             if res is None:
                 res = residual(P, verbose=True)
+                return False
             else:
                 print('NLConstrained residual vector norm: ', np.sqrt(np.sum(np.abs(res))/res.shape[0]), ' Boundary: ', res[0], res[-1])
-            return False
+                return True if (np.abs(res[0]) < 1e-12 and np.abs(res[-1]) < 1e-12) else False
 
         initSol = constraints[1][:] if constraints is not None else np.ones_like(W)
         # initSol = np.ones_like(W)*0
@@ -845,8 +847,10 @@ class InputControlBlock:
                         options=minimizer_options)
         else:
             optimizer_options={ 'disp': False, 
-                                'ftol': globalTolerance, 
-                                'maxiter': solverMaxIter
+                                # 'ftol': 1e-5, 
+                                'fatol': globalTolerance,
+                                'maxiter': solverMaxIter,
+                                'jac_options': { 'method': 'cgs'} # {‘lgmres’, ‘gmres’, ‘bicgstab’, ‘cgs’, ‘minres’} 
                             }
             # jacobian_const = egrad(residual)(initSol)
             res = scipy.optimize.root(residual_vec, x0=initSol, 
@@ -1079,11 +1083,17 @@ class InputControlBlock:
             self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
             self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
 
-            if errorMetricsSubDomLinf < 1e-13 and np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]) < 1e-10:
+            # print(cp.gid()+1, ' Convergence check: ', errorMetricsSubDomL2, errorMetricsSubDomLinf, 
+            #                 np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]), 
+            #                 errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10)
+
+            if errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10:
                 print('Subdomain ', cp.gid()+1, ' has converged to its final solution with error = ', errorMetricsSubDomLinf)
                 self.outerIterationConverged = True
         
         self.outerIteration += 1
+
+        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.MIN)
 
 
 #########
@@ -1121,8 +1131,6 @@ d_control.decompose(rank, a_control, add_input_control_block)
 
 mc.foreach(InputControlBlock.show)
 
-convergedASMIterates = False
-
 sys.stdout.flush()
 commW.Barrier()
 
@@ -1131,7 +1139,7 @@ import timeit
 start_time = timeit.default_timer()
 for iterIdx in range(nASMIterations):
 
-    print ("\n---- Starting ASM Iteration: %d with %s inner solver ----" % (iterIdx, subdomainSolver))
+    if rank == 0: print ("\n---- Starting ASM Iteration: %d with %s inner solver ----" % (iterIdx, subdomainSolver))
     
     # Now let us perform send-receive to get the data on the interface boundaries from 
     # adjacent nearest-neighbor subdomains
@@ -1142,14 +1150,12 @@ for iterIdx in range(nASMIterations):
     if iterIdx > 1: 
         disableAdaptivity = True
 
-    if iterIdx > 0: print("")
+    if iterIdx > 0 and rank == 0: print("")
     mc.foreach(InputControlBlock.solve_adaptive)
     
     if disableAdaptivity:
-        print("")
+        # if rank == 0: print("")
         mc.foreach(InputControlBlock.check_convergence)
-
-        # convergedASMIterates = np.all(iterationResult)
 
     if showplot:
         # Let us plot the initial data
@@ -1167,18 +1173,25 @@ for iterIdx in range(nASMIterations):
 
         plt.draw()
 
-    print('')
+    # if rank == 0: print('')
 
-    # if convergedASMIterates: break
+    commW.Barrier()
+    sys.stdout.flush()
 
-sys.stdout.flush()
+    if isASMConverged == 1:
+        if rank == 0: print( "\n\nASM solver converged after %d iterations\n\n" % (iterIdx) )
+        break
 
 elapsed = timeit.default_timer() - start_time
 
-commW.Barrier()
+if rank == 0: print('')
+
+sys.stdout.flush()
 if rank == 0: print('Total computational time for solve = ', elapsed)
 
-np.set_printoptions(formatter={'float': '{: 5.6e}'.format})
+if rank == 0: print('')
+
+np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 mc.foreach(InputControlBlock.print_error_metrics)
 
 if showplot: plt.show()
