@@ -4,12 +4,42 @@
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{algorithmic}
+\usepackage[ruled,noline,linesnumbered,noend]{algorithm2e}
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{pgfplots}
 %\pgfplotsset{width=10cm,compat=1.9}
 
+% algorithm styling
+\SetInd{0.5em}{0.2em}       % reduce indent
+\newcommand\mycommentfont[1]{\footnotesize\sffamily{#1}}
+\SetCommentSty{mycommentfont}
+
+% fun with colors
+\RequirePackage{color}
+\usepackage{colortbl}
+\definecolor{RED}{rgb}{1,0,0}
+\definecolor{BLUE}{rgb}{0,0,1}
+\definecolor{GREEN}{rgb}{0,1,0}
+\definecolor{color1}{rgb}{0.913, 0.776, 0.686}
+\definecolor{color2}{rgb}{0.913, 0.867, 0.686}
+\definecolor{ltgray}{rgb}{0.85, 0.85, 0.85}
+
+% notes, remarks, todo
+\newcommand{\Remark}[1]{{\color{RED}\sf Remark: {#1}}}
+\newcommand{\tp}[1]{{\color{RED}\sf TP: {#1}}}
+\newcommand{\dm}[1]{{\color{BLUE}\sf DM: {#1}}}
+\newcommand{\Fix}[1]            {\textcolor{red}{\small\sf [#1]}}
+\newcommand{\kw}[1]             {{\tt #1}\xspace}
+\newcommand{\todo}[1]{
+      \addcontentsline{tdo}{todo}{\protect{#1}}
+      \marginpar{\colorbox{white!90!black}{\textcolor{red}{
+      \parbox{2.1cm}{\scriptsize\bf\raggedright #1}
+      }}}
+}
+
+\usepackage{etoolbox}
 
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -128,6 +158,47 @@ U^{n}_2 = U^{n-1}_1 \in \partial\Omega_2
 
 Talk about DIY and Python implementations for the code. Provide algorithmic references here as well.
 
+We implemented the code in this article in Python using pyDIY. DIY~\cite{morozov16} is a programming model and runtime
+for block-parallel analytics on distributed-memory machines, built on MPI-3~\cite{dongarra13}.  Rather than programming
+for process parallelism directly in MPI, the programming model in DIY is based on block parallelism: data are decomposed
+into subdomains called blocks; blocks are assigned to processing elements (processes or threads); computation is
+described over these blocks, and communication between blocks is defined by reusable patterns. The same DIY program
+consisting of a block-parallel decomposition can be run on different numbers of MPI processes: it is the job of the DIY
+runtime to map between blocks and processes. A recent development in DIY is a development branch of pyDIY~\cite{pydiy},
+a set of Python bindings for DIY, using pybind11~\cite{jakob17} and mpi4py~\cite{dalcin11}.
+
+The overall approach is sketched in Algorithm~\ref{alg:pseudocode}. \Remark{Vijay: finish the pseudocode and expand the
+discussion of it below.} We begin by decomposing the domain into a set of regular blocks aligned with the principal axes
+of the global domain. We then begin iterating over the blocks in a 2-level nested loop: the outer loop is the ASM
+approach described above, while the inner loop is a nonlinear optimization (BFGS or Krylov) to solve for the control
+points of the MFA model in each block. At the bottom of each ASM iteration, we exchange the constraints
+among neighboring blocks in a regular nearest-neighbor communication pattern, and we also perform a global
+collective communication to determine whether the solution has converged to the desired error tolerance.
+
+\Remark{Algorithm~\ref{alg:pseudocode} is just a skeleton. Details need to be filled in. Termination conditions, local
+(inner loop) iterative scheme, types of constraints (control points or decoded points), etc.}
+
+\begin{algorithm}
+    \DontPrintSemicolon
+    decompose domain into blocks\;
+    \tcp*[h]{Outer ASM loop}\;
+    \While{not globally done}
+    {
+        constraints $\leftarrow$ dequeue incoming constraints\;
+        \tcp*[h]{Inner BFGS or Krylov optimization loop}\;
+        \While{error decreasing and $iterate < max\_iterations$}
+        {
+            solve local MFA\;
+            enqueue constraints to neighbor blocks\;
+        }
+        exchange constraints with neighbor blocks\;
+        collect global error\;
+    }
+    \caption{\Remark{Caption TBD}}
+    \label{alg:pseudocode}
+\end{algorithm}
+
+
 \section{Results}
 
 Explain about the common problem datasets that we are going to be using and why they have been chosen.
@@ -210,10 +281,15 @@ How does the nearest neighbor communication stay bounded ?
 
 \section*{Acknowledgment}
 
-Acknowledge funding sources: DOE ECRP and others ?
+This work is supported by Advanced Scientific Computing Research, Office of Science, U.S. Department of Energy, under
+Contract DE-AC02-06CH11357, program manager Laura Biven. We gratefully acknowledge the computing resources provided on
+Bebop, a high-performance computing cluster operated by the Laboratory Computing Resource Center (LCRC) at Argonne
+National Laboratory.
 
+\Remark{Inconsistent bib styles. Should really be using the same method throughout, either bibtex or thebibliography.}
 
-\begin{thebibliography}{00}
+\AtEndEnvironment{thebibliography}{
+% \begin{thebibliography}{00}
 
 \bibitem{nurbs-book} Piegl, Les, and Wayne Tiller. The NURBS book. Springer Science \& Business Media, 2012.
 
@@ -245,7 +321,11 @@ Acknowledge funding sources: DOE ECRP and others ?
 
 \bibitem{gander-rasm} Efstathiou, Evridiki, and Martin J. Gander. "Why restricted additive Schwarz converges faster than additive Schwarz." BIT Numerical Mathematics 43, no. 5 (2003): 945-959.
 
-\end{thebibliography}
+}
+% \end{thebibliography}
+
+\bibliographystyle{IEEEtran}
+\bibliography{tom}
 
 %\vspace{12pt}
 %\color{red}
