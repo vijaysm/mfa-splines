@@ -8,12 +8,12 @@
 # get_ipython().magic(u'matplotlib notebook')
 # %matplotlib notebook
 
-import sys, math
+import sys, getopt, math
 from numba import jit
 import autograd.numpy as np
 # import numpy as np
 import scipy
-# from mpi4py import MPI
+from mpi4py import MPI
 import diy
 
 import mpl_toolkits.mplot3d.axes3d as axes3d
@@ -35,8 +35,10 @@ useVTKOutput = True
 # --- set problem input parameters here ---
 nSubDomainsX   = 2
 nSubDomainsY   = 2
-degree         = 3
-analyticalFun  = 2
+degree         = 4
+problem        = 1
+verbose        = False
+showplot       = False
 
 # ------------------------------------------
 # Solver parameters
@@ -45,25 +47,25 @@ useDerivativeConstraints = 1
 
 # L-BFGS-B: 0m33.795s, TNC: 0m20.516s (wrong), CG: 0m52.079s (large errors, unbounded), SLSQP: 2m40.323s (dissipative), Newton-CG: 8 mins and no progress, trust-krylov: hessian required
 # L-BFGS-B: 1m7.170s, TNC: 0m35.488s
+#                      0        1     2       3         4              5
 solverMethods  = ['L-BFGS-B', 'TNC', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov']
-solverScheme   = solverMethods[0]
+solverScheme   = solverMethods[2]
 solverMaxIter  = 25
-maxIterASM     = 4
-projectData    = True
+nASMIterations = 4
 
+projectData    = True
 enforceBounds  = True
 alwaysSolveConstrained = False
 constrainInterfaces = True
 
 useDeCastelJau = True
 useDecodedConstraints = False
-disableAdaptivity = False
+disableAdaptivity = True
 variableResolution = False
 
-showplot = True
 maxAbsErr      = 1e-2
-maxRelErr      = 1e-14
-maxAdaptIter   = 7
+maxRelErr      = 1e-10
+maxAdaptIter   = 2
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
 # ------------------------------------------
@@ -75,10 +77,12 @@ def plot3D(fig, Z, x=None, y=None):
         y = np.arange(Z.shape[1])
     X, Y = np.meshgrid(x, y)
     print("Plot shapes: [x, y, z] = ", x.shape, y.shape, Z.shape, X.shape, Y.shape)
-    ax = fig.gca(projection='3d')
-    surf = ax.plot_surface(X, Y, Z.T, cmap=cm.coolwarm,
-                       linewidth=0, antialiased=True)
-    fig.colorbar(surf)
+
+    if showplot:
+        ax = fig.gca(projection='3d')
+        surf = ax.plot_surface(X, Y, Z.T, cmap=cm.coolwarm,
+                        linewidth=0, antialiased=True)
+        fig.colorbar(surf)
 
     if useVTKOutput:
         X = X.reshape(1, X.shape[0], X.shape[1])
@@ -91,11 +95,54 @@ def plot3D(fig, Z, x=None, y=None):
     # plt.show()
 
 
+# Initialize DIY
+commW = MPI.COMM_WORLD
+nprocs = commW.size
+rank = commW.rank
+isASMConverged = 0
+
+if rank == 0: print('Argument List:', str(sys.argv))
+
+##########################
+# Parse command line overrides if any
+##
+argv=sys.argv[1:]
+def usage():
+  print(sys.argv[0], '-p <problem> -n <nsubdomains> -nx <nsubdomains_x> -ny <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations>')
+  sys.exit(2)
+try:
+  opts, args = getopt.getopt(argv,"hp:n:d:c:o:a:",["problem=","nsubdomains=","degree=","controlpoints=","overlap=","nasm="])
+except getopt.GetoptError:
+  usage()
+
+for opt, arg in opts:
+  if opt == '-h':
+      usage()
+  elif opt in ("-n", "--nsubdomains"):
+      nSubDomainsX = int(arg)
+      nSubDomainsY = int(arg)
+  elif opt in ("-nx", "--nsubdomainsx"):
+      nSubDomainsX = int(arg)
+  elif opt in ("-ny", "--nsubdomainsy"):
+      nSubDomainsY = int(arg)
+  elif opt in ("-d", "--degree"):
+      degree = int(arg)
+  elif opt in ("-c", "--controlpoints"):
+      nControlPointsInput = int(arg)
+  elif opt in ("-o", "--overlap"):
+      overlapData = int(arg)
+  elif opt in ("-p", "--problem"):
+      problem = int(arg)
+  elif opt in ("-a", "--nasm"):
+      nASMIterations = int(arg)
+
+# -------------------------------------
+
 from scipy.ndimage import zoom
 
-if analyticalFun == 1:
-    nPointsX = 101
-    nPointsY = 101
+if problem == 1:
+    nPointsX = 501
+    nPointsY = 501
     scale    = 1
     shiftX   = 0.5
     shiftY   = 0.5
@@ -105,11 +152,13 @@ if analyticalFun == 1:
     x = np.linspace(Dmin, Dmax, nPointsX)
     y = np.linspace(Dmin, Dmax, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
-    z = scale * np.sinc(np.sqrt(X**2 + Y**2))
+    # z = scale * ( np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)) )
+    z = scale * ( np.sinc(2*((X-1)**2 + (Y+1)**2)) )
+    # z = X**2 + Y**2
     z = z.T
     nControlPointsInput = 4*np.array([6,6]) #(3*degree + 1) #minimum number of control points
 
-elif analyticalFun == 2:
+elif problem == 2:
     nPointsX = 101
     nPointsY = 101
     scale    = 1.0
@@ -127,8 +176,8 @@ elif analyticalFun == 2:
     # z = scale * X
     nControlPointsInput = 4*np.array([1,1]) #(3*degree + 1) #minimum number of control points
 
-elif analyticalFun == 3:
-    z = np.fromfile("nek5000.raw", dtype=np.float64).reshape(200,200)
+elif problem == 3:
+    z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
     print ("Nek5000 shape:", z.shape)
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
@@ -138,10 +187,10 @@ elif analyticalFun == 3:
     y = np.linspace(Dmin, Dmax, nPointsY)
     nControlPointsInput = 25*np.array([1,1]) #(3*degree + 1) #minimum number of control points
 
-elif analyticalFun == 4:
+elif problem == 4:
 
     binFactor = 4.0
-    z = np.fromfile("s3d_2D.raw", dtype=np.float64).reshape(540,704)
+    z = np.fromfile("data/s3d_2D.raw", dtype=np.float64).reshape(540,704)
     #z = z[:540,:540]
     #z = zoom(z, 1./binFactor, order=4)
     print ("S3D shape:", z.shape)
@@ -154,47 +203,15 @@ elif analyticalFun == 4:
     nControlPointsInput = 20*np.array([1,1]) #(3*degree + 1) #minimum number of control points
 
 else:
-    from PIL import Image as PILImage
-
-    def get_image(image_path):
-        """Get a numpy array of an image so that one can access values[x][y]."""
-        image = PILImage.open(image_path, 'r')
-
-        width, height = image.size
-        pixel_values = list(image.getdata())
-        if image.mode == 'RGB':
-            channels = 3
-        elif image.mode == 'L':
-            channels = 1
-        else:
-            print("Unknown mode: %s" % image.mode)
-            return None
-        pixel_values = np.array(pixel_values).reshape((width, height, channels))
-        return image, pixel_values
-
-    image_fname = 'roses.jpg' # 'shiva.jpg'
-
-    img, za = get_image(image_fname)
-#     z = za[:,:,0]
-    redChannel = za[:,:,0]
-    greenChannel = za[:,:,1]
-    blueChannel = za[:,:,2]
-    z = 0.2989 * redChannel + 0.5870 * greenChannel + 0.1140 * blueChannel # Convert RGB to Graychannel
-    print ("Image shape:", za.shape, z.shape)
-    nPointsY = z.shape[0]
-    nPointsX = z.shape[1]
+    z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
+    nPointsX = z.shape[0]
+    nPointsY = z.shape[1]
     Dmin     = 0.
-    Dmax     = 1
+    Dmax     = 100.
     x = np.linspace(Dmin, Dmax, nPointsX)
     y = np.linspace(Dmin, Dmax, nPointsY)
-#     print ("Image scale:", scale.shape)
-#     ind = z < 100
-#     z[ind] += 250
-    plt.axis("off")
-    plt.imshow(z, cmap=plt.get_cmap('gray'), vmin=0, vmax=255)
-    plt.show()
-    nControlPointsInput = 25*np.array([1,1]) #(3*degree + 1) #minimum number of control points
 
+    nControlPointsInput = 25*np.array([1,1]) #(3*degree + 1) #minimum number of control points
 
 # if nPointsX % nSubDomainsX > 0 or nPointsY % nSubDomainsY > 0:
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
@@ -246,6 +263,34 @@ def WritePVTKFile(iteration):
     pvtkfile.write('</VTKFile>\n')
 
     pvtkfile.close()
+
+
+#------------------------------------
+
+### Print parameter details ###
+if rank == 0:
+    print('\n==================')
+    print('Parameter details')
+    print('==================\n')
+    print('problem = ', problem, '[0 = sinc, 1 = S3D, 2 = Nek5000]')
+    print('Total number of input points: ', nPointsX*nPointsY)
+    print('nSubDomains = ', nSubDomainsX * nSubDomainsY)
+    print('degree = ', degree)
+    print('nControlPoints = ', nControlPointsInput)
+    print('nASMIterations = ', nASMIterations)
+    # print('overlapData = ', overlapData)
+    print('useAdditiveSchwartz = ', useAdditiveSchwartz)
+    print('useDerivativeConstraints = ', useDerivativeConstraints)
+    print('enforceBounds = ', enforceBounds)
+    print('maxAbsErr = ', maxAbsErr)
+    print('maxRelErr = ', maxRelErr)
+    print('solverMaxIter = ', solverMaxIter)
+    print('AdaptiveStrategy = ', AdaptiveStrategy)
+    print('solverscheme = ', solverScheme)
+    print('\n=================\n')
+
+#------------------------------------
+
 
 # In[3]:
 
@@ -561,9 +606,10 @@ class InputControlBlock:
 
         self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
 
+        Xi, Yi = np.meshgrid(self.xl, self.yl)
+
         axHnd = self.figHnd.gca(projection='3d')
 
-        Xi, Yi = np.meshgrid(self.xl, self.yl)
         mycolors = cm.Spectral(self.pMK/zmax)
         # mycolors = cm.Spectral(self.pMK)
 #         surf = axHnd.plot_surface(Xi, Yi, self.zl, cmap=cm.coolwarm, antialiased=True, alpha=0.75, label='Input')
@@ -595,24 +641,34 @@ class InputControlBlock:
         # self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
         errorDecoded = np.abs(self.zl - self.pMK)
 
-        axHnd = self.figHndErr.gca(projection='3d')
-
         Xi, Yi = np.meshgrid(self.xl, self.yl)
-        surf = axHnd.plot_surface(Xi, Yi, np.log10(errorDecoded.T), cmap=cm.Spectral, label='Error', antialiased=False, alpha=0.95, linewidth=0.1, edgecolors='k')
 
+        axHnd = self.figHndErr.gca(projection='3d')
+        surf = axHnd.plot_surface(Xi, Yi, np.log10(errorDecoded.T), cmap=cm.Spectral, label='Error', antialiased=False, alpha=0.95, linewidth=0.1, edgecolors='k')
         surf._facecolors2d=surf._facecolors3d
         surf._edgecolors2d=surf._edgecolors3d
         
         # if cp.gid() == 0:
         self.figHndErr.colorbar(surf)
-#             axHnd.legend()
+        axHnd.legend()
         
         if len(self.figSuffix):
             self.figHndErr.savefig("error-data-%s.png"%(self.figSuffix))   # save the figure to file
         else:
             self.figHndErr.savefig("error-data.png")   # save the figure to file
 
+
+    def output_vtk(self, cp):
+
         if useVTKOutput:
+
+            self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+
+            # self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+            errorDecoded = np.abs(self.zl - self.pMK)
+
+            Xi, Yi = np.meshgrid(self.xl, self.yl)
+
             Xi = Xi.reshape(1, Xi.shape[0], Xi.shape[1])
             Yi = Yi.reshape(1, Yi.shape[0], Yi.shape[1])
             Zi = np.ones(Xi.shape)
@@ -655,6 +711,7 @@ class InputControlBlock:
                         o[0] = pl
                         o[1] = self.knotsAdaptiveU.shape[0]
 
+                        if verbose: print('Top: ', self.pAdaptive[:, -1:-2-useDerivativeConstraints:-1].T)
                         o[2:pl+2] = self.pAdaptive[:, -1:-2-useDerivativeConstraints:-1].T.reshape(pl)
                         o[pl+2:] = self.knotsAdaptiveU[:]
                     else: # target block is below current subdomain
@@ -664,6 +721,7 @@ class InputControlBlock:
                         o[0] = pl
                         o[1] = self.knotsAdaptiveU.shape[0]
 
+                        if verbose: print('Bottom: ', self.pAdaptive[:, 0:useDerivativeConstraints+1].T)
                         o[2:pl+2] = self.pAdaptive[:, 0:useDerivativeConstraints+1].T.reshape(pl)
                         o[pl+2:] = self.knotsAdaptiveU[:]
                     
@@ -675,7 +733,7 @@ class InputControlBlock:
                         o[0] = pl
                         o[1] = self.knotsAdaptiveV.shape[0]
 
-                        print('Left: ', self.pAdaptive[-1:-2-useDerivativeConstraints:-1, :])
+                        if verbose: print('Left: ', self.pAdaptive[-1:-2-useDerivativeConstraints:-1, :])
                         o[2:pl+2] = self.pAdaptive[-1:-2-useDerivativeConstraints:-1, :].reshape(pl)
                         o[pl+2:] = self.knotsAdaptiveV[:]
 
@@ -686,11 +744,11 @@ class InputControlBlock:
                         o[0] = pl
                         o[1] = self.knotsAdaptiveV.shape[0]
 
-                        print('Right: ', self.pAdaptive[0:useDerivativeConstraints+1, :])
+                        if verbose: print('Right: ', self.pAdaptive[0:useDerivativeConstraints+1, :])
                         o[2:pl+2] = self.pAdaptive[0:useDerivativeConstraints+1, :].reshape(pl)
                         o[pl+2:] = self.knotsAdaptiveV[:]
 
-            if len(o) > 1:
+            if len(o) > 1 and verbose:
                 print("%d sending to %d: %s to direction %s" % (cp.gid(), target.gid, o, dir))
             cp.enqueue(target, o)
 
@@ -762,11 +820,6 @@ class InputControlBlock:
             bottom = constraintsAll['bottom']
             bottomknots = constraintsAll['bottomknots']
             initSol = constraints[:,:]
-
-            # print('Left ', left)
-            # print('Right ', right)
-            # print('Subdomain ', idom, left.shape, right.shape, top.shape, bottom.shape)
-            
 
         else:
             print ('Constraints are all null. Solving unconstrained.')
@@ -933,6 +986,10 @@ class InputControlBlock:
 #             jacobian = jacobian_const
             return jacobian
 
+        # Use automatic-differentiation to compute the Jacobian value for minimizer
+        def hessian(P):
+            return egrad(hessian)(P)
+
         #if constraintsAll is not None:
         #    jacobian_const = egrad(residual)(initSol)
 
@@ -972,12 +1029,14 @@ class InputControlBlock:
             elif solverScheme == 'Newton-CG':
                 res = minimize(residual, x0=initSol, method=solverScheme, #'SLSQP', #'L-BFGS-B', #'TNC', 
                         jac=jacobian,
+                        # jac=egrad(residual)(initSol),
                         callback=print_iterate,
                         tol=self.globalTolerance, 
                         options={'disp': False, 'eps': self.globalTolerance, 'maxiter': solverMaxIter})
             elif solverScheme == 'trust-krylov':
                 res = minimize(residual, x0=initSol, method=solverScheme, #'SLSQP', #'L-BFGS-B', #'TNC', 
                         jac=jacobian,
+                        hess=hessian,
                         callback=print_iterate,
                         tol=self.globalTolerance, 
                         options={'inexact': True})
@@ -1385,8 +1444,6 @@ class InputControlBlock:
 # Initialize DIY
 commWorld = diy.mpi.MPIComm()           # world
 mc2 = diy.Master(commWorld)         # master
-rank = commWorld.rank
-nprocs = commWorld.size
 domain_control = diy.DiscreteBounds([0,0], [len(x)-1,len(y)-1])
 
 # Routine to recursively add a block and associated data to it
@@ -1406,7 +1463,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
 
-errors = np.zeros([maxIterASM,2]) # Store L2, Linf errors as function of iteration
+errors = np.zeros([nASMIterations,2]) # Store L2, Linf errors as function of iteration
 
 # Let us initialize DIY and setup the problem
 share_face = [True,True]
@@ -1425,9 +1482,11 @@ del x, y, z
 mc2.foreach(InputControlBlock.show)
 
 #########
-for iterIdx in range(maxIterASM):
+import timeit
+start_time = timeit.default_timer()
+for iterIdx in range(nASMIterations):
 
-    print ("\n---- Starting Iteration: %d ----" % iterIdx)
+    if rank == 0: print ("\n---- Starting Iteration: %d ----" % iterIdx)
     
     # Now let us perform send-receive to get the data on the interface boundaries from 
     # adjacent nearest-neighbor subdomains
@@ -1438,19 +1497,18 @@ for iterIdx in range(maxIterASM):
     if iterIdx > 1:
         disableAdaptivity = True
         constrainInterfaces = True
-    else:
-        disableAdaptivity = False
-        constrainInterfaces = False
+    # else:
+    #     disableAdaptivity = False
+    #     constrainInterfaces = False
 
-    disableAdaptivity = True
-    constrainInterfaces = True
-    # commWorld.Barrier()
+    # disableAdaptivity = True
+    # constrainInterfaces = True
 
+    if iterIdx > 0 and rank == 0: print("")
     mc2.foreach(InputControlBlock.solve_adaptive)
 
     if showplot:
 
-#         figHnd = None
         figHnd = plt.figure()
         figHndErr = plt.figure()
 
@@ -1463,12 +1521,22 @@ for iterIdx in range(maxIterASM):
         #figHnd.savefig("decoded-data-%d-%d.png"%(iterIdx))   # save the figure to file
         #figHndErr.savefig("error-data-%d-%d.png"%(iterIdx))   # save the figure to file
 
-        if useVTKOutput:
-            WritePVTKFile(iterIdx)
-        #plt.draw()
+    if useVTKOutput:
 
+        mc2.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, None, None, "%d-%d"%(cp.gid(),iterIdx)))
+        mc2.foreach(InputControlBlock.output_vtk)
 
-mc2.foreach(InputControlBlock.print_solution)
-plt.show()
+        WritePVTKFile(iterIdx)
 
+# mc2.foreach(InputControlBlock.print_solution)
 
+elapsed = timeit.default_timer() - start_time
+
+sys.stdout.flush()
+if rank == 0:
+    print('\nTotal computational time for solve = ', elapsed, '\n')
+
+# np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
+# mc.foreach(InputControlBlock.print_error_metrics)
+
+if showplot: plt.show()
