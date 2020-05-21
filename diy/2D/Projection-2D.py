@@ -9,7 +9,6 @@
 # %matplotlib notebook
 
 import sys, getopt, math
-from numba import jit
 import autograd.numpy as np
 # import numpy as np
 import scipy
@@ -33,10 +32,10 @@ plt.rcParams.update(params)
 useVTKOutput = True
 
 # --- set problem input parameters here ---
-nSubDomainsX   = 3
-nSubDomainsY   = 3
-degree         = 4
-problem        = 5
+nSubDomainsX   = 2
+nSubDomainsY   = 2
+degree         = 3
+problem        = 0
 verbose        = False
 showplot       = False
 
@@ -54,18 +53,18 @@ solverMaxIter  = 25
 nASMIterations = 4
 
 projectData    = True
-enforceBounds  = True
+enforceBounds  = False
 alwaysSolveConstrained = False
 constrainInterfaces = True
 
 useDeCastelJau = True
-useDecodedConstraints = True
-disableAdaptivity = True
+useDecodedConstraints = False
+disableAdaptivity = False
 variableResolution = False
 
-maxAbsErr      = 1e-2
+maxAbsErr      = 1e-4
 maxRelErr      = 1e-10
-maxAdaptIter   = 2
+maxAdaptIter   = 5
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
 # ------------------------------------------
@@ -224,7 +223,8 @@ ymax = y.max()
 zmin = z.min()
 zmax = z.max()
 zRange = zmax-zmin
-fig = plt.figure()
+fig = None
+if showplot: fig = plt.figure()
 plot3D(fig, z, x, y)
 
 # Let us create a parallel VTK file
@@ -415,7 +415,8 @@ def knotRefine(P, W, TU, TV, Nu, Nv, U, V, zl, r=1, find_all=True, MAX_ERR = 1e-
         NSE = np.abs(Error(P, W, zl, degree, Nu, Nv))/zRange
     else:
         NSE = np.abs(reuseE)
-    NMSE = NSE.mean()
+    # NMSE = NSE.mean()
+    NMSE = LA.norm(NSE, 2)
     if(NMSE<=MAX_ERR):
         return TU, TV, [], [], NSE, NMSE
     if find_all:
@@ -588,11 +589,14 @@ class InputControlBlock:
         self.xl = xl
         self.yl = yl
         self.zl = zl
+        #self.corebounds = [coreb.min[0]-xb.min[0], -1+coreb.max[0]-xb.max[0]]
         self.pAdaptive = np.zeros(self.nControlPoints)
         self.WAdaptive = np.ones(self.nControlPoints)
         self.knotsAdaptiveU = np.zeros(self.nControlPoints[0]+degree+1)
         self.knotsAdaptiveV = np.zeros(self.nControlPoints[1]+degree+1)
         self.knotsAll = []
+        self.decodedAdaptive = np.zeros(zl.shape)
+        self.decodedAdaptiveOld = np.zeros(zl.shape)
         self.U = []
         self.V = []
         self.Nu = []
@@ -613,6 +617,14 @@ class InputControlBlock:
         self.globalIterationNum = 0
         self.adaptiveIterationNum = 0
         self.globalTolerance = 1e-13
+        
+        ## Convergence related metrics and checks
+        self.outerIteration = 0
+        self.outerIterationConverged = False
+        self.decodederrors = np.zeros(2) # L2 and Linf
+        self.errorMetricsL2 = np.zeros((nASMIterations), dtype='float64')
+        self.errorMetricsLinf = np.zeros((nASMIterations), dtype='float64')
+
 
     def show(self, cp):
         self.Dmini = np.array([min(self.xl), min(self.yl)])
@@ -896,8 +908,7 @@ class InputControlBlock:
 
                         # Compute the residual for left interface condition
                         # constraintRes += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata)
-                        indx=0
-                        constrained_residual_norm += ( np.sum( ( P[indx, :] - 0.5 * (constraints[indx, :] + leftdata[:, 0]) )**2 ) / len(leftdata[:,0]) )
+                        constrained_residual_norm += ( np.sum( ( P[0, :] - 0.5 * (constraints[0, :] + leftdata[:, 0]) )**2 ) / len(leftdata[:,0]) )
                         # print('Left Shapes knots: ', constrained_residual_norm, len(left[:]), len(knotsAllV), self.yl.shape, leftdata, (constraints[0,:] ), P[0,:], P[-1,:])
 
                         # Let us evaluate higher order derivative constraints as well
@@ -908,7 +919,7 @@ class InputControlBlock:
 
                 if len(right) > 1:
                     if useDecodedConstraints:
-                        rightdata = decode1D(P[0, :], np.ones(P[0, :].shape), self.yl, knotsAllV)
+                        rightdata = decode1D(P[-1, :], np.ones(P[-1, :].shape), self.yl, knotsAllV)
                         constrained_residual_norm += ( np.sum( ( rightdata[:] - right[:] )**2 ) / len(rightdata) )
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllV, degree)
@@ -921,8 +932,7 @@ class InputControlBlock:
 
                         # Compute the residual for right interface condition
                         # constraintRes += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata)
-                        indx=-1
-                        constrained_residual_norm += ( np.sum( ( P[indx, :] - 0.5 * (constraints[indx, :] + rightdata[:, 0]) )**2 ) / len(rightdata[:,0]) )
+                        constrained_residual_norm += ( np.sum( ( P[-1, :] - 0.5 * (constraints[-1, :] + rightdata[:, 0]) )**2 ) / len(rightdata[:,0]) )
                         # print('Right Shapes knots: ', constrained_residual_norm, len(right[:]), len(knotsAllV), self.yl.shape, rightdata, (constraints[-1,:]), P[0,:], P[-1,:])
 
                         # Let us evaluate higher order derivative constraints as well
@@ -1319,6 +1329,36 @@ class InputControlBlock:
         else:
             return [x]
 
+
+    def print_error_metrics(self, cp):
+        # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
+        print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
+
+
+    def check_convergence(self, cp):
+
+        if len(self.decodedAdaptiveOld):
+
+            # Let us compute the relative change in the solution between current and previous iteration
+            iterateChangeVec = (self.decodedAdaptive - self.decodedAdaptiveOld)
+            errorMetricsSubDomL2 = np.linalg.norm(iterateChangeVec, ord=2) / np.linalg.norm(self.pAdaptive, ord=2)
+            errorMetricsSubDomLinf = np.linalg.norm(iterateChangeVec, ord=np.inf) / np.linalg.norm(self.pAdaptive, ord=np.inf)
+
+            self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
+            self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
+
+            # print(cp.gid()+1, ' Convergence check: ', errorMetricsSubDomL2, errorMetricsSubDomLinf, 
+            #                 np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]), 
+            #                 errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10)
+
+            if errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10:
+                print('Subdomain ', cp.gid()+1, ' has converged to its final solution with error = ', errorMetricsSubDomLinf)
+                self.outerIterationConverged = True
+        
+        self.outerIteration += 1
+
+        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.MIN)
+
     def adaptive(self, iSubDom, xl, yl, zl, strategy='extend', weighted=False, 
                  r=1, MAX_ERR=1e-3, MAX_ITER=5, 
                  split_all=True, 
@@ -1581,6 +1621,10 @@ class InputControlBlock:
 
     def solve_adaptive(self, cp):
 
+        if self.outerIterationConverged:
+            print(cp.gid()+1, ' subdomain has already converged to its solution. Skipping solve ...')
+            return
+
         ## Subdomain ID: iSubDom = cp.gid()+1
         newSolve = False
         if (np.sum(self.pAdaptive) == 0 and len(self.pAdaptive) > 0) or len(self.pAdaptive) == 0:
@@ -1618,6 +1662,21 @@ class InputControlBlock:
                                        decodedError=adaptiveErr)
         self.adaptiveIterationNum += 1
 
+        # Update the local decoded data
+        self.decodedAdaptiveOld = np.copy(self.decodedAdaptive)
+        self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
+
+        # E = (self.decodedAdaptive[self.corebounds[0]:self.corebounds[1]] - self.yl[self.corebounds[0]:self.corebounds[1]])/zRange
+        E = (self.decodedAdaptive - self.yl)/zRange
+        E = (E.reshape(E.shape[0]*E.shape[1]))
+        LinfErr = np.linalg.norm(E, ord=np.inf)
+        L2Err = np.sqrt(np.sum(E**2)/len(E))
+
+        self.decodederrors[0] = L2Err
+        self.decodederrors[1] = LinfErr
+
+        print ("Subdomain -- ", cp.gid()+1, ": L2 error: ", L2Err, ", Linf error: ", LinfErr)
+        
 #         print("adaptiveErr: ", self.pAdaptive.shape, self.WAdaptive.shape, self.zl.shape, self.Nu.shape, self.Nv.shape)
         # errorMAK = L2LinfErrors(self.pAdaptive, self.WAdaptive, self.zl, degree, self.Nu, self.Nv)
 
@@ -1689,6 +1748,10 @@ for iterIdx in range(nASMIterations):
 
     if iterIdx > 0 and rank == 0: print("")
     mc2.foreach(InputControlBlock.solve_adaptive)
+    
+    if disableAdaptivity:
+        # if rank == 0: print("")
+        mc2.foreach(InputControlBlock.check_convergence)
 
     if showplot:
 
@@ -1704,12 +1767,19 @@ for iterIdx in range(nASMIterations):
         #figHnd.savefig("decoded-data-%d-%d.png"%(iterIdx))   # save the figure to file
         #figHndErr.savefig("error-data-%d-%d.png"%(iterIdx))   # save the figure to file
 
+    commW.Barrier()
+    sys.stdout.flush()
+
     if useVTKOutput:
 
         mc2.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, None, None, "%d-%d"%(cp.gid(),iterIdx)))
         mc2.foreach(InputControlBlock.output_vtk)
 
         WritePVTKFile(iterIdx)
+
+    if isASMConverged == 1:
+        if rank == 0: print( "\n\nASM solver converged after %d iterations\n\n" % (iterIdx) )
+        break
 
 # mc2.foreach(InputControlBlock.print_solution)
 
@@ -1721,5 +1791,10 @@ if rank == 0:
 
 # np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 # mc.foreach(InputControlBlock.print_error_metrics)
+if rank == 0: print('')
+
+np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
+mc2.foreach(InputControlBlock.print_error_metrics)
 
 if showplot: plt.show()
+
