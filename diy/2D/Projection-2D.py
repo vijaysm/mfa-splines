@@ -33,23 +33,23 @@ plt.rcParams.update(params)
 useVTKOutput = True
 
 # --- set problem input parameters here ---
-nSubDomainsX   = 2
-nSubDomainsY   = 2
+nSubDomainsX   = 3
+nSubDomainsY   = 3
 degree         = 4
-problem        = 1
+problem        = 5
 verbose        = False
 showplot       = False
 
 # ------------------------------------------
 # Solver parameters
 useAdditiveSchwartz = True
-useDerivativeConstraints = 1
+useDerivativeConstraints = 0
 
 # L-BFGS-B: 0m33.795s, TNC: 0m20.516s (wrong), CG: 0m52.079s (large errors, unbounded), SLSQP: 2m40.323s (dissipative), Newton-CG: 8 mins and no progress, trust-krylov: hessian required
 # L-BFGS-B: 1m7.170s, TNC: 0m35.488s
 #                      0        1     2       3         4              5
-solverMethods  = ['L-BFGS-B', 'TNC', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov']
-solverScheme   = solverMethods[2]
+solverMethods  = ['L-BFGS-B', 'TNC', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov', 'krylov']
+solverScheme   = solverMethods[0]
 solverMaxIter  = 25
 nASMIterations = 4
 
@@ -59,7 +59,7 @@ alwaysSolveConstrained = False
 constrainInterfaces = True
 
 useDeCastelJau = True
-useDecodedConstraints = False
+useDecodedConstraints = True
 disableAdaptivity = True
 variableResolution = False
 
@@ -141,8 +141,8 @@ for opt, arg in opts:
 from scipy.ndimage import zoom
 
 if problem == 1:
-    nPointsX = 501
-    nPointsY = 501
+    nPointsX = 101
+    nPointsY = 101
     scale    = 1
     shiftX   = 0.5
     shiftY   = 0.5
@@ -272,7 +272,7 @@ if rank == 0:
     print('\n==================')
     print('Parameter details')
     print('==================\n')
-    print('problem = ', problem, '[0 = sinc, 1 = S3D, 2 = Nek5000]')
+    print('problem = ', problem, '[0 = sinc, 1 = sine, 2 = Nek5000, 3 = S3D, 4 = CESM]')
     print('Total number of input points: ', nPointsX*nPointsY)
     print('nSubDomains = ', nSubDomainsX * nSubDomainsY)
     print('degree = ', degree)
@@ -317,8 +317,26 @@ def getControlPoints(knots, k):
         cx[i] = float(tsum) / k
     return cx
 
+def get_decode_operator(W, Nu, Nv):
+    Nu = Nu[...,np.newaxis]
+    Nv = Nv[:,np.newaxis]
+    NN = []
+    for ui in range(Nu.shape[0]):
+        for vi in range(Nv.shape[0]):
+          NN.append(Nu[ui]*Nv[vi])  
+    NN = np.array(NN)
 
-def decode(P, W, degree, Nu, Nv):
+    # RN = (NN*W)/(np.sum(NN*W, axis=1)[:,np.newaxis])
+    # RN = np.tensordot(NN, W) / np.tensordot(NN, W)
+    RN = (NN * W) / np.tensordot(NN, W)
+
+    print('RN.shape = ', RN.shape)
+
+    return RN, [Nu.shape[0], Nv.shape[0]]
+    # decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
+    # return decoded.reshape((Nu.shape[0], Nv.shape[0]))
+
+def decode(P, W, Nu, Nv):
     Nu = Nu[...,np.newaxis]
     Nv = Nv[:,np.newaxis]
     NN = []
@@ -336,7 +354,7 @@ def decode(P, W, degree, Nu, Nv):
 #     return np.matmul(np.matmul(RNx, P), RNy.T)
 
 def Error(P, W, z, degree, Nu, Nv):
-    Ploc = decode(P, W, degree, Nu, Nv)
+    Ploc = decode(P, W, Nu, Nv)
     # print('Error shapes: ', Ploc.shape, z.shape)
     return (Ploc - z)
 
@@ -604,7 +622,7 @@ class InputControlBlock:
 
     def plot_control(self, cp):
 
-        self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+        self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
 
         Xi, Yi = np.meshgrid(self.xl, self.yl)
 
@@ -638,7 +656,7 @@ class InputControlBlock:
 
     def plot_error(self, cp):
 
-        # self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+        # self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
         errorDecoded = np.abs(self.zl - self.pMK)
 
         Xi, Yi = np.meshgrid(self.xl, self.yl)
@@ -662,9 +680,7 @@ class InputControlBlock:
 
         if useVTKOutput:
 
-            self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
-
-            # self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+            self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
             errorDecoded = np.abs(self.zl - self.pMK)
 
             Xi, Yi = np.meshgrid(self.xl, self.yl)
@@ -683,7 +699,7 @@ class InputControlBlock:
         self.figSuffix = suffix
         
     def print_solution(self, cp):
-#         self.pMK = decode(self.pAdaptive, self.WAdaptive, degree, self.Nu, self.Nv)
+#         self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
 #         errorDecoded = self.zl - self.pMK
 
         print("Domain: ", cp.gid()+1, "Exact = ", self.zl)
@@ -838,7 +854,7 @@ class InputControlBlock:
             if constrainInterfaces and False:
                 decoded_residual_norm = 0
             else:
-                decoded = decode(P, W, degree, self.Nu, self.Nv)
+                decoded = decode(P, W, self.Nu, self.Nv)
                 residual_decoded = np.abs( decoded - self.zl )/zRange
                 residual_vec_decoded = residual_decoded.reshape(residual_decoded.shape[0]*residual_decoded.shape[1])
                 decoded_residual_norm = LA.norm(residual_vec_decoded, norm_type)
@@ -972,6 +988,165 @@ class InputControlBlock:
 
             return net_residual_norm
 
+
+        # Compute the residual as sum of two components
+        # 1. The decoded error evaluated at P
+        # 2. A penalized domain boundary constraint component
+        def residual_vec(Pin, verbose=False):
+            bc_penalty = 1e7
+            norm_type = 2
+            
+            P = Pin.reshape(W.shape)
+
+            # Residuals are in the decoded space - so direct way to constrain the boundary data
+            decodeOperator, decodeShape = get_decode_operator(W, self.Nu, self.Nv)
+            decoded = decodeOperator.dot(P)
+            decoded = decoded.reshape(decodeShape)
+            residual_decoded = np.abs( decoded - self.zl )/zRange
+
+#             res1 = np.dot(res_dec, self.Nv)
+#             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
+
+            def decode1D(P, W, x, t):
+                return np.array([(np.sum(basis(x[u],degree,t) *P*W)/(np.sum(basis(x[u],degree,t)*W))) for u,_ in enumerate(x)])
+            
+            # cons.append( {'type': 'eq', 'fun' : lambda x: np.array([ ( pieceBezierDer22(x, W, U, t, degree)[-1] - (bzD[-1] + bzDp[0])/2 ) ])} )
+
+            def pieceBezierDer22(P, W, U, T, degree):
+                bezierP = range(0, len(P)-degree, degree)
+                Q = []
+
+                for ps in bezierP:
+                    pp = P[ps:ps+degree+1]
+                    qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in range(len(pp)-1)])
+                    Q.extend(qq)
+
+                return Q
+
+            interpOrder = 'cubic'
+            constrained_residual_norm = 0
+            constrained_residual_norm2 = 0
+            if constraints is not None and len(constraints) > 0 and constrainInterfaces:
+                if len(left) > 1:
+                    indx=0
+                    if useDecodedConstraints:
+                        leftdata = decode1D(P[0, :], np.ones(P[0, :].shape), self.yl, knotsAllV)
+                        residual_decoded[indx, :] += ( leftdata[:] - left[:] )
+                    else:
+                        ctrlpts_pos = getControlPoints(knotsAllV, degree)
+                        ctrlpts_ppos = getControlPoints(leftknots, degree)
+                        leftdata = np.zeros((ctrlpts_pos.shape[0], useDerivativeConstraints+1))
+                        for col in range(useDerivativeConstraints+1):
+                            rbf = Rbf(ctrlpts_ppos, left[:, col], function=interpOrder)
+                            leftdata[:, col] = np.array(rbf(ctrlpts_pos))
+
+                        # Compute the residual for left interface condition
+                        # constraintRes += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata)
+                        # constrained_residual_norm += ( np.sum( ( P[indx, :] - 0.5 * (constraints[indx, :] + leftdata[:, 0]) )**2 ) / len(leftdata[:,0]) )
+                        constraintSol = ( P[indx, :] - 0.5 * (constraints[indx, :] + leftdata[:, 0]) )
+                        leftConstraintRes = decode1D(constraintSol, np.ones(constraintSol.shape), self.yl, knotsAllV)
+                        residual_decoded[indx, :] += bc_penalty * leftConstraintRes
+                        # print('Left Shapes knots: ', constrained_residual_norm, len(left[:]), len(knotsAllV), self.yl.shape, leftdata, (constraints[0,:] ), P[0,:], P[-1,:])
+
+                        # Let us evaluate higher order derivative constraints as well
+                        if useDerivativeConstraints > 0:
+                            residual_decoded[indx, :] += np.power(bc_penalty, 0.5) * ( (P[1, :] - P[0, :]) - 0.5 * ( (constraints[1, :] - constraints[0, :]) + (leftdata[:, 0] - leftdata[:, 1]) ) )
+                            # constrained_residual_norm2 += ( np.sum( ( 0.5 * (P[1, :] - P[0, :] + constraints[1, :] - constraints[0, :]) - (leftdata[:, 0] - leftdata[:, 1]) )**2 ) / len(leftdata[:,0]) )
+                            # constrained_residual_norm2 += ( np.sum( ( P[1, :] - P[0, :] - (0.5 * constraints[0, :] + 0.5 * leftdata[:, 0] - leftdata[:, 1]) )**2 ) / len(leftdata[:,0]) )
+
+                if len(right) > 1:
+                    indx=-1
+                    if useDecodedConstraints:
+                        rightdata = decode1D(P[0, :], np.ones(P[0, :].shape), self.yl, knotsAllV)
+                        residual_decoded[indx, :] += ( rightdata[:] - right[:] )
+                    else:
+                        ctrlpts_pos = getControlPoints(knotsAllV, degree)
+                        ctrlpts_ppos = getControlPoints(rightknots, degree)
+                        # Let us get the local interpolator baseed on control point locations
+                        rightdata = np.zeros((ctrlpts_pos.shape[0], useDerivativeConstraints+1))
+                        for col in range(useDerivativeConstraints+1):
+                            rbf = Rbf(ctrlpts_ppos, right[:, col], function=interpOrder)
+                            rightdata[:, col] = np.array(rbf(ctrlpts_pos))
+
+                        # Compute the residual for right interface condition
+                        # constraintRes += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata)
+                        constraintSol = ( P[indx, :] - 0.5 * (constraints[indx, :] + rightdata[:, 0]) )
+                        rightConstraintRes = decode1D(constraintSol, np.ones(constraintSol.shape), self.yl, knotsAllV)
+                        residual_decoded[indx, :] += bc_penalty * rightConstraintRes
+                        # print('Right Shapes knots: ', constrained_residual_norm, len(right[:]), len(knotsAllV), self.yl.shape, rightdata, (constraints[-1,:]), P[0,:], P[-1,:])
+
+                        # Let us evaluate higher order derivative constraints as well
+                        if useDerivativeConstraints > 0:
+                            # First derivative
+                            residual_decoded[indx, :] += np.power(bc_penalty, 0.5) * ( (P[-2, :] - P[-1, :]) - 0.5 * ( (constraints[-2, :] - constraints[-1, :]) + (rightdata[:, 0] - rightdata[:, 1]) ) )
+                            # constrained_residual_norm2 += ( np.sum( ( 0.5 * (P[-2, :] - P[-1, :] + constraints[-2, :] - constraints[-1, :]) - (rightdata[:, 0] - rightdata[:, 1]) )**2 ) / len(rightdata[:,0]) )
+                            # constrained_residual_norm2 += ( np.sum( ( (P[-2, :] - P[-1, :]) - ( (0.5 * constraints[-1, :] + 0.5 * rightdata[:, 0] - rightdata[:, 1] ) ) )**2 ) / len(rightdata[:,0]) )
+
+                if len(top) > 1:
+                    indx=-1
+                    if useDecodedConstraints:
+                        topdata = decode1D(P[:, -1], np.ones(P[:, -1].shape), self.xl, knotsAllU)
+                        residual_decoded[:, indx] += ( topdata[:] - top[:] )
+                    else:
+                        ctrlpts_pos = getControlPoints(knotsAllU, degree)
+                        ctrlpts_ppos = getControlPoints(topknots, degree)
+                        topdata = np.zeros((ctrlpts_pos.shape[0], useDerivativeConstraints+1))
+                        for col in range(useDerivativeConstraints+1):
+                            rbf = Rbf(ctrlpts_ppos, top[:, col], function=interpOrder)
+                            topdata[:, col] = np.array(rbf(ctrlpts_pos))
+
+                        # Compute the residual for top interface condition
+                        # constraintRes += np.sum( ( P[:,-1] - (topdata[:]) )**2 ) / len(topdata)
+                        constraintSol = ( P[:, indx] - 0.5 * (constraints[:, indx] + topdata[:, 0]) )
+                        topConstraintRes = decode1D(constraintSol, np.ones(constraintSol.shape), self.xl, knotsAllU)
+                        residual_decoded[:, indx] += bc_penalty * topConstraintRes
+                        # print('Top: ', constrained_residual_norm, P[:, -1], constraints[:, -1], P[:, 0], constraints[:, 0], topdata[:])
+
+                        # Let us evaluate higher order derivative constraints as well
+                        if useDerivativeConstraints > 0:
+                            # First derivative
+                            residual_decoded[:, indx] += np.power(bc_penalty, 0.5) * ( (P[:, -2] - P[:, -1]) - 0.5 * ( (constraints[:, -2] - constraints[:, -1]) + (topdata[:, 0] - topdata[:, 1]) ) )
+                            # constrained_residual_norm2 += ( np.sum( ( 0.5 * (P[:, -2] - P[:, -1] + constraints[:, -2] - constraints[:, -1]) - (topdata[:, 0] - topdata[:, 1]) )**2 ) / len(topdata[:,0]) )
+                            # constrained_residual_norm2 += ( np.sum( ( (P[:, -2] - P[:, -1]) - ( 0.5 * constraints[:, -1] + 0.5 * topdata[:, 0] - topdata[:, 1]) )**2 ) / len(topdata[:,0]) )
+
+                if len(bottom) > 1:
+                    indx=0
+                    if useDecodedConstraints:
+                        bottomdata = decode1D(P[:, 0], np.ones(P[:, 0].shape), self.xl, knotsAllU)
+                        residual_decoded[:, indx] += ( bottomdata[:] - bottom[:] )
+                    else:
+                        ctrlpts_pos = getControlPoints(knotsAllU, degree)
+                        ctrlpts_ppos = getControlPoints(bottomknots, degree)
+                        bottomdata = np.zeros((ctrlpts_pos.shape[0], useDerivativeConstraints+1))
+                        for col in range(useDerivativeConstraints+1):
+                            rbf = Rbf(ctrlpts_ppos, bottom[:, col], function=interpOrder)
+                            bottomdata[:, col] = np.array(rbf(ctrlpts_pos))
+
+                        # Compute the residual for bottom interface condition
+                        # constraintRes += np.sum( ( P[:,0] - (bottomdata[:]) )**2 ) / len(bottomdata)
+                        constraintSol = ( P[:, indx] - 0.5 * (constraints[:, indx] + bottomdata[:, 0]) )
+                        bottomConstraintRes = decode1D(constraintSol, np.ones(constraintSol.shape), self.xl, knotsAllU)
+                        residual_decoded[:, indx] += bc_penalty * bottomConstraintRes
+                        # print('Bottom: ', constrained_residual_norm, P[:, -1], constraints[:, -1], P[:, 0], constraints[:, 0], bottomdata[:])
+
+                        # Let us evaluate higher order derivative constraints as well
+                        if useDerivativeConstraints > 0:
+                            residual_decoded[:, indx] += np.power(bc_penalty, 0.5) * ( (P[:, 1] - P[:, 0]) - 0.5 * ((constraints[:, 1] - constraints[:, 0]) + (bottomdata[:, 0] - bottomdata[:, 1]) ) ) 
+                            # constrained_residual_norm2 += ( np.sum( ( 0.5 * (P[:, 1] - P[:, 0] + constraints[:, 1] - constraints[:, 0]) - (bottomdata[:, 0] - bottomdata[:, 1]) )**2 ) / len(bottomdata[:,0]) )
+                            # constrained_residual_norm2 += ( np.sum( ( (P[:, 1] - P[:, 0]) - ( 0.5 * constraints[:, 0] + 0.5 * bottomdata[:, 0] - bottomdata[:, 1]) )**2 ) / len(bottomdata[:,0]) ) 
+
+            # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
+            # constraint error of solution on the subdomain interfaces
+            # net_residual_norm = decoded_residual_norm + (bc_penalty * np.sqrt(constrained_residual_norm) + np.power(bc_penalty, 1.0) * np.sqrt(constrained_residual_norm2) )
+
+            # if verbose:
+            #     print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm, ' and constraint = ', np.sqrt(constrained_residual_norm), ' der = ', np.sqrt(constrained_residual_norm2))
+
+            print('Decodeoperator: ', decodeOperator.shape, decodeOperatorT.shape, 'residual_decoded: ', residual_decoded.shape)
+            residual_vec_ctrlpts = decodeOperator.T.dot(residual_decoded)
+            residual_vec_decoded = residual_vec_ctrlpts.reshape(residual_vec_ctrlpts.shape[0]*residual_vec_ctrlpts.shape[1])
+            return residual_vec_decoded
+
         def print_iterate(P):
 
             res = residual(P, verbose=True)
@@ -1041,11 +1216,19 @@ class InputControlBlock:
                         tol=self.globalTolerance, 
                         options={'inexact': True})
             else:
-                res = minimize(residual, x0=initSol, method=solverScheme, #'SLSQP', #'L-BFGS-B', #'TNC', 
-                        jac=jacobian,
-                        callback=print_iterate,
-                        tol=self.globalTolerance, 
-                        options={'disp': False})
+                optimizer_options={ 'disp': False, 
+                                # 'ftol': 1e-5, 
+                                'fatol': self.globalTolerance,
+                                'maxiter': solverMaxIter,
+                                'jac_options': { 'method': 'lgmres'} # {‘lgmres’, ‘gmres’, ‘bicgstab’, ‘cgs’, ‘minres’} 
+                            }
+                # jacobian_const = egrad(residual)(initSol)
+                res = scipy.optimize.root(residual_vec, x0=initSol, 
+                            method=solverScheme, #'krylov', 'lm'
+                            # jac=jacobian_vec,
+                            callback=print_iterate,
+                            tol=self.globalTolerance, 
+                            options=optimizer_options)
             print ('[%d] : %s' % (idom, res.message))
             solution = res.x.reshape(W.shape)
 
@@ -1165,7 +1348,7 @@ class InputControlBlock:
             print(iSubDom, " - Applying the unconstrained solver.")
             P = self.LSQFit_NonlinearOptimize(iSubDom, W, degree, None)
 #             P,_ = lsqFit(self.Nu, self.Nv, W, self.zl)
-            decodedError = decode(P, W, degree, self.Nu, self.Nv) #- self.zl
+            decodedError = decode(P, W, self.Nu, self.Nv) #- self.zl
             MAX_ITER = 0
         else:
             if disableAdaptivity:
@@ -1386,7 +1569,7 @@ class InputControlBlock:
             self.Nu = basis(self.U[np.newaxis,:],degree,Tu[:,np.newaxis]).T
             self.Nv = basis(self.V[np.newaxis,:],degree,Tv[:,np.newaxis]).T
 
-            decoded = decode(P, W, degree, self.Nu, self.Nv)
+            decoded = decode(P, W, self.Nu, self.Nv)
             decodedError = np.abs(np.array(decoded-self.zl)) / zRange
 
             reuseE = (decodedError.reshape(decodedError.shape[0]*decodedError.shape[1]))
