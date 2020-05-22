@@ -32,10 +32,10 @@ plt.rcParams.update(params)
 useVTKOutput = True
 
 # --- set problem input parameters here ---
-nSubDomainsX   = 2
-nSubDomainsY   = 2
+nSubDomainsX   = 3
+nSubDomainsY   = 3
 degree         = 3
-problem        = 0
+problem        = 4
 verbose        = False
 showplot       = False
 
@@ -62,9 +62,9 @@ useDecodedConstraints = False
 disableAdaptivity = False
 variableResolution = False
 
-maxAbsErr      = 1e-4
+maxAbsErr      = 1e-2
 maxRelErr      = 1e-10
-maxAdaptIter   = 5
+maxAdaptIter   = 3
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
 # ------------------------------------------
@@ -75,7 +75,7 @@ def plot3D(fig, Z, x=None, y=None):
     if y is None:
         y = np.arange(Z.shape[1])
     X, Y = np.meshgrid(x, y)
-    print("Plot shapes: [x, y, z] = ", x.shape, y.shape, Z.shape, X.shape, Y.shape)
+    # print("Plot shapes: [x, y, z] = ", x.shape, y.shape, Z.shape, X.shape, Y.shape)
 
     if showplot:
         ax = fig.gca(projection='3d')
@@ -88,7 +88,7 @@ def plot3D(fig, Z, x=None, y=None):
         Y = Y.reshape(1, Y.shape[0], Y.shape[1])
         Zi = np.ones(X.shape)
         Z = Z.T.reshape(1, Z.shape[1], Z.shape[0])
-        print(X.shape, Y.shape, Zi.shape, Z.shape)
+        # print(X.shape, Y.shape, Zi.shape, Z.shape)
         gridToVTK("./structured", X, Y, Zi, pointData = {"solution" : Z})
 
     # plt.show()
@@ -140,8 +140,8 @@ for opt, arg in opts:
 from scipy.ndimage import zoom
 
 if problem == 1:
-    nPointsX = 101
-    nPointsY = 101
+    nPointsX = 201
+    nPointsY = 201
     scale    = 1
     shiftX   = 0.5
     shiftY   = 0.5
@@ -152,10 +152,10 @@ if problem == 1:
     y = np.linspace(Dmin, Dmax, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
     # z = scale * ( np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)) )
-    z = scale * ( np.sinc(2*((X-1)**2 + (Y+1)**2)) )
+    z = scale * ( np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)) )
     # z = X**2 + Y**2
     z = z.T
-    nControlPointsInput = 4*np.array([6,6]) #(3*degree + 1) #minimum number of control points
+    nControlPointsInput = 5*np.array([6,6]) #(3*degree + 1) #minimum number of control points
 
 elif problem == 2:
     nPointsX = 101
@@ -272,7 +272,7 @@ if rank == 0:
     print('\n==================')
     print('Parameter details')
     print('==================\n')
-    print('problem = ', problem, '[0 = sinc, 1 = sine, 2 = Nek5000, 3 = S3D, 4 = CESM]')
+    print('problem = ', problem, '[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]')
     print('Total number of input points: ', nPointsX*nPointsY)
     print('nSubDomains = ', nSubDomainsX * nSubDomainsY)
     print('degree = ', degree)
@@ -330,7 +330,7 @@ def get_decode_operator(W, Nu, Nv):
     # RN = np.tensordot(NN, W) / np.tensordot(NN, W)
     RN = (NN * W) / np.tensordot(NN, W)
 
-    print('RN.shape = ', RN.shape)
+    # print('RN.shape = ', RN.shape)
 
     return RN, [Nu.shape[0], Nv.shape[0]]
     # decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
@@ -416,7 +416,9 @@ def knotRefine(P, W, TU, TV, Nu, Nv, U, V, zl, r=1, find_all=True, MAX_ERR = 1e-
     else:
         NSE = np.abs(reuseE)
     # NMSE = NSE.mean()
-    NMSE = LA.norm(NSE, 2)
+    Ev = np.copy(NSE).reshape(NSE.shape[0]*NSE.shape[1])
+    NMSE = np.sqrt(np.sum(Ev**2)/len(Ev))
+
     if(NMSE<=MAX_ERR):
         return TU, TV, [], [], NSE, NMSE
     if find_all:
@@ -693,7 +695,7 @@ class InputControlBlock:
         if useVTKOutput:
 
             self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
-            errorDecoded = np.abs(self.zl - self.pMK)
+            errorDecoded = np.abs(self.zl - self.pMK) / zRange
 
             Xi, Yi = np.meshgrid(self.xl, self.yl)
 
@@ -858,7 +860,6 @@ class InputControlBlock:
         # 2. A penalized domain boundary constraint component
         def residual(Pin, verbose=False):
             bc_penalty = 1e7
-            norm_type = 2
             
             P = Pin.reshape(W.shape)
 
@@ -869,7 +870,7 @@ class InputControlBlock:
                 decoded = decode(P, W, self.Nu, self.Nv)
                 residual_decoded = np.abs( decoded - self.zl )/zRange
                 residual_vec_decoded = residual_decoded.reshape(residual_decoded.shape[0]*residual_decoded.shape[1])
-                decoded_residual_norm = LA.norm(residual_vec_decoded, norm_type)
+                decoded_residual_norm = np.sqrt(np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
 
 #             res1 = np.dot(res_dec, self.Nv)
 #             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
@@ -890,7 +891,7 @@ class InputControlBlock:
 
                 return Q
 
-            interpOrder = 'cubic'
+            interpOrder = 'linear'
             constrained_residual_norm = 0
             constrained_residual_norm2 = 0
             if constraints is not None and len(constraints) > 0 and constrainInterfaces:
@@ -907,7 +908,7 @@ class InputControlBlock:
                             leftdata[:, col] = np.array(rbf(ctrlpts_pos))
 
                         # Compute the residual for left interface condition
-                        # constraintRes += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata)
+                        # constrained_residual_norm += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata[:,0])
                         constrained_residual_norm += ( np.sum( ( P[0, :] - 0.5 * (constraints[0, :] + leftdata[:, 0]) )**2 ) / len(leftdata[:,0]) )
                         # print('Left Shapes knots: ', constrained_residual_norm, len(left[:]), len(knotsAllV), self.yl.shape, leftdata, (constraints[0,:] ), P[0,:], P[-1,:])
 
@@ -931,7 +932,7 @@ class InputControlBlock:
                             rightdata[:, col] = np.array(rbf(ctrlpts_pos))
 
                         # Compute the residual for right interface condition
-                        # constraintRes += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata)
+                        # constrained_residual_norm += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata[:,0])
                         constrained_residual_norm += ( np.sum( ( P[-1, :] - 0.5 * (constraints[-1, :] + rightdata[:, 0]) )**2 ) / len(rightdata[:,0]) )
                         # print('Right Shapes knots: ', constrained_residual_norm, len(right[:]), len(knotsAllV), self.yl.shape, rightdata, (constraints[-1,:]), P[0,:], P[-1,:])
 
@@ -955,7 +956,7 @@ class InputControlBlock:
                             topdata[:, col] = np.array(rbf(ctrlpts_pos))
 
                         # Compute the residual for top interface condition
-                        # constraintRes += np.sum( ( P[:,-1] - (topdata[:]) )**2 ) / len(topdata)
+                        # constrained_residual_norm += np.sum( ( P[:,-1] - (topdata[:]) )**2 ) / len(topdata[:,0])
                         constrained_residual_norm += ( np.sum( ( P[:, -1] - 0.5 * (constraints[:, -1] + topdata[:, 0]) )**2 ) / len(topdata[:,0]) ) 
                         # print('Top: ', constrained_residual_norm, P[:, -1], constraints[:, -1], P[:, 0], constraints[:, 0], topdata[:])
 
@@ -979,7 +980,7 @@ class InputControlBlock:
                             bottomdata[:, col] = np.array(rbf(ctrlpts_pos))
 
                         # Compute the residual for bottom interface condition
-                        # constraintRes += np.sum( ( P[:,0] - (bottomdata[:]) )**2 ) / len(bottomdata)
+                        # constrained_residual_norm += np.sum( ( P[:,0] - (bottomdata[:]) )**2 ) / len(bottomdata[:,0])
                         constrained_residual_norm += ( np.sum( ( P[:, 0] - 0.5 * (constraints[:, 0] + bottomdata[:, 0]) )**2 ) / len(bottomdata[:,0]) ) 
                         # print('Bottom: ', constrained_residual_norm, P[:, -1], constraints[:, -1], P[:, 0], constraints[:, 0], bottomdata[:])
 
@@ -1521,6 +1522,7 @@ class InputControlBlock:
                 P = self.LSQFit_NonlinearOptimize(iSubDom, W, degree, interface_constraints_obj)
 
             else:
+                self.adaptiveIterationNum += 1
                 Tunew,Tvnew,Usplits,Vsplits,E,maxE = knotRefine(P, W, Tu, Tv, self.Nu, self.Nv, self.U, self.V, self.zl, r, 
                                                                 #reuseE=reuseE, 
                                                                 MAX_ERR=MAX_ERR, 
@@ -1533,7 +1535,7 @@ class InputControlBlock:
                     len(Tunew)-degree-1 > self.nPointsPerSubDX or \
                     len(Tvnew)-degree-1 > self.nPointsPerSubDY:
                     print ("Nothing more to refine: E = ", E)
-                    reuseE = E
+                    reuseE = np.copy(E)
                     Tunew = np.copy(Tu)
                     Tvnew = np.copy(Tv)
                     #break
@@ -1541,7 +1543,7 @@ class InputControlBlock:
                 if len(Usplits)==0 or len(Vsplits)==0:
                     if (maxE>MAX_ERR):
                         print ("Max error hit: E = ", E)
-                        reuseE = E
+                        reuseE = np.copy(E)
                         continue
 
                 if(maxE<=MAX_ERR):
@@ -1613,7 +1615,7 @@ class InputControlBlock:
             decodedError = np.abs(np.array(decoded-self.zl)) / zRange
 
             reuseE = (decodedError.reshape(decodedError.shape[0]*decodedError.shape[1]))
-            print("\tDecoded error: ", LA.norm(reuseE, 2))
+            print("\tDecoded error: ", np.sqrt(np.sum(reuseE**2)/len(reuseE)))
 
             iteration += 1
 
@@ -1660,14 +1662,13 @@ class InputControlBlock:
                                        r=1, MAX_ERR=maxAbsErr, MAX_ITER=maxAdaptIter, #MAX_ERR=maxAdaptErr,
                                        split_all=True,
                                        decodedError=adaptiveErr)
-        self.adaptiveIterationNum += 1
 
         # Update the local decoded data
         self.decodedAdaptiveOld = np.copy(self.decodedAdaptive)
         self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
 
-        # E = (self.decodedAdaptive[self.corebounds[0]:self.corebounds[1]] - self.yl[self.corebounds[0]:self.corebounds[1]])/zRange
-        E = (self.decodedAdaptive - self.yl)/zRange
+        # E = (self.decodedAdaptive[self.corebounds[0]:self.corebounds[1]] - self.zl[self.corebounds[0]:self.corebounds[1]])/zRange
+        E = (self.decodedAdaptive - self.zl)/zRange
         E = (E.reshape(E.shape[0]*E.shape[1]))
         LinfErr = np.linalg.norm(E, ord=np.inf)
         L2Err = np.sqrt(np.sum(E**2)/len(E))
@@ -1739,9 +1740,9 @@ for iterIdx in range(nASMIterations):
     if iterIdx > 1:
         disableAdaptivity = True
         constrainInterfaces = True
-    # else:
-    #     disableAdaptivity = False
-    #     constrainInterfaces = False
+    else:
+        # disableAdaptivity = False
+        constrainInterfaces = False
 
     # disableAdaptivity = True
     # constrainInterfaces = True
@@ -1767,7 +1768,7 @@ for iterIdx in range(nASMIterations):
         #figHnd.savefig("decoded-data-%d-%d.png"%(iterIdx))   # save the figure to file
         #figHndErr.savefig("error-data-%d-%d.png"%(iterIdx))   # save the figure to file
 
-    commW.Barrier()
+    # commW.Barrier()
     sys.stdout.flush()
 
     if useVTKOutput:
