@@ -107,84 +107,91 @@ if rank == 0: print('Argument List:', str(sys.argv))
 ##
 argv=sys.argv[1:]
 def usage():
-  print(sys.argv[0], '-p <problem> -n <nsubdomains> -nx <nsubdomains_x> -ny <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations>')
+  print(sys.argv[0], '-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations>')
   sys.exit(2)
 try:
-  opts, args = getopt.getopt(argv,"hp:n:d:c:o:a:",["problem=","nsubdomains=","degree=","controlpoints=","overlap=","nasm="])
+  opts, args = getopt.getopt(argv,"hp:n:x:y:d:c:o:p:a:",["problem=","nsubdomains=","nx=","ny=","degree=","controlpoints=","overlap=","problem=","nasm=","disableadaptivity"])
 except getopt.GetoptError:
   usage()
 
+nControlPointsInput = []
 for opt, arg in opts:
   if opt == '-h':
       usage()
   elif opt in ("-n", "--nsubdomains"):
       nSubDomainsX = int(arg)
       nSubDomainsY = int(arg)
-  elif opt in ("-nx", "--nsubdomainsx"):
+  elif opt in ("-x", "--nx"):
       nSubDomainsX = int(arg)
-  elif opt in ("-ny", "--nsubdomainsy"):
+  elif opt in ("-y", "--ny"):
       nSubDomainsY = int(arg)
   elif opt in ("-d", "--degree"):
       degree = int(arg)
   elif opt in ("-c", "--controlpoints"):
-      nControlPointsInput = int(arg)
+      nControlPointsInput = np.array([int(arg), int(arg)])
   elif opt in ("-o", "--overlap"):
       overlapData = int(arg)
   elif opt in ("-p", "--problem"):
       problem = int(arg)
   elif opt in ("-a", "--nasm"):
       nASMIterations = int(arg)
+  elif opt in ("--disableadaptivity"):
+    disableAdaptivity = True
 
 # -------------------------------------
 
 from scipy.ndimage import zoom
 
 if problem == 1:
-    nPointsX = 201
-    nPointsY = 201
+    nPointsX = 501
+    nPointsY = 501
     scale    = 1
     shiftX   = 0.5
     shiftY   = 0.5
-    Dmin     = -4.
-    Dmax     = 4.
+    DminX = DminY = -4.
+    DmaxX = DmaxY = 4.
 
-    x = np.linspace(Dmin, Dmax, nPointsX)
-    y = np.linspace(Dmin, Dmax, nPointsY)
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
     # z = scale * ( np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)) )
     z = scale * ( np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)) )
     # z = X**2 + Y**2
     z = z.T
-    nControlPointsInput = 5*np.array([6,6]) #(3*degree + 1) #minimum number of control points
+    # (3*degree + 1) #minimum number of control points
+    if len(nControlPointsInput) == 0: nControlPointsInput = 5*np.array([6,6])
 
 elif problem == 2:
-    nPointsX = 101
-    nPointsY = 101
+    nPointsX = 501
+    nPointsY = 501
     scale    = 1.0
     shiftX   = 0.25
     shiftY   = 0.5
-    Dmin     = 0
-    Dmax     = math.pi
+    DminX = DminY = 0
+    DmaxX = DmaxY = math.pi
 
-    x = np.linspace(Dmin, Dmax, nPointsX)
-    y = np.linspace(Dmin, Dmax, nPointsY)
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
     z = scale * np.sin(X) * np.sin(Y)
     z = z.T
     # z = scale * np.sin(Y)
     # z = scale * X
-    nControlPointsInput = 4*np.array([1,1]) #(3*degree + 1) #minimum number of control points
+    # (3*degree + 1) #minimum number of control points
+    if len(nControlPointsInput) == 0: nControlPointsInput = 4*np.array([1,1])
 
 elif problem == 3:
     z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
     print ("Nek5000 shape:", z.shape)
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
-    Dmin     = 0.
-    Dmax     = 100.
-    x = np.linspace(Dmin, Dmax, nPointsX)
-    y = np.linspace(Dmin, Dmax, nPointsY)
-    nControlPointsInput = 25*np.array([1,1]) #(3*degree + 1) #minimum number of control points
+    DminX = DminY = 0
+    DmaxX = DmaxY = 100.
+
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
+    # (3*degree + 1) #minimum number of control points
+    if len(nControlPointsInput) == 0: nControlPointsInput = 25*np.array([1,1])
 
 elif problem == 4:
 
@@ -195,22 +202,28 @@ elif problem == 4:
     print ("S3D shape:", z.shape)
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
-    Dmin     = 0.
-    Dmax     = 100.
-    x = np.linspace(Dmin, Dmax, nPointsX)
-    y = np.linspace(Dmin, Dmax, nPointsY)
-    nControlPointsInput = 20*np.array([1,1]) #(3*degree + 1) #minimum number of control points
+    DminX = DminY = 0
+    DmaxX = 540
+    DmaxY = 704.
+
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
+    # (3*degree + 1) #minimum number of control points
+    if len(nControlPointsInput) == 0: nControlPointsInput = 20*np.array([1,1])
 
 else:
     z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
-    Dmin     = 0.
-    Dmax     = 100.
-    x = np.linspace(Dmin, Dmax, nPointsX)
-    y = np.linspace(Dmin, Dmax, nPointsY)
+    DminX = DminY = 0
+    DmaxX = 3600
+    DmaxY = 1800.
+    print("CESM data shape: ", z.shape)
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
 
-    nControlPointsInput = 25*np.array([1,1]) #(3*degree + 1) #minimum number of control points
+    # (3*degree + 1) #minimum number of control points
+    if len(nControlPointsInput) == 0: nControlPointsInput = 25*np.array([1,1])
 
 # if nPointsX % nSubDomainsX > 0 or nPointsY % nSubDomainsY > 0:
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
@@ -291,6 +304,7 @@ if rank == 0:
 
 #------------------------------------
 
+sys.stdout.flush()
 
 # In[3]:
 
@@ -1720,6 +1734,7 @@ a_control2 = diy.ContiguousAssigner(nprocs, nSubDomainsX*nSubDomainsY)
 
 d_control.decompose(rank, a_control2, add_input_control_block2)
 
+if rank == 0: print ("\n---- Starting Global Iterative Loop ----")
 del x, y, z
 
 mc2.foreach(InputControlBlock.show)
@@ -1740,9 +1755,9 @@ for iterIdx in range(nASMIterations):
     if iterIdx > 1:
         disableAdaptivity = True
         constrainInterfaces = True
-    else:
+    #else:
         # disableAdaptivity = False
-        constrainInterfaces = False
+        #constrainInterfaces = False
 
     # disableAdaptivity = True
     # constrainInterfaces = True
