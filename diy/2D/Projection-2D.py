@@ -32,10 +32,10 @@ plt.rcParams.update(params)
 useVTKOutput = True
 
 # --- set problem input parameters here ---
-nSubDomainsX   = 3
-nSubDomainsY   = 3
+nSubDomainsX   = 1
+nSubDomainsY   = 2
 degree         = 3
-problem        = 4
+problem        = 1
 verbose        = False
 showplot       = False
 
@@ -59,7 +59,7 @@ constrainInterfaces = True
 
 useDeCastelJau = True
 useDecodedConstraints = False
-disableAdaptivity = False
+disableAdaptivity = True
 variableResolution = False
 
 maxAbsErr      = 1e-2
@@ -69,6 +69,7 @@ maxAdaptIter   = 3
 AdaptiveStrategy = 'reset'
 # ------------------------------------------
 
+# @profile
 def plot3D(fig, Z, x=None, y=None):
     if x is None:
         x = np.arange(Z.shape[0])
@@ -95,9 +96,9 @@ def plot3D(fig, Z, x=None, y=None):
 
 
 # Initialize DIY
-commW = MPI.COMM_WORLD
-nprocs = commW.size
-rank = commW.rank
+MPIcommW = MPI.COMM_WORLD
+nprocs = MPIcommW.size
+rank = MPIcommW.rank
 isASMConverged = 0
 
 if rank == 0: print('Argument List:', str(sys.argv))
@@ -143,8 +144,8 @@ for opt, arg in opts:
 from scipy.ndimage import zoom
 
 if problem == 1:
-    nPointsX = 501
-    nPointsY = 501
+    nPointsX = 101
+    nPointsY = 101
     scale    = 1
     shiftX   = 0.5
     shiftY   = 0.5
@@ -159,7 +160,7 @@ if problem == 1:
     # z = X**2 + Y**2
     z = z.T
     # (3*degree + 1) #minimum number of control points
-    if len(nControlPointsInput) == 0: nControlPointsInput = 5*np.array([6,6])
+    if len(nControlPointsInput) == 0: nControlPointsInput = 1*np.array([6,6])
 
 elif problem == 2:
     nPointsX = 501
@@ -181,12 +182,14 @@ elif problem == 2:
     if len(nControlPointsInput) == 0: nControlPointsInput = 4*np.array([1,1])
 
 elif problem == 3:
-    z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
-    print ("Nek5000 shape:", z.shape)
-    nPointsX = z.shape[0]
-    nPointsY = z.shape[1]
-    DminX = DminY = 0
-    DmaxX = DmaxY = 100.
+    # z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
+    if rank == 0: z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
+    else: z = np.zeros(1, dtype=np.float64)
+    if rank == 0: print ("Nek5000 shape:", z.shape)
+    nPointsX = 200
+    nPointsY = 200
+    DminX = DminY = 0.
+    DmaxX = DmaxY = 200.
 
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
@@ -196,14 +199,16 @@ elif problem == 3:
 elif problem == 4:
 
     binFactor = 4.0
-    z = np.fromfile("data/s3d_2D.raw", dtype=np.float64).reshape(540,704)
+    if rank == 0: z = np.fromfile("data/s3d_2D.dat", dtype=np.float64).reshape(540,704)
+    else: z = np.zeros(1, dtype=np.float64)
+    
     #z = z[:540,:540]
     #z = zoom(z, 1./binFactor, order=4)
-    print ("S3D shape:", z.shape)
-    nPointsX = z.shape[0]
-    nPointsY = z.shape[1]
+    if rank == 0: print ("S3D shape:", z.shape)
+    nPointsX = 540
+    nPointsY = 704
     DminX = DminY = 0
-    DmaxX = 540
+    DmaxX = 540.
     DmaxY = 704.
 
     x = np.linspace(DminX, DmaxX, nPointsX)
@@ -212,13 +217,14 @@ elif problem == 4:
     if len(nControlPointsInput) == 0: nControlPointsInput = 20*np.array([1,1])
 
 else:
-    z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
-    nPointsX = z.shape[0]
-    nPointsY = z.shape[1]
+    if rank == 0: z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(1800, 3600) #
+    else: z = np.zeros(1, dtype=np.float32)
+    nPointsX = 1800
+    nPointsY = 3600
     DminX = DminY = 0
-    DmaxX = 3600
-    DmaxY = 1800.
-    print("CESM data shape: ", z.shape)
+    DmaxX = 1800.
+    DmaxY = 3600.
+    if rank == 0: print("CESM data shape: ", z.shape)
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
 
@@ -228,25 +234,22 @@ else:
 # if nPointsX % nSubDomainsX > 0 or nPointsY % nSubDomainsY > 0:
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
 #     sys.exit(1)
-
-xmin = x.min()
-xmax = x.max()
-ymin = y.min()
-ymax = y.max()
-zmin = z.min()
-zmax = z.max()
-zRange = zmax-zmin
+# xmin = xmax = ymin = ymax = zmin = zmax = 0
+xyzminmax = np.zeros(6)
+zRange = 1
 fig = None
-if showplot: fig = plt.figure()
-plot3D(fig, z, x, y)
+if rank == 0:
+    if showplot: fig = plt.figure()
+    plot3D(fig, z, x, y)
 
 # Let us create a parallel VTK file
+# @profile
 def WritePVTKFile(iteration):
     pvtkfile = open("pstructured-mfa-%d.pvts"%(iteration),"w") 
 
     pvtkfile.write('<?xml version="1.0"?>\n')
     pvtkfile.write('<VTKFile type="PStructuredGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
-    pvtkfile.write('<PStructuredGrid WholeExtent="%f %f %f %f 0 0" GhostLevel="0">\n'%(xmin, xmax, ymin, ymax))
+    pvtkfile.write('<PStructuredGrid WholeExtent="%f %f %f %f 0 0" GhostLevel="0">\n'%(xyzminmax[0], xyzminmax[1], xyzminmax[2], xyzminmax[3]))
     pvtkfile.write('\n')
     pvtkfile.write('    <PCellData>\n')
     pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
@@ -257,12 +260,12 @@ def WritePVTKFile(iteration):
     pvtkfile.write('    </PPoints>\n')
 
     isubd=0
-    dx=(xmax-xmin)/nSubDomainsX
-    dy=(ymax-ymin)/nSubDomainsY
-    xoff=xmin
+    dx=(xyzminmax[1]-xyzminmax[0])/nSubDomainsX
+    dy=(xyzminmax[3]-xyzminmax[2])/nSubDomainsY
+    xoff=xyzminmax[0]
     xx=dx
     for ix in range(nSubDomainsX):
-	    yoff=ymin
+	    yoff=xyzminmax[2]
 	    yy=dy
 	    for iy in range(nSubDomainsY):
 		    pvtkfile.write('    <Piece Extent="%f %f %f %f 0 0" Source="structured-%d-%d.vts"/>\n'%(xoff, xx, yoff, yy, isubd, iteration))
@@ -308,7 +311,6 @@ sys.stdout.flush()
 
 # In[3]:
 
-
 from autograd import elementwise_grad as egrad
 from scipy import linalg, matrix
 from scipy.optimize import minimize, linprog
@@ -331,6 +333,7 @@ def getControlPoints(knots, k):
         cx[i] = float(tsum) / k
     return cx
 
+# @profile
 def get_decode_operator(W, Nu, Nv):
     Nu = Nu[...,np.newaxis]
     Nv = Nv[:,np.newaxis]
@@ -350,22 +353,40 @@ def get_decode_operator(W, Nu, Nv):
     # decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
     # return decoded.reshape((Nu.shape[0], Nv.shape[0]))
 
-def decode(P, W, Nu, Nv):
-    Nu = Nu[...,np.newaxis]
-    Nv = Nv[:,np.newaxis]
-    NN = []
-    for ui in range(Nu.shape[0]):
-        for vi in range(Nv.shape[0]):
-          NN.append(Nu[ui]*Nv[vi])  
-    NN = np.array(NN)
+@profile
+def decode(P, W, iNu, iNv):
 
-    decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
-    return decoded.reshape((Nu.shape[0], Nv.shape[0]))
-#     RNx = N[0] * np.sum(W, axis=0)
-#     RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
-#     RNy = N[1] * np.sum(W, axis=1)
-#     RNy /= np.sum(RNy, axis=1)[:,np.newaxis]
-#     return np.matmul(np.matmul(RNx, P), RNy.T)
+    decoded = []
+    method = 2
+    if method == 1:
+        # print("Decode functional Nuv: ", iNu.shape, iNv.shape)
+        Nu = iNu[...,np.newaxis]
+        Nv = iNv[:,np.newaxis]
+        # print("Decode functional new Nuv: ", Nu.shape, Nv.shape)
+        NN = []
+        for ui in range(Nu.shape[0]):
+            for vi in range(Nv.shape[0]):
+              NN.append(Nu[ui]*Nv[vi])  
+        NN = np.array(NN)
+        # print("Decode functional NN: ", Nu.shape, Nv.shape)
+
+        decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
+        del NN
+        decoded = decoded.reshape((Nu.shape[0], Nv.shape[0]))
+    else:
+
+        # print("Decoded functional new prod: ", np.tensordot(Nu,Nv).shape)
+        # decoded2 = (np.tensordot(Nu,Nv*W))/(np.sum(np.tensordot(Nu,Nv*W), axis=1)[:,np.newaxis])
+        RNx = iNu * np.sum(W, axis=0)
+        RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
+        RNy = iNv * np.sum(W, axis=1)
+        RNy /= np.sum(RNy, axis=1)[:,np.newaxis]
+        # print('Decode error res: ', RNx.shape, RNy.shape)
+        decoded = np.matmul(np.matmul(RNx, P), RNy.T)
+        # print('Decode error res: ', decoded.shape, decoded2.shape, np.max(np.abs(decoded.reshape((Nu.shape[0], Nv.shape[0])) - decoded2)))
+        # print('Decode error res: ', z.shape, decoded.shape)
+
+    return decoded
 
 def Error(P, W, z, degree, Nu, Nv):
     Ploc = decode(P, W, Nu, Nv)
@@ -565,6 +586,7 @@ def L2LinfErrors(P, W, z, degree, Nu, Nv):
     L2Err = math.sqrt(np.sum(E**2)/len(E))
     return [L2Err, LinfErr]
 
+# @profile
 def lsqFit(Nu, Nv, W, z, use_cho=True):
     RNx = Nu * np.sum(W, axis=1)
     RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
@@ -646,7 +668,7 @@ class InputControlBlock:
         self.Dmini = np.array([min(self.xl), min(self.yl)])
         self.Dmaxi = np.array([max(self.xl), max(self.yl)])
 
-        print("Rank: %d, Subdomain %d: Bounds = [%d - %d, %d - %d]" % (commWorld.rank, cp.gid(), self.xbounds.min[0], self.xbounds.max[0], self.xbounds.min[1], self.xbounds.max[1]))
+        print("Rank: %d, Subdomain %d: Bounds = [%d - %d, %d - %d]" % (diyCommWorld.rank, cp.gid(), self.xbounds.min[0], self.xbounds.max[0], self.xbounds.min[1], self.xbounds.max[1]))
 
     def plot_control(self, cp):
 
@@ -840,7 +862,7 @@ class InputControlBlock:
                     # print("Right: %d received from %d: from direction %s, with sizes %d+%d" % (cp.gid(), tgid, dir, pl, tl), self.rightconstraint, - self.pAdaptive[:,-1])
 
 
-
+    # @profile
     def LSQFit_NonlinearOptimize(self, idom, W, degree, constraintsAll=None):
 
         from scipy.optimize import root, anderson, newton_krylov#, BroydenFirst, KrylovJacobian
@@ -1346,8 +1368,8 @@ class InputControlBlock:
 
 
     def print_error_metrics(self, cp):
-        # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
-        print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
+        # print('Size: ', MPIcommW.size, ' rank = ', MPIcommW.rank, ' Metrics: ', self.errorMetricsL2[:])
+        print('Rank:', MPIcommW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
 
 
     def check_convergence(self, cp):
@@ -1372,8 +1394,9 @@ class InputControlBlock:
         
         self.outerIteration += 1
 
-        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.MIN)
+        isASMConverged = MPIcommW.allreduce(self.outerIterationConverged, op=MPI.MIN)
 
+    # @profile
     def adaptive(self, iSubDom, xl, yl, zl, strategy='extend', weighted=False, 
                  r=1, MAX_ERR=1e-3, MAX_ITER=5, 
                  split_all=True, 
@@ -1699,26 +1722,21 @@ class InputControlBlock:
 #########
 
 # Initialize DIY
-commWorld = diy.mpi.MPIComm()           # world
-mc2 = diy.Master(commWorld)         # master
-domain_control = diy.DiscreteBounds([0,0], [len(x)-1,len(y)-1])
-
-# Routine to recursively add a block and associated data to it
-def add_input_control_block2(gid, core, bounds, domain, link):
-    print("Subdomain %d: " % gid, core, bounds, domain)
-    minb = bounds.min
-    maxb = bounds.max
-    
-    xlocal = x[minb[0]:maxb[0]+1]
-    ylocal = y[minb[1]:maxb[1]+1]
-    zlocal = z[minb[0]:maxb[0]+1,minb[1]:maxb[1]+1]
-    # zlocal = z[minb[0]:maxb[0]+1,minb[1]:maxb[1]+1]
-
-    # print("Subdomain %d: " % gid, minb[0], minb[1], maxb[0], maxb[1], z.shape, zlocal.shape)
-
-    mc2.add(gid, InputControlBlock(gid,nControlPointsInput,core,xlocal,ylocal,zlocal), link)
+diyCommWorld = diy.mpi.MPIComm()           # world
+diyMaster = diy.Master(diyCommWorld)         # master
+domain_control = diy.DiscreteBounds([0,0], [nPointsX-1,nPointsY-1])
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
+if rank == 0:
+    xyzminmax[0] = x.min()
+    xyzminmax[1] = x.max()
+    xyzminmax[2] = y.min()
+    xyzminmax[3] = y.max()
+    xyzminmax[4] = z.min()
+    xyzminmax[5] = z.max()
+## Bcast to all procs
+MPIcommW.Bcast(xyzminmax, root=0)
+zRange = xyzminmax[5] - xyzminmax[4]
 
 errors = np.zeros([nASMIterations,2]) # Store L2, Linf errors as function of iteration
 
@@ -1729,15 +1747,118 @@ wrap = [False,False]
 ghosts = [0,0]
 divisions = [nSubDomainsX,nSubDomainsY]
 
-d_control = diy.DiscreteDecomposer(2, domain_control, nSubDomainsX*nSubDomainsY, share_face, wrap, ghosts, divisions)
-a_control2 = diy.ContiguousAssigner(nprocs, nSubDomainsX*nSubDomainsY)
+diyDDecomposer = diy.DiscreteDecomposer(2, domain_control, nSubDomainsX*nSubDomainsY, share_face, wrap, ghosts, divisions)
+diyAssigner = diy.ContiguousAssigner(nprocs, nSubDomainsX*nSubDomainsY)
 
-d_control.decompose(rank, a_control2, add_input_control_block2)
+# Routine to recursively add a block and associated data to it
+def add_input_control_block(gid, core, bounds, domain, link):
+    print("Subdomain %d: " % gid, core, bounds, domain)
+    minb = bounds.min
+    maxb = bounds.max
+    
+    snx = maxb[0]+1-minb[0]
+    sny = maxb[1]+1-minb[1]
+    xlocal = x[minb[0]:maxb[0]+1]
+    ylocal = y[minb[1]:maxb[1]+1]
+    ## Let us scatter data
+    if rank == 0:
+        zlocal = np.copy(z[minb[0]:maxb[0]+1,minb[1]:maxb[1]+1])
+        print('Data data: ', z.shape)
 
-if rank == 0: print ("\n---- Starting Global Iterative Loop ----")
+        # if rank == 0: z = np.memmap("data/FLDSC_1_1800_3600.dat", dtype=np.float32, mode="r", shape=(1800,3600), offset=)
+
+    # Wait to receive data from root based on current decomposition
+    else:
+
+        zlocal = np.zeros( (snx, sny), dtype=np.float64 if problem == 3 or problem == 4 else np.float32 )
+
+        print("Rank ", rank, z.shape, [snx, sny])
+        assert(z.shape == (snx-1, sny-1))
+
+        zlocal = np.copy(z)
+
+
+        # req = MPIcommW.Irecv(zlocal, source=0)
+        # print(rank, ' - Waiting to receive data from root with size ', snx, sny)
+        # sys.stdout.flush()
+        # req.Wait()
+        # print(rank, ' - Received data from root: ', z.shape)
+        # sys.stdout.flush()
+
+    print("Subdomain %d: shape is " % gid, zlocal.shape)
+    # zlocal = z[minb[0]:maxb[0]+1,minb[1]:maxb[1]+1]
+
+    # bcast and communicate the ranges to all procs as well
+    sys.stdout.flush()
+
+    # shape=(maxb[0]-minb[0]+1,maxb[1]-minb[1]+1)
+    # if rank == 0: z = np.memmap("data/FLDSC_1_1800_3600.dat", dtype=np.float32, mode="r", offset=4*(3600*maxb[0]+maxb[1]), shape=)
+
+    # print("Subdomain %d: " % gid, minb[0], minb[1], maxb[0], maxb[1], z.shape, zlocal.shape)
+
+    diyMaster.add(gid, InputControlBlock(gid,nControlPointsInput,core,xlocal,ylocal,zlocal), link)
+
+## Let us scatter data
+if rank == 0:
+
+    # mc3 = diy.Master(MPI.COMM_SELF)         # master
+    # domain_control2 = diy.DiscreteBounds([0,0], [nPointsX-1,nPointsY-1])
+    # d_control2 = diy.DiscreteDecomposer(2, domain_control2, nSubDomainsX*nSubDomainsY, share_face, wrap, ghosts, divisions)
+
+    requests = [MPI.REQUEST_NULL for i in range(1,nprocs)]
+    # Async scatter data to all processes based on their decomposition
+    for igid in range(1,nprocs):
+        print('Querying fill_bounds for ', igid)
+        sys.stdout.flush()
+
+        bnds = diy.DiscreteBounds([0,0], [0,0])
+        diyDDecomposer.fill_bounds(bnds, igid, (ghosts[0]==1))
+        ipminb = bnds.min
+        ipmaxb = bnds.max
+        print('fill_bounds for ', igid, ' are ', ipminb[0], ipmaxb[0], ipminb[1], ipmaxb[1])
+
+        # print('Data to send to ', igid, ' = ', z[ipminb[0]:ipmaxb[0]+1,ipminb[1]:ipmaxb[1]+1])
+        # requests[igid] = 
+        MPIcommW.send(z[ipminb[0]:ipmaxb[0],ipminb[1]:ipmaxb[1]], dest=igid)
+        print("Sent to ", igid, ipminb[0], ipmaxb[0], ipminb[1], ipmaxb[1])
+        sys.stdout.flush()
+
+    status = [MPI.Status() for i in range(1,nprocs)]
+    #Wait for all the messages to be sent
+    # MPI.Request.Waitall(requests, status)
+
+else:
+    bnds = diy.DiscreteBounds([0,0], [0,0])
+    diyDDecomposer.fill_bounds(bnds, rank, (ghosts[0]==1))
+    ipminb = bnds.min
+    ipmaxb = bnds.max
+    snx = ipmaxb[0]+1-ipminb[0]
+    sny = ipmaxb[1]+1-ipminb[1]
+    
+    z = np.zeros( (snx+1, sny+1), dtype=np.float64 if problem == 3 or problem == 4 else np.float32 )
+
+    # request = MPIcommW.Irecv(z, source=0)
+    z = MPIcommW.recv(source=0)
+    print(rank, ' - Waiting to receive data from root with size ', snx, sny, z.shape)
+    sys.stdout.flush()
+    # request.Wait()
+    print(rank, ' - Received data from root: ', z.shape)
+    sys.stdout.flush()
+
+MPIcommW.Barrier()
+
+print('Send/recv of all input data complete')
+
+# sys.exit(1)
+
+# Now let us do the full decomposition
+diyDDecomposer.decompose(rank, diyAssigner, add_input_control_block)
+
+## Clear up memory
 del x, y, z
 
-mc2.foreach(InputControlBlock.show)
+if rank == 0: print ("\n---- Starting Global Iterative Loop ----")
+diyMaster.foreach(InputControlBlock.show)
 
 #########
 import timeit
@@ -1748,9 +1869,9 @@ for iterIdx in range(nASMIterations):
     
     # Now let us perform send-receive to get the data on the interface boundaries from 
     # adjacent nearest-neighbor subdomains
-    mc2.foreach(InputControlBlock.send)
-    mc2.exchange(False)
-    mc2.foreach(InputControlBlock.recv)
+    diyMaster.foreach(InputControlBlock.send)
+    diyMaster.exchange(False)
+    diyMaster.foreach(InputControlBlock.recv)
 
     if iterIdx > 1:
         disableAdaptivity = True
@@ -1763,33 +1884,33 @@ for iterIdx in range(nASMIterations):
     # constrainInterfaces = True
 
     if iterIdx > 0 and rank == 0: print("")
-    mc2.foreach(InputControlBlock.solve_adaptive)
+    diyMaster.foreach(InputControlBlock.solve_adaptive)
     
     if disableAdaptivity:
         # if rank == 0: print("")
-        mc2.foreach(InputControlBlock.check_convergence)
+        diyMaster.foreach(InputControlBlock.check_convergence)
 
     if showplot:
 
         figHnd = plt.figure()
         figHndErr = plt.figure()
 
-        mc2.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, figHnd, figHndErr, "%d-%d"%(cp.gid(),iterIdx)))
+        diyMaster.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, figHnd, figHndErr, "%d-%d"%(cp.gid(),iterIdx)))
 
         # Now let us draw the data from each subdomain
-        mc2.foreach(InputControlBlock.plot_control)
-        mc2.foreach(InputControlBlock.plot_error)
+        diyMaster.foreach(InputControlBlock.plot_control)
+        diyMaster.foreach(InputControlBlock.plot_error)
 
         #figHnd.savefig("decoded-data-%d-%d.png"%(iterIdx))   # save the figure to file
         #figHndErr.savefig("error-data-%d-%d.png"%(iterIdx))   # save the figure to file
 
-    # commW.Barrier()
+    # MPIcommW.Barrier()
     sys.stdout.flush()
 
     if useVTKOutput:
 
-        mc2.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, None, None, "%d-%d"%(cp.gid(),iterIdx)))
-        mc2.foreach(InputControlBlock.output_vtk)
+        diyMaster.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, None, None, "%d-%d"%(cp.gid(),iterIdx)))
+        diyMaster.foreach(InputControlBlock.output_vtk)
 
         WritePVTKFile(iterIdx)
 
@@ -1797,7 +1918,7 @@ for iterIdx in range(nASMIterations):
         if rank == 0: print( "\n\nASM solver converged after %d iterations\n\n" % (iterIdx) )
         break
 
-# mc2.foreach(InputControlBlock.print_solution)
+# diyMaster.foreach(InputControlBlock.print_solution)
 
 elapsed = timeit.default_timer() - start_time
 
@@ -1810,7 +1931,7 @@ if rank == 0:
 if rank == 0: print('')
 
 np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
-mc2.foreach(InputControlBlock.print_error_metrics)
+diyMaster.foreach(InputControlBlock.print_error_metrics)
 
 if showplot: plt.show()
 
