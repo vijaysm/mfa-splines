@@ -20,6 +20,7 @@ from matplotlib import pyplot as plt
 from matplotlib import cm
 from scipy.interpolate import Rbf
 from pyevtk.hl import gridToVTK 
+# import tracemalloc
 
 plt.style.use(['seaborn-whitegrid'])
 # plt.style.use(['ggplot'])
@@ -29,7 +30,7 @@ params = {"ytick.color" : "b",
           "axes.labelcolor" : "b",
           "axes.edgecolor" : "b"}
 plt.rcParams.update(params)
-useVTKOutput = True
+useVTKOutput = False
 
 # --- set problem input parameters here ---
 nSubDomainsX   = 3
@@ -69,6 +70,9 @@ maxAdaptIter   = 3
 AdaptiveStrategy = 'reset'
 # ------------------------------------------
 
+# tracemalloc.start()
+
+#@profile
 def plot3D(fig, Z, x=None, y=None):
     if x is None:
         x = np.arange(Z.shape[0])
@@ -114,6 +118,8 @@ try:
 except getopt.GetoptError:
   usage()
 
+nPointsX = nPointsY = 0
+DminX = DminY = DmaxX = DmaxY = 0.0
 nControlPointsInput = []
 for opt, arg in opts:
   if opt == '-h':
@@ -142,6 +148,8 @@ for opt, arg in opts:
 
 from scipy.ndimage import zoom
 
+#def read_problem_parameters():
+x = y = z = None
 if problem == 1:
     nPointsX = 501
     nPointsY = 501
@@ -160,6 +168,7 @@ if problem == 1:
     z = z.T
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0: nControlPointsInput = 5*np.array([6,6])
+    del X, Y
 
 elif problem == 2:
     nPointsX = 501
@@ -179,6 +188,7 @@ elif problem == 2:
     # z = scale * X
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0: nControlPointsInput = 4*np.array([1,1])
+    del X, Y
 
 elif problem == 3:
     z = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200,200)
@@ -212,12 +222,12 @@ elif problem == 4:
     if len(nControlPointsInput) == 0: nControlPointsInput = 20*np.array([1,1])
 
 else:
-    z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
+    z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(1800, 3600) #
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
     DminX = DminY = 0
-    DmaxX = 3600
-    DmaxY = 1800.
+    DmaxX = 1800
+    DmaxY = 3600.
     print("CESM data shape: ", z.shape)
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
@@ -240,7 +250,35 @@ fig = None
 if showplot: fig = plt.figure()
 plot3D(fig, z, x, y)
 
+### Print parameter details ###
+if rank == 0:
+    print('\n==================')
+    print('Parameter details')
+    print('==================\n')
+    print('problem = ', problem, '[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]')
+    print('Total number of input points: ', nPointsX*nPointsY)
+    print('nSubDomains = ', nSubDomainsX * nSubDomainsY)
+    print('degree = ', degree)
+    print('nControlPoints = ', nControlPointsInput)
+    print('nASMIterations = ', nASMIterations)
+    # print('overlapData = ', overlapData)
+    print('useAdditiveSchwartz = ', useAdditiveSchwartz)
+    print('useDerivativeConstraints = ', useDerivativeConstraints)
+    print('enforceBounds = ', enforceBounds)
+    print('maxAbsErr = ', maxAbsErr)
+    print('maxRelErr = ', maxRelErr)
+    print('solverMaxIter = ', solverMaxIter)
+    print('AdaptiveStrategy = ', AdaptiveStrategy)
+    print('solverscheme = ', solverScheme)
+    print('\n=================\n')
+
+#------------------------------------
+
+sys.stdout.flush()
+
+
 # Let us create a parallel VTK file
+#@profile
 def WritePVTKFile(iteration):
     pvtkfile = open("pstructured-mfa-%d.pvts"%(iteration),"w") 
 
@@ -277,37 +315,7 @@ def WritePVTKFile(iteration):
 
     pvtkfile.close()
 
-
 #------------------------------------
-
-### Print parameter details ###
-if rank == 0:
-    print('\n==================')
-    print('Parameter details')
-    print('==================\n')
-    print('problem = ', problem, '[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]')
-    print('Total number of input points: ', nPointsX*nPointsY)
-    print('nSubDomains = ', nSubDomainsX * nSubDomainsY)
-    print('degree = ', degree)
-    print('nControlPoints = ', nControlPointsInput)
-    print('nASMIterations = ', nASMIterations)
-    # print('overlapData = ', overlapData)
-    print('useAdditiveSchwartz = ', useAdditiveSchwartz)
-    print('useDerivativeConstraints = ', useDerivativeConstraints)
-    print('enforceBounds = ', enforceBounds)
-    print('maxAbsErr = ', maxAbsErr)
-    print('maxRelErr = ', maxRelErr)
-    print('solverMaxIter = ', solverMaxIter)
-    print('AdaptiveStrategy = ', AdaptiveStrategy)
-    print('solverscheme = ', solverScheme)
-    print('\n=================\n')
-
-#------------------------------------
-
-sys.stdout.flush()
-
-# In[3]:
-
 
 from autograd import elementwise_grad as egrad
 from scipy import linalg, matrix
@@ -331,45 +339,48 @@ def getControlPoints(knots, k):
         cx[i] = float(tsum) / k
     return cx
 
+#@profile
 def get_decode_operator(W, Nu, Nv):
-    Nu = Nu[...,np.newaxis]
-    Nv = Nv[:,np.newaxis]
-    NN = []
-    for ui in range(Nu.shape[0]):
-        for vi in range(Nv.shape[0]):
-          NN.append(Nu[ui]*Nv[vi])  
-    NN = np.array(NN)
+    RNx = Nu * np.sum(W, axis=0)
+    RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
+    RNy = Nv * np.sum(W, axis=1)
+    RNy /= np.sum(RNy, axis=1)[:,np.newaxis]
+    # print('Decode error res: ', RNx.shape, RNy.shape)
+    # decoded = np.matmul(np.matmul(RNx, P), RNy.T)
 
-    # RN = (NN*W)/(np.sum(NN*W, axis=1)[:,np.newaxis])
-    # RN = np.tensordot(NN, W) / np.tensordot(NN, W)
-    RN = (NN * W) / np.tensordot(NN, W)
+    return RNx, RNy
 
-    # print('RN.shape = ', RN.shape)
+#@profile
+def decode(P, W, iNu, iNv):
+    decoded = []
+    method = 2
+    if method == 1:
+        Nu = iNu[...,np.newaxis]
+        Nv = iNv[:,np.newaxis]
+        NN = []
+        for ui in range(Nu.shape[0]):
+            for vi in range(Nv.shape[0]):
+              NN.append(Nu[ui]*Nv[vi])  
+        NN = np.array(NN)
 
-    return RN, [Nu.shape[0], Nv.shape[0]]
-    # decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
-    # return decoded.reshape((Nu.shape[0], Nv.shape[0]))
+        decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
+        del NN
+        decoded = decoded.reshape((Nu.shape[0], Nv.shape[0]))
+    else:
 
-def decode(P, W, Nu, Nv):
-    Nu = Nu[...,np.newaxis]
-    Nv = Nv[:,np.newaxis]
-    NN = []
-    for ui in range(Nu.shape[0]):
-        for vi in range(Nv.shape[0]):
-          NN.append(Nu[ui]*Nv[vi])  
-    NN = np.array(NN)
+        RNx = iNu * np.sum(W, axis=0)
+        RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
+        RNy = iNv * np.sum(W, axis=1)
+        RNy /= np.sum(RNy, axis=1)[:,np.newaxis]
+        # print('Decode error res: ', RNx.shape, RNy.shape)
+        decoded = np.matmul(np.matmul(RNx, P), RNy.T)
+        # print('Decode error res: ', decoded.shape, decoded2.shape, np.max(np.abs(decoded.reshape((Nu.shape[0], Nv.shape[0])) - decoded2)))
+        # print('Decode error res: ', z.shape, decoded.shape)
 
-    decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
-    return decoded.reshape((Nu.shape[0], Nv.shape[0]))
-#     RNx = N[0] * np.sum(W, axis=0)
-#     RNx /= np.sum(RNx, axis=1)[:,np.newaxis]
-#     RNy = N[1] * np.sum(W, axis=1)
-#     RNy /= np.sum(RNy, axis=1)[:,np.newaxis]
-#     return np.matmul(np.matmul(RNx, P), RNy.T)
+    return decoded
 
 def Error(P, W, z, degree, Nu, Nv):
     Ploc = decode(P, W, Nu, Nv)
-    # print('Error shapes: ', Ploc.shape, z.shape)
     return (Ploc - z)
 
 def RMSE(P, W, z, degree, Nu, Nv):
@@ -383,7 +394,6 @@ def NMaxError(P, W, z, degree, Nu, Nv):
 def NMSE(P, W, z, degree, Nu, Nv):
     return (Error(P, W, z, degree, Nu, Nv)**2).mean()/zRange
 
-
 def toHomogeneous(P, W):
     return np.hstack( ( (P*W)[:,np.newaxis], W[:,np.newaxis]) )
 
@@ -391,7 +401,6 @@ def fromHomogeneous(PW):
     P = PW[:,0]
     W = PW[:,1]
     return P/W, W
-
 
 def getSplits(T, U):
     t = T[degree:-degree]
@@ -840,7 +849,7 @@ class InputControlBlock:
                     # print("Right: %d received from %d: from direction %s, with sizes %d+%d" % (cp.gid(), tgid, dir, pl, tl), self.rightconstraint, - self.pAdaptive[:,-1])
 
 
-
+    #@profile
     def LSQFit_NonlinearOptimize(self, idom, W, degree, constraintsAll=None):
 
         from scipy.optimize import root, anderson, newton_krylov#, BroydenFirst, KrylovJacobian
@@ -869,6 +878,9 @@ class InputControlBlock:
             print ('Constraints are all null. Solving unconstrained.')
             initSol = np.ones_like(W)
 
+        # Compute hte linear operators needed to compute decoded residuals
+        decodeOpX, decodeOpY = get_decode_operator(W, self.Nu, self.Nv)
+
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
@@ -881,7 +893,9 @@ class InputControlBlock:
             if constrainInterfaces and False:
                 decoded_residual_norm = 0
             else:
-                decoded = decode(P, W, self.Nu, self.Nv)
+                # Residuals are in the decoded space - so direct way to constrain the boundary data
+                # decoded = decode(P, W, self.Nu, self.Nv)
+                decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
                 residual_decoded = np.abs( decoded - self.zl )/zRange
                 residual_vec_decoded = residual_decoded.reshape(residual_decoded.shape[0]*residual_decoded.shape[1])
                 decoded_residual_norm = np.sqrt(np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
@@ -1024,9 +1038,7 @@ class InputControlBlock:
             P = Pin.reshape(W.shape)
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
-            decodeOperator, decodeShape = get_decode_operator(W, self.Nu, self.Nv)
-            decoded = decodeOperator.dot(P)
-            decoded = decoded.reshape(decodeShape)
+            decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
             residual_decoded = np.abs( decoded - self.zl )/zRange
 
 #             res1 = np.dot(res_dec, self.Nv)
@@ -1374,6 +1386,7 @@ class InputControlBlock:
 
         isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.MIN)
 
+    #@profile
     def adaptive(self, iSubDom, xl, yl, zl, strategy='extend', weighted=False, 
                  r=1, MAX_ERR=1e-3, MAX_ITER=5, 
                  split_all=True, 
@@ -1635,6 +1648,7 @@ class InputControlBlock:
 
         return P, W, Tu, Tv, np.array([k]), decodedError
 
+    #@profile
     def solve_adaptive(self, cp):
 
         if self.outerIterationConverged:
@@ -1698,6 +1712,10 @@ class InputControlBlock:
 
 #########
 
+#@profile
+#def execute_asm_loop():
+#read_problem_parameters()
+
 # Initialize DIY
 commWorld = diy.mpi.MPIComm()           # world
 mc2 = diy.Master(commWorld)         # master
@@ -1719,7 +1737,6 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     mc2.add(gid, InputControlBlock(gid,nControlPointsInput,core,xlocal,ylocal,zlocal), link)
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
-
 errors = np.zeros([nASMIterations,2]) # Store L2, Linf errors as function of iteration
 
 # Let us initialize DIY and setup the problem
@@ -1791,7 +1808,7 @@ for iterIdx in range(nASMIterations):
         mc2.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(icb, cp, None, None, "%d-%d"%(cp.gid(),iterIdx)))
         mc2.foreach(InputControlBlock.output_vtk)
 
-        WritePVTKFile(iterIdx)
+        if rank == 0: WritePVTKFile(iterIdx)
 
     if isASMConverged == 1:
         if rank == 0: print( "\n\nASM solver converged after %d iterations\n\n" % (iterIdx) )
@@ -1813,4 +1830,41 @@ np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 mc2.foreach(InputControlBlock.print_error_metrics)
 
 if showplot: plt.show()
+
+
+### If we want to trace memory footprint ###
+
+def display_top(snapshot, key_type='lineno', limit=3):
+    import os, linecache
+    snapshot = snapshot.filter_traces((
+        tracemalloc.Filter(False, "<frozen importlib._bootstrap>"),
+        tracemalloc.Filter(False, "<unknown>"),
+    ))
+    top_stats = snapshot.statistics(key_type)
+
+    print("Top %s lines" % limit)
+    for index, stat in enumerate(top_stats[:limit], 1):
+        frame = stat.traceback[0]
+        # replace "/path/to/module/file.py" with "module/file.py"
+        filename = os.sep.join(frame.filename.split(os.sep)[-2:])
+        print("#%s: %s:%s: %.1f KiB"
+              % (index, filename, frame.lineno, stat.size / 1024))
+        line = linecache.getline(frame.filename, frame.lineno).strip()
+        if line:
+            print('    %s' % line)
+
+    other = top_stats[limit:]
+    if other:
+        size = sum(stat.size for stat in other)
+        print("%s other: %.1f KiB" % (len(other), size / 1024))
+    total = sum(stat.size for stat in top_stats)
+    print("Total allocated size: %.1f KiB" % (total / 1024))
+
+# snapshot = tracemalloc.take_snapshot()
+# display_top(snapshot)
+
+## ---------------- END MAIN FUNCTION -----------------
+
+#if __name__ == '__main__':
+#execute_asm_loop()
 
