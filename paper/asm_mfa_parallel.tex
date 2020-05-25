@@ -351,7 +351,7 @@ r_i(\Omega_i \bigcup \Delta_{i}) &=& \left\lVert r_i(\Omega_i) \right\rVert_2 + 
 \label{eq:nonlinear-residuals}
 \end{eqnarray}
 
-where $\epsilon$ is the boundary penalty term, typically set to $10^{-7}$ and $\delta_{i,j}$ is the Kronecker delta.
+where $\epsilon$ is the boundary penalty term, typically set to $10^{7}$ and $\delta_{i,j}$ is the Kronecker delta.
 
 The augmented solution for each local subdomain after nearest neighbor exchange can contain control points and corresponding derivative data to constrain DoFs on both the left and right interfaces in 1-D. This definition can be extended naturally to higher dimensions, and hence the penalized constraints on the boundary terms can be evaluated as a loop over all shared interfaces to compute the net residual. The minimizer in terms of the control point solution is achieved when the interface solutions match on either side to drive the nonlinear residuals to zero.
 

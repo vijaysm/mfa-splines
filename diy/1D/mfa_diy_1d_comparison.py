@@ -25,23 +25,23 @@ params = {"ytick.color" : "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomains    = 16
+nSubDomains    = 4
 degree         = 3
 nControlPoints = 24 #(3*degree + 1) #minimum number of control points
-useDecodedResidual = True
-overlapData    = 64
+useDecodedResidual = False
+overlapData    = 0
 overlapCP      = 0
 problem        = 0
 scale          = 1
-showplot       = False
-nASMIterations = 5
+showplot       = True
+nASMIterations = 4
 # Look at ovRBFPower param below if using useDecodedResidual = True
 #
 # ------------------------------------------
 # Solver parameters
 solverscheme   = 'SLSQP' # [SLSQP, COBYLA]
 useAdditiveSchwartz = True
-useDerivativeConstraints = 1
+useDerivativeConstraints = 0
 enforceBounds = False
 disableAdaptivity = True
 # 
@@ -112,7 +112,7 @@ for opt, arg in opts:
 if problem == 0:
     Dmin           = -4.
     Dmax           = 4.
-    nPoints        = 1025
+    nPoints        = 501
     x = np.linspace(Dmin, Dmax, nPoints)
     scale          = 100
     # y = scale * (np.sinc(x+1))
@@ -245,8 +245,8 @@ class InputControlBlock:
         self.interface_constraints_obj['P']=[[],[],[]]
         self.interface_constraints_obj['W']=[[],[],[]]
         self.interface_constraints_obj['T']=[[],[],[]]
-        self.decodedAdaptive = np.zeros(xl.shape)
-        self.decodedAdaptiveOld = np.zeros(xl.shape)
+        self.decodedAdaptive = np.zeros(yl.shape)
+        self.decodedAdaptiveOld = np.zeros(yl.shape)
 
         ## Convergence related metrics and checks
         self.outerIteration = 0
