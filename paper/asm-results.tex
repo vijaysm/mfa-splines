@@ -174,7 +174,7 @@ A strong scalability test was performed on the Bebop cluster with the climate da
 
 As expected, the hierarchical iterative scheme with RAS-Krylov combination shows excellent scalability for the chosen dataset and the overall time to compute the MFA was reduced from nearly 7000s on a single process,  to 9.5s on 2048 processes, while ensuring $G_0, G_1$ continuity in the domain interfaces. The ratio of computational work in local subdomain solves in comparison to communication time in nearest-neighbor exchanges gradually increases as subdomain size shrinks. This is due to the fact that global information on smaller subdomains take multiple iterations to propagate, and hence using overlaps for such large problems would be a recommended extension in the future to improve overall scalability of the algorithm.
 
-\Remark{should we try to do a small performance profile benchmark
+\Remark{should we try to do a performance model for this particular case ?
 	communication: C = 4096*4 = 16384 messages
 	serial = 5C + 5A
 	parallel = 5C + 5A/p
@@ -246,7 +246,7 @@ As expected, the hierarchical iterative scheme with RAS-Krylov combination shows
 	
 	\end{loglogaxis}
 	\end{tikzpicture}
-	\caption{Strong Scalability of the 2-D CESM Problem with 4096 subdomains and 100 control points/subdomain}
+	\caption{Strong scalability of the 2-D CESM Problem with 4,096 subdomains and 100 control points/subdomain}
 	\label{fig:cesm-strong-scalability}
 \end{figure}
 

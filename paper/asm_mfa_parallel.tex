@@ -112,13 +112,12 @@ functional approximation, domain decomposition, scalable methods, RASM
 
 \section{Introduction}
 
-Large-scale discrete data analysis of various scientific computational simulations often require high-order continuous functional representations that have to be evaluated anywhere in the domain. Such expansions described as Multivariate Functional Approximations (MFA) \cite{de1983approximation} in arbitrary dimensions allow the original discrete data to be compressed, and expressed in a compact closed form in addition to supporting higher-order derivative queries. One particular option is to use NURBS bases \cite{nurbs-book} for the MFA encoding of scientific data. Due to the potentially large datasets that need to be encoded into MFA, the need for computationally efficient algorithms (in both time and memory) to parallelize the work is critically important. 
+Large-scale discrete data analysis of various scientific computational simulations often require high-order continuous functional representations that have to be evaluated anywhere in the domain. Such expansions described as Multivariate Functional Approximations (MFA) \cite{de1983approximation} in arbitrary dimensions allow the original discrete data to be compressed, and expressed in a compact closed form in addition to supporting higher-order derivative queries. One particular option is to use NURBS bases \cite{nurbs-book} for the MFA {\em encoding} of scientific data. Due to the potentially large datasets that need to be encoded into MFA, the need for computationally efficient algorithms (in both time and memory) to parallelize the work is critically important. It is also essential to guarantee that the solution smoothness in the reconstructed ({\em decoding}) dataset is consistently preserved when transitioning from a single MFA block to multiple blocks during parallelization.
 
-In the current paper, we utilize domain decomposition (DD) techniques \cite{smith-ddm} with data partitioning strategies to produce scalable algorithms to adaptively compute the MFA to reproduce a given dataset within user-specified tolerances. In such partitions, it is imperative to ensure that the continuity of the data across subdomain interfaces is maintained and is consistent with the degree of the underlying bases used in the NURBS-based MFA \cite{peterka-mfa}. 
+With these motivations, in the current paper, we utilize domain decomposition (DD) techniques \cite{smith-ddm} with data partitioning strategies to produce scalable algorithms to adaptively compute the MFA to reproduce a given dataset within user-specified tolerances. In such partitions, it is imperative to ensure that the continuity of the data across subdomain interfaces is maintained and is consistent with the degree of the underlying bases used in the NURBS-based MFA \cite{peterka-mfa}. 
 We present an iterative DD scheme with an outer Schwarz-type iterative scheme in order to ensure that continuity is enforced, and the overall error stays bounded when number of subdomains is increased (subdomain size decreases).
 
-\Remark{mention that method not limited to G0, G1 or G2 but arbitrary order upto p-1, where p is degree of NURBS bases}
-%{\color{red}THIS IS A DRAFT}
+%\Remark{mention that method not limited to G0, G1 or G2 but arbitrary order upto p-1, where p is degree of NURBS bases}
 
 %\begin{itemize}
 %	\item Talk about MFA and how it can be used to approximation discrete solution data. Reference previous work.
@@ -136,8 +135,8 @@ DD techniques for parallel approximation of scattered data has been explored pre
 
 Application of DD schemes and NURBS bases with isogeometric analysis (IGA) to high-fidelity modeling of nonlinear Partial Differential Equations (PDEs) have enjoyed recent success \cite{marini2015parallel, petiga-dalcin-2016} at scale, but many implementations lack full support to handle multiple geometric patches in a distributed memory setting due to non-trivial requirements on continuity constraints at patch boundaries. Note that when using NURBS bases in a multipatch setting, the B-splines on the patch boundaries are interpolatory, thereby ensuring $G_0$ continuity in the solution for free. However, incorporating higher order geometric continuity require specialized parameterizations in order to preserve the approximation properties \cite{kapl2018construction} and can be difficult to parallelize \cite{hofer2018fast}. 
 
-However, to our knowledge, using a NURBS bases to compute the MFA in parallel, while maintaining higher-order continuity across subdomains, has not been explored previously. 
-To overcome some of these issues with discontinuities along NURBS patches, Zhange et al \cite{zhang-nurbs-continuity} proposed to use a gradient projection scheme to constrain the value ($G_0$), the gradient ($G_1$), and the Hessian ($G_2$) at a small number of test points for optimal shape recovery. Such a constrained projection yields coupled systems of equations for control point data for local patches, and result in a global minimization problem that needs to be computed.
+However, to our knowledge, using a NURBS bases to compute the MFA in parallel, while maintaining higher-order continuity across subdomains has not been explored previously. 
+To overcome some of these issues with discontinuities along NURBS patches, Zhang et al \cite{zhang-nurbs-continuity} proposed to use a gradient projection scheme to constrain the value ($G_0$), the gradient ($G_1$), and the Hessian ($G_2$) at a small number of test points for optimal shape recovery. Such a constrained projection yields coupled systems of equations for control point data for local patches, and result in a global minimization problem that needs to be computed.
 
 Alternatively, it is possible to create a constrained recovery during the actual post-processing stage i.e., during the decoding stage of the MFA through blending techniques \cite{grindeanu-blending}, in order to recover continuity in the decoded data. However, the underlying MFA representation remains discontinuous, and would become more so with increasing number of subdomains. Moreover, selecting the amount of overlaps and resulting width of the blending region relies strongly on a heuristic, which can be problematic.
 
@@ -293,7 +292,7 @@ In this scheme, the coupled data $P_2, W_2$ and $P_1, W_1$ for subdomains $\Omeg
 The volume of messages exchanged however depends on several factors.
 
 \begin{enumerate}
-	\item \textbf{Continuity}: The degree of continuity determines the stencil needed to enforce the constraints on either side of the interface
+	\item \textbf{Continuity}: The degree of continuity (up to $p-1$) determines the stencil needed to enforce the constraints on either side of the interface 
 	\item \textbf{Overlap}: The amount of overlap ($\Delta$) determines the number of coupled data layers to be communicated between neighboring domains
 \end{enumerate}
 
@@ -497,6 +496,8 @@ We have presented a scalable DD approach to tackle the issue of discontinuous MF
 The strong scalability of the algorithm was also explored for a reasonably large 2-D climate dataset with 6.5M data points. The outer-inner iterative scheme provides very good strong scalability up to 1024 processes after which the performance degrades slightly due to the lack of local computation work in comparison to the latency and communication costs associated with the nearest-neighbor exchanges of constraint data. 
 
 A more natural way to ensure continuity across NURBS patches would be to use T-splines \cite{sederberg-2004}, which is specifically designed for merging higher-dimensional surfaces with non-matching knot locations. The implementation of T-splines for adaptivity in the context of MFA is currently being explored, and the presented ASM based solver approach can still be used to impose constraints across subdomain patch boundaries, while local constraints within each block to satisfy hanging node DoFs can be imposed with appropriate T-spline basis modifications.
+
+Another extension within this infrastructure would be to utilize a multilevel MFA representation that hierarchically refines the NURBS approximation at each level, solved using the RAS iterative scheme. Computing a multilevel MFA has not been attempted previously and the performance acceleration due to DD and accuracy improvements due to successive approximations will be explored for higher dimensional problems.
 
 The methodology and experiments presented in the paper are implemented mostly in Python. The current Pythonic interface, PyDIY is only a barebones interface. These algorithms will be ported to the more production-ready C++ MFA codebase \cite{mfa-codebase} in the future. The new implementation will directly make use to the DIY C++ library and all its features for data decomposition along with fast local subdomain solvers without overheads typically associated with Python codes. 
 %and hence, a better estimate of the overall performance of both the RAS iterative scheme and the subdomain solvers without the overheads of dependent solvers in Python will provide 
