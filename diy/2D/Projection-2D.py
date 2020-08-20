@@ -51,12 +51,12 @@ params = {"ytick.color": "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomainsX = 1
+nSubDomainsX = 2
 nSubDomainsY = 2
 degree = 3
 problem = 1
 verbose = False
-showplot = True
+showplot = False
 useVTKOutput = False
 
 # ------------------------------------------
@@ -66,11 +66,11 @@ useDerivativeConstraints = 0
 
 # L-BFGS-B: 0m33.795s, TNC: 0m20.516s (wrong), CG: 0m52.079s (large errors, unbounded), SLSQP: 2m40.323s (dissipative), Newton-CG: 8 mins and no progress, trust-krylov: hessian required
 # L-BFGS-B: 1m7.170s, TNC: 0m35.488s
-#                      0        1     2       3         4              5
-solverMethods = ['L-BFGS-B', 'TNC', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov', 'krylov']
+#                      0      1       2         3              4             5
+solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov', 'krylov']
 solverScheme = solverMethods[0]
-solverMaxIter = 25
-nASMIterations = 2
+solverMaxIter = 20
+nASMIterations = 8
 
 projectData = True
 enforceBounds = False
@@ -80,18 +80,21 @@ constrainInterfaces = True
 # Use deccoded residual definitions with possible overlap
 useDecodedConstraints = True
 useDecodedResidual = useDecodedConstraints
-overlapData = 0
+if useDecodedConstraints:
+    overlapData = 10
+else:
+    overlapData = 0
 
 useDeCastelJau = True
 disableAdaptivity = True
 variableResolution = False
 
-maxAbsErr = 1e-2
+maxAbsErr = 1e-4
 maxRelErr = 1e-10
 maxAdaptIter = 3
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
-interpOrder = 'linear'
+interpOrder = 'cubic'
 # ------------------------------------------
 
 # tracemalloc.start()
@@ -196,14 +199,14 @@ if problem == 1:
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
-    # z = scale * ( np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)) )
+    # z = scale * (np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)))
     z = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
-    # z = X**2 + Y**2
+    # z = X**4 + Y**4 - X**3 * Y**3
     # z = X
     z = z.T
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0:
-        nControlPointsInput = 10*np.array([6, 6])
+        nControlPointsInput = 16*np.array([1, 1])
     del X, Y
 
 elif problem == 2:
@@ -761,7 +764,7 @@ class InputControlBlock:
     def plot_error(self, cp):
 
         # self.pMK = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
-        errorDecoded = np.abs(self.zl - self.pMK)
+        errorDecoded = np.abs(self.zl - self.pMK)/zRange
 
         Xi, Yi = np.meshgrid(self.xl, self.yl)
 
@@ -824,16 +827,14 @@ class InputControlBlock:
                 if dir[0] == 0:  # target is coupled in Y-direction
                     if dir[1] > 0:  # target block is above current subdomain
                         if useDecodedResidual:
-                            # pl = (overlapData+1) * len(self.decodedAdaptive[:, -1])
                             # print('Sending to bottom domain: ', self.corebounds[3], overlapData)
-                            # o = self.decodedAdaptive[:, self.corebounds[3]-overlapData-1:self.corebounds[3]]
-                            if overlapData > 0:
-                                o = np.array(self.decodedAdaptive
-                                             [:, self.corebounds[3] - overlapData: self.corebounds[3] + 1])
-                                # o = self.decodedAdaptive[:, -overlapData-1:]
-                            else:
-                                o = np.array(self.decodedAdaptive[:, -1])
-                            # print('Sending to bottom domain: ', self.corebounds[3], overlapData, o)
+                            # if overlapData > 0:
+                            #     o = np.array(self.decodedAdaptive
+                            #                  [:, self.corebounds[3] - overlapData: self.corebounds[3] + 1])
+                            #     # o = self.decodedAdaptive[:, -overlapData-1:]
+                            # else:
+                            #     o = np.array(self.decodedAdaptive[:, -1])
+                            o = np.array(self.decodedAdaptive[:, self.corebounds[3] - overlapData])
                         else:
                             pl = (useDerivativeConstraints+1)*len(self.pAdaptive[:, -1])
                             if pl == 0:
@@ -851,15 +852,14 @@ class InputControlBlock:
 
                     else:  # target block is below current subdomain
                         if useDecodedResidual:
-                            # pl = (overlapData+1) * len(self.decodedAdaptive[:, 0])
-                            # o = np.array(self.decodedAdaptive[:, overlapData+1:0:-1])
-                            if overlapData > 0:
-                                # print('Sending to top domain: ', self.corebounds[2], overlapData)
-                                o = self.decodedAdaptive[:, self.corebounds[2]-overlapData:self.corebounds[2]+1]
-                                # o = self.decodedAdaptive[:, self.corebounds[2]:self.corebounds[2]-overlapData:-1]
-                            else:
-                                o = np.array(self.decodedAdaptive[:, 0])
+                            # if overlapData > 0:
+                            #     # print('Sending to top domain: ', self.corebounds[2], overlapData)
+                            #     o = self.decodedAdaptive[:, self.corebounds[2]-overlapData:self.corebounds[2]+1]
+                            #     # o = self.decodedAdaptive[:, self.corebounds[2]:self.corebounds[2]-overlapData:-1]
+                            # else:
+                            #     o = np.array(self.decodedAdaptive[:, 0])
                             # print('Sending to top domain: ', self.corebounds[2], overlapData, o)
+                            o = np.array(self.decodedAdaptive[:, self.corebounds[2]])
                         else:
                             pl = (useDerivativeConstraints+1)*len(self.pAdaptive[:, 0])
                             if pl == 0:
@@ -877,13 +877,13 @@ class InputControlBlock:
                 if dir[1] == 0:  # target is coupled in X-direction
                     if dir[0] > 0:  # target block is to the right of current subdomain
                         if useDecodedResidual:
-                            # pl = (overlapData+1) * len(self.decodedAdaptive[-1, :])
-                            if overlapData > 0:
-                                o = np.array(self.decodedAdaptive
-                                             [self.corebounds[1] - overlapData: self.corebounds[1] + 1, :])
-                                # o = self.decodedAdaptive[self.corebounds[1]-overlapData:self.corebounds[1]+1, :].T
-                            else:
-                                o = np.array(self.decodedAdaptive[-1, :])
+                            # if overlapData > 0:
+                            #     o = np.array(self.decodedAdaptive
+                            #                  [self.corebounds[1] - overlapData: self.corebounds[1] + 1, :])
+                            #     # o = self.decodedAdaptive[self.corebounds[1]-overlapData:self.corebounds[1]+1, :].T
+                            # else:
+                            #     o = np.array(self.decodedAdaptive[-1, :])
+                            o = np.array(self.decodedAdaptive[-1, :])
                         else:
                             pl = (useDerivativeConstraints+1)*len(self.pAdaptive[-1, :])
                             if pl == 0:
@@ -900,14 +900,13 @@ class InputControlBlock:
 
                     else:  # target block is to the left of current subdomain
                         if useDecodedResidual:
-                            # pl = (overlapData+1) * len(self.decodedAdaptive[:, -1])
-                            # o = self.decodedAdaptive[:overlapData+1, :]
-                            if overlapData > 0:
-                                # print('Sending to top domain: ', self.corebounds[2], overlapData)
-                                o = self.decodedAdaptive[self.corebounds[0]-overlapData:self.corebounds[0]+1, :]
-                                # o = self.decodedAdaptive[:, self.corebounds[2]:self.corebounds[2]-overlapData:-1]
-                            else:
-                                o = np.array(self.decodedAdaptive[0, :])
+                            # if overlapData > 0:
+                            #     # print('Sending to top domain: ', self.corebounds[2], overlapData)
+                            #     o = self.decodedAdaptive[self.corebounds[0]-overlapData:self.corebounds[0]+1, :]
+                            #     # o = self.decodedAdaptive[:, self.corebounds[2]:self.corebounds[2]-overlapData:-1]
+                            # else:
+                            #     o = np.array(self.decodedAdaptive[0, :])
+                            o = np.array(self.decodedAdaptive[0, :])
                         else:
                             pl = (useDerivativeConstraints+1)*len(self.pAdaptive[0, :])
                             if pl == 0:
@@ -950,7 +949,8 @@ class InputControlBlock:
             if dir[0] == 0:  # target is coupled in Y-direction
                 if dir[1] > 0:  # target block is above current subdomain
                     if useDecodedResidual:
-                        self.topconstraint = np.array(o.reshape(self.xl.shape[0], overlapData+1)) if len(o) else []
+                        # self.topconstraint = np.array(o.reshape(self.xl.shape[0], overlapData+1)) if len(o) else []
+                        self.topconstraint = np.array(o.reshape(self.xl.shape[0], 1)) if len(o) else []
                         print("TopData: %d received from %d: from direction %s, with sizes " %
                               (cp.gid(), tgid, dir), self.topconstraint.shape)
                     else:
@@ -960,7 +960,8 @@ class InputControlBlock:
                         # print("Top: %d received from %d: from direction %s, with sizes %d+%d" % (cp.gid(), tgid, dir, pl, tl), self.topconstraint, self.topconstraintKnots)
                 else:  # target block is below current subdomain
                     if useDecodedResidual:
-                        self.bottomconstraint = np.array(o.reshape(self.xl.shape[0], overlapData+1)) if len(o) else []
+                        # self.bottomconstraint = np.array(o.reshape(self.xl.shape[0], overlapData+1)) if len(o) else []
+                        self.bottomconstraint = np.array(o.reshape(self.xl.shape[0], 1)) if len(o) else []
                         print("Bottomdata: %d received from %d: from direction %s, with sizes " %
                               (cp.gid(), tgid, dir), self.bottomconstraint.shape)
                     else:
@@ -972,7 +973,8 @@ class InputControlBlock:
             if dir[1] == 0:  # target is coupled in X-direction
                 if dir[0] < 0:  # target block is to the left of current subdomain
                     if useDecodedResidual:
-                        self.leftconstraint = np.array(o.reshape(overlapData+1, self.yl.shape[0])) if len(o) else []
+                        # self.leftconstraint = np.array(o.reshape(overlapData+1, self.yl.shape[0])) if len(o) else []
+                        self.leftconstraint = np.array(o.reshape(1, self.yl.shape[0])) if len(o) else []
                         print("LeftData: %d received from %d: from direction %s, with sizes " %
                               (cp.gid(), tgid, dir), self.leftconstraint.shape)
                         # self.leftconstraint = np.array(o) if len(o) else []
@@ -985,7 +987,8 @@ class InputControlBlock:
                         # print("Left: %d received from %d: from direction %s, with sizes %d+%d" % (cp.gid(), tgid, dir, pl, tl), self.leftconstraint, - self.pAdaptive[:,0])
                 else:  # target block is to right of current subdomain
                     if useDecodedResidual:
-                        self.rightconstraint = np.array(o.reshape(overlapData+1, self.yl.shape[0])) if len(o) else []
+                        # self.rightconstraint = np.array(o.reshape(overlapData+1, self.yl.shape[0])) if len(o) else []
+                        self.rightconstraint = np.array(o.reshape(1, self.yl.shape[0])) if len(o) else []
                         print("RightData: %d received from %d: from direction %s, with sizes " %
                               (cp.gid(), tgid, dir), self.rightconstraint.shape)
                         # self.rightconstraint = np.array(o.T) if len(o) else []
@@ -1004,7 +1007,6 @@ class InputControlBlock:
         constraints = None
         jacobian_const = None
         solution = []
-        zl = self.zl
 
         # Initialize relevant data
         if constraintsAll is not None:
@@ -1031,6 +1033,9 @@ class InputControlBlock:
         # self.Nv = basis(self.V[np.newaxis,:],degree,Tvnew[:,np.newaxis]).T
         decodeOpX, decodeOpY = get_decode_operator(W, self.Nu, self.Nv)
 
+        if constraints is not None:
+            decodedPrevIterate = np.matmul(np.matmul(decodeOpX, constraints), decodeOpY.T)
+
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
@@ -1047,7 +1052,7 @@ class InputControlBlock:
                 # Residuals are in the decoded space - so direct way to constrain the boundary data
                 # decoded = decode(P, W, self.Nu, self.Nv)
                 decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-                residual_decoded = np.abs(decoded - zl)/zRange
+                residual_decoded = np.abs(decoded - self.zl)/zRange
                 residual_vec_decoded = residual_decoded.reshape(residual_decoded.shape[0]*residual_decoded.shape[1])
                 decoded_residual_norm = np.sqrt(np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
 
@@ -1074,10 +1079,11 @@ class InputControlBlock:
             if constraints is not None and len(constraints) > 0 and constrainInterfaces:
                 if len(left) > 1:
                     if useDecodedConstraints:
-                        # leftdata = decode1D(P[0, :], np.ones(P[0, :].shape), self.yl, knotsAllV)
                         leftdata = decoded[overlapData, :]
-                        # print("Left: ", leftdata, left, np.linalg.norm(leftdata[:] - left[-1, :], ord=2))
-                        constrained_residual_norm += (np.sum((leftdata[:] - left[-1, :])**2) / len(leftdata))
+                        # constrained_residual_norm += (np.sum((leftdata[:] - left[-1, :])**2) / len(leftdata))
+                        constrained_residual_norm += LA.norm(leftdata[:] - 0.5 *
+                                                             (decodedPrevIterate[overlapData, :] + left[-1, :]),
+                                                             ord=2)
                     else:
                         if len(left[:, 0]) == len(P[0, :]):
                             ctrlpts_pos = getControlPoints(knotsAllV, degree)
@@ -1108,10 +1114,11 @@ class InputControlBlock:
 
                 if len(right) > 1:
                     if useDecodedConstraints:
-                        # rightdata = decode1D(P[-1, :], np.ones(P[-1, :].shape), self.yl, knotsAllV)
                         rightdata = decoded[-overlapData-1, :]
-                        # print("Right: ", rightdata, right, np.linalg.norm(rightdata[:] - right[-1, :], ord=2))
-                        constrained_residual_norm += (np.sum((rightdata[:] - right[-1, :])**2) / len(rightdata))
+                        # constrained_residual_norm += (np.sum((rightdata[:] - right[-1, :])**2) / len(rightdata))
+                        constrained_residual_norm += LA.norm(rightdata[:] - 0.5 *
+                                                             (decodedPrevIterate[-1 - overlapData, :] + right[-1, :]),
+                                                             ord=2)
                     else:
                         if len(right[:, 0]) == len(P[-1, :]):
                             ctrlpts_pos = getControlPoints(knotsAllV, degree)
@@ -1145,12 +1152,10 @@ class InputControlBlock:
                 if len(top) > 1:
                     if useDecodedConstraints:
                         topdata = decoded[:, -overlapData-1]
-                        # topdata = decode1D(P[:, -1], np.ones(P[:, -1].shape), self.xl, knotsAllU)
-                        # print("Top: ", topdata, top, np.linalg.norm(topdata[:] - top[:, -1], ord=2))
-                        # print("Top: ", top[:], topdata[:] - top[:, -1])
-                        # print("Top: ", np.linalg.norm(topdata[:] - top[:, 1], ord=2))
-                        # print("Top: ", np.linalg.norm(topdata[:] - top[:, 2], ord=2))
-                        constrained_residual_norm += (np.sum((topdata[:] - top[:, -1])**2) / len(topdata))
+                        # constrained_residual_norm += (np.sum((topdata[:] - top[:, -1])**2) / len(topdata))
+                        constrained_residual_norm += LA.norm(topdata[:] - 0.5 *
+                                                             (decodedPrevIterate[:, -overlapData-1] + top[:, -1]),
+                                                             ord=2)
                     else:
                         if len(top[:, 0]) == len(P[:, -1]):
                             ctrlpts_pos = getControlPoints(knotsAllU, degree)
@@ -1182,10 +1187,11 @@ class InputControlBlock:
 
                 if len(bottom) > 1:
                     if useDecodedConstraints:
-                        # bottomdata = decode1D(P[:, 0], np.ones(P[:, 0].shape), self.xl, knotsAllU)
                         bottomdata = decoded[:, 0]
-                        # print("Bottom: ", np.linalg.norm(bottomdata[:] - bottom[:, 0], ord=2))
-                        constrained_residual_norm += (np.sum((bottomdata[:] - bottom[:, 0])**2) / len(bottomdata))
+                        # constrained_residual_norm += (np.sum((bottomdata[:] - bottom[:, 0])**2) / len(bottomdata))
+                        constrained_residual_norm += LA.norm(bottomdata[:] - 0.5 *
+                                                             (decodedPrevIterate[:, 0] + bottom[:, 0]),
+                                                             ord=2)
                     else:
                         if len(bottom[:, 0]) == len(P[:, 0]):
                             ctrlpts_pos = getControlPoints(knotsAllU, degree)
@@ -1243,11 +1249,11 @@ class InputControlBlock:
             # Compute hte linear operators needed to compute decoded residuals
             # self.Nu = basis(self.U[np.newaxis,:],degree,Tunew[:,np.newaxis]).T
             # self.Nv = basis(self.V[np.newaxis,:],degree,Tvnew[:,np.newaxis]).T
-            decodeOpX, decodeOpY = get_decode_operator(W, self.Nu, self.Nv)
+            # decodeOpX, decodeOpY = get_decode_operator(W, self.Nu, self.Nv)
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-            residual_decoded = np.abs(decoded - self.zl)/zRange
+            residual_decoded = (decoded - self.zl)/zRange
 
 #             res1 = np.dot(res_dec, self.Nv)
 #             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
@@ -1274,9 +1280,12 @@ class InputControlBlock:
                 if len(left) > 1:
                     indx = 0
                     if useDecodedConstraints:
+                        offset = indx + overlapData
                         # leftdata = decode1D(P[indx, :], np.ones(P[indx, :].shape), self.yl, knotsAllV)
-                        leftdata = decoded[indx+overlapData, :]
-                        residual_decoded[indx+overlapData, :] += (leftdata[:] - left[-1, :])
+                        leftdata = decoded[offset, :]
+
+                        residual_decoded[offset, :] += (leftdata[:] - left[-1, :])
+                        # residual_decoded[offset, :] += leftdata[:] - 0.5 * (decodedPrevIterate[offset, :] + left[-1, :])
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllV, degree)
                         ctrlpts_ppos = getControlPoints(leftknots, degree)
@@ -1303,9 +1312,14 @@ class InputControlBlock:
                 if len(right) > 1:
                     indx = -1
                     if useDecodedConstraints:
+                        offset = indx - overlapData
                         # rightdata = decode1D(P[-1, :], np.ones(P[-1, :].shape), self.yl, knotsAllV)
-                        rightdata = decoded[-overlapData+indx, :]
-                        residual_decoded[-overlapData+indx, :] += (rightdata[:] - right[-1, :])
+                        rightdata = decoded[offset, :]
+
+                        residual_decoded[offset, :] += (rightdata[:] - right[-1, :])
+                        # residual_decoded[offset,
+                        #                  :] += rightdata[:] - 0.5 * (decodedPrevIterate[offset, :] + right[-1, :])
+
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllV, degree)
                         ctrlpts_ppos = getControlPoints(rightknots, degree)
@@ -1333,10 +1347,13 @@ class InputControlBlock:
                 if len(top) > 1:
                     indx = -1
                     if useDecodedConstraints:
+                        offset = indx - overlapData
                         # topdata = decode1D(P[:, indx], np.ones(P[:, indx].shape), self.xl, knotsAllU)
-                        topdata = decoded[:, -overlapData+indx]
-                        residual_decoded[:, indx-overlapData] += (topdata[:] - top[:, -1])
-                        # constrained_residual_norm += (np.sum((topdata[:] - top[:, -1])**2) / len(topdata))
+                        topdata = decoded[:, offset]
+
+                        residual_decoded[:, offset] += (topdata[:] - top[:, -1])
+                        # residual_decoded[:, offset] += topdata[:] - 0.5 * (
+                        #     decodedPrevIterate[:, offset] + top[:, -1])
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllU, degree)
                         ctrlpts_ppos = getControlPoints(topknots, degree)
@@ -1363,11 +1380,12 @@ class InputControlBlock:
                 if len(bottom) > 1:
                     indx = 0
                     if useDecodedConstraints:
+                        offset = indx+overlapData*0
                         # bottomdata = decode1D(P[:, 0], np.ones(P[:, 0].shape), self.xl, knotsAllU)
-                        bottomdata = decoded[:, indx+overlapData*0]
-                        # print("Bottom: ", np.linalg.norm(bottomdata[:] - bottom[:, 0], ord=2))
-                        residual_decoded[:, indx+overlapData*0] += (bottomdata[:] - bottom[:, 0])
-                        # constrained_residual_norm += (np.sum((bottomdata[:] - bottom[:, 0])**2) / len(bottomdata))
+                        bottomdata = decoded[:, offset]
+
+                        residual_decoded[:, offset] += (bottomdata[:] - bottom[:, 0])
+                        # residual_decoded[:,offset] += bottomdata[:] - 0.5 * (decodedPrevIterate[:, offset] + bottom[:, 0])
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllU, degree)
                         ctrlpts_ppos = getControlPoints(bottomknots, degree)
@@ -1391,33 +1409,50 @@ class InputControlBlock:
                             # constrained_residual_norm2 += ( np.sum( ( (P[:, 1] - P[:, 0]) - ( 0.5 * constraints[:, 0] + 0.5 * bottomdata[:, 0] - bottomdata[:, 1]) )**2 ) / len(bottomdata[:,0]) )
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
-            # constraint error of solution on the subdomain interfaces
-            # net_residual_norm = decoded_residual_norm + (bc_penalty * np.sqrt(constrained_residual_norm) + np.power(bc_penalty, 1.0) * np.sqrt(constrained_residual_norm2) )
+            if useDecodedConstraints or True:
+                # constraint error of solution on the subdomain interfaces
+                # net_residual_norm = decoded_residual_norm + (bc_penalty * np.sqrt(constrained_residual_norm) + np.power(bc_penalty, 1.0) * np.sqrt(constrained_residual_norm2) )
 
-            # if verbose:
-            #     print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm, ' and constraint = ', np.sqrt(constrained_residual_norm), ' der = ', np.sqrt(constrained_residual_norm2))
+                # if verbose:
+                #     print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm, ' and constraint = ', np.sqrt(constrained_residual_norm), ' der = ', np.sqrt(constrained_residual_norm2))
 
-            # decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-            # print('Decodeoperator: ', decodeOpX.shape, decodeOpY.shape, 'residual_decoded: ', residual_decoded.shape)
-            # print('Decodeoperator: ', np.matmul(residual_decoded, decodeOpY).shape)
-            # print('Decodeoperator: ', np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY)).shape)
-            # print('Decodeoperator: ', np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY).shape)
+                # decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
+                # print('Decodeoperator: ', decodeOpX.shape, decodeOpY.shape, 'residual_decoded: ', residual_decoded.shape)
+                # print('Decodeoperator: ', np.matmul(residual_decoded, decodeOpY).shape)
+                # print('Decodeoperator: ', np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY)).shape)
+                # print('Decodeoperator: ', np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY).shape)
 
-            # residual_decoded_cpts = np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY))
-            residual_decoded_cpts = np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY)
-            residual_vec_decoded = residual_decoded_cpts.reshape(
-                residual_decoded_cpts.shape[0]*residual_decoded_cpts.shape[1])
-            return residual_vec_decoded
+                # residual_decoded_cpts = np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY))
+                residual_decoded_cpts = np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY)
+                residual_vec_encoded = residual_decoded_cpts.reshape(
+                    residual_decoded_cpts.shape[0]*residual_decoded_cpts.shape[1], )
+                # print('Decoded residual: ', np.linalg.norm(residual_decoded, ord=2),
+                #       'Encoded residual: ', np.linalg.norm(residual_vec_encoded, ord=2))
+            else:
+                residual_vec_encoded = residual_decoded.reshape(W.shape[0]*W.shape[1])
+            return residual_vec_encoded
 
         def print_iterate(P, res=None):
             if res is None:
                 res = residual(P, verbose=True)
+                # print('NLConstrained residual vector norm: ', np.linalg.norm(res, ord=2))
                 self.globalIterationNum += 1
                 return False
             else:
+                rW = res.reshape(W.shape)
                 # np.sqrt(np.sum(np.abs(res))/P.shape[0])
                 # print('NLConstrained residual vector norm: ', np.linalg.norm(res, ord=2))
-                return True if (np.abs(res[overlapData]) < 1e-12 and np.abs(res[-overlapData]) < 1e-12) else False
+                # print('NLConstrained: bottom terms: ', np.linalg.norm(res.reshape(W.shape)[:, 0], ord=2))
+                # print('NLConstrained: top terms: ', np.linalg.norm(res.reshape(W.shape)[:, -1-overlapData], ord=2))
+                # print('NLConstrained: right terms: ', np.linalg.norm(res.reshape(W.shape)[-1-overlapData, :], ord=2))
+                # print('NLConstrained: left terms: ', np.linalg.norm(res.reshape(W.shape)[overlapData, :], ord=2))
+                print('NLConstrained [left, right, top, bottom] terms: ', np.linalg.norm(rW[overlapData, :], ord=2), np.linalg.norm(
+                    rW[-1-overlapData, :], ord=2), np.linalg.norm(rW[:, -1-overlapData], ord=2), np.linalg.norm(rW[:, 0], ord=2))
+                if(np.linalg.norm(rW[overlapData, :], ord=2) + np.linalg.norm(rW[-1 - overlapData, :], ord=2) +
+                        np.linalg.norm(rW[:, -1 - overlapData], ord=2) + np.linalg.norm(rW[:, 0], ord=2) < 1e-12):
+                    return True
+                else:
+                    return False
 
         # Use automatic-differentiation to compute the Jacobian value for minimizer
         def jacobian(P):
@@ -1450,7 +1485,7 @@ class InputControlBlock:
                 bnds = None
             print('Using optimization solver = ', solverScheme)
             # Solver options: https://docs.scipy.org/doc/scipy-0.13.0/reference/generated/scipy.optimize.show_options.html
-            if solverScheme == 'L-BFGS-B' or solverScheme == 'TNC':
+            if solverScheme == 'L-BFGS-B':
                 res = minimize(residual, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
                                bounds=bnds,
                                jac=jacobian,
@@ -1462,7 +1497,7 @@ class InputControlBlock:
                                jac=jacobian,
                                callback=print_iterate,
                                tol=self.globalTolerance,
-                               options={'disp': False, 'gtol': self.globalTolerance, 'norm': 2, 'maxiter': solverMaxIter})
+                               options={'disp': False, 'ftol': self.globalTolerance, 'norm': 2, 'maxiter': solverMaxIter/2})
             elif solverScheme == 'SLSQP':
                 res = minimize(residual, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
                                bounds=bnds,
@@ -1476,7 +1511,7 @@ class InputControlBlock:
                                callback=print_iterate,
                                tol=self.globalTolerance,
                                options={'disp': False, 'eps': self.globalTolerance, 'maxiter': solverMaxIter})
-            elif solverScheme == 'trust-krylov':
+            elif solverScheme == 'trust-krylov' or solverScheme == 'trust-ncg':
                 res = minimize(residual, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
                                jac=jacobian,
                                hess=hessian,
@@ -1485,8 +1520,8 @@ class InputControlBlock:
                                options={'inexact': True})
             else:
                 optimizer_options = {'disp': False,
-                                     # 'ftol': 1e-5,
-                                     'fatol': self.globalTolerance,
+                                     #  'ftol': 1e-5,
+                                     #  'ftol': self.globalTolerance,
                                      'maxiter': solverMaxIter,
                                      # {‘lgmres’, ‘gmres’, ‘bicgstab’, ‘cgs’, ‘minres’}
                                      'jac_options': {'method': 'lgmres'}
@@ -1498,8 +1533,15 @@ class InputControlBlock:
                                           callback=print_iterate,
                                           tol=self.globalTolerance,
                                           options=optimizer_options)
+                # res = scipy.optimize.fixed_point(residual_vec, x0=initSol.reshape(
+                #     initSol.shape[0]*initSol.shape[1]), maxiter=10)
+                # res = scipy.optimize.newton(residual_vec, x0=initSol.reshape(
+                #     initSol.shape[0]*initSol.shape[1]), maxiter=10)
+
             print('[%d] : %s' % (idom, res.message))
             solution = res.x.reshape(W.shape)
+
+            # solution = res.reshape(W.shape)
 
         return solution
 
@@ -1587,7 +1629,9 @@ class InputControlBlock:
 
     def print_error_metrics(self, cp):
         # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
-        print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
+        # print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
+        print('Rank:', commW.rank, ' SDom:', cp.gid(), ' Error: ', self.errorMetricsL2[-1],
+              ', Convergence: ', [self.errorMetricsL2[1:]-self.errorMetricsL2[0:-1]])
 
     def check_convergence(self, cp):
 
