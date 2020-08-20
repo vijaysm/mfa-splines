@@ -13,7 +13,7 @@ import math
 import timeit
 # import numpy as np
 
-from numba import jit
+#from numba import jit
 
 # Autograd AD impots
 from autograd import elementwise_grad as egrad
@@ -188,8 +188,8 @@ for opt, arg in opts:
 # def read_problem_parameters():
 x = y = z = None
 if problem == 1:
-    nPointsX = 501
-    nPointsY = 501
+    nPointsX = 10001
+    nPointsY = 10001
     scale = 1
     shiftX = 0.5
     shiftY = 0.5
@@ -1239,7 +1239,6 @@ class InputControlBlock:
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
-
         def residual_vec(Pin, verbose=False):
             bc_penalty = 1e7
             norm_type = 2
@@ -1255,27 +1254,9 @@ class InputControlBlock:
             decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
             residual_decoded = (decoded - self.zl)/zRange
 
-#             res1 = np.dot(res_dec, self.Nv)
-#             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
-
             def decode1D(P, W, x, t):
                 return np.array([(np.sum(basis(x[u], degree, t) * P*W)/(np.sum(basis(x[u], degree, t)*W))) for u, _ in enumerate(x)])
 
-            # cons.append( {'type': 'eq', 'fun' : lambda x: np.array([ ( pieceBezierDer22(x, W, U, t, degree)[-1] - (bzD[-1] + bzDp[0])/2 ) ])} )
-
-            def pieceBezierDer22(P, W, U, T, degree):
-                bezierP = range(0, len(P)-degree, degree)
-                Q = []
-
-                for ps in bezierP:
-                    pp = P[ps:ps+degree+1]
-                    qq = np.asarray([degree*(pp[i+1]-pp[i])/(T[degree+ps+i+1]-T[ps+i]) for i in range(len(pp)-1)])
-                    Q.extend(qq)
-
-                return Q
-
-            # constrained_residual_norm = 0
-            # constrained_residual_norm2 = 0
             if constraints is not None and len(constraints) > 0 and constrainInterfaces:
                 if len(left) > 1:
                     indx = 0
@@ -1284,7 +1265,7 @@ class InputControlBlock:
                         # leftdata = decode1D(P[indx, :], np.ones(P[indx, :].shape), self.yl, knotsAllV)
                         leftdata = decoded[offset, :]
 
-                        residual_decoded[offset, :] += (leftdata[:] - left[-1, :])
+                        residual_decoded[offset, :] += bc_penalty * (leftdata[:] - left[-1, :])
                         # residual_decoded[offset, :] += leftdata[:] - 0.5 * (decodedPrevIterate[offset, :] + left[-1, :])
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllV, degree)
@@ -1316,7 +1297,7 @@ class InputControlBlock:
                         # rightdata = decode1D(P[-1, :], np.ones(P[-1, :].shape), self.yl, knotsAllV)
                         rightdata = decoded[offset, :]
 
-                        residual_decoded[offset, :] += (rightdata[:] - right[-1, :])
+                        residual_decoded[offset, :] += bc_penalty * (rightdata[:] - right[-1, :])
                         # residual_decoded[offset,
                         #                  :] += rightdata[:] - 0.5 * (decodedPrevIterate[offset, :] + right[-1, :])
 
@@ -1351,7 +1332,7 @@ class InputControlBlock:
                         # topdata = decode1D(P[:, indx], np.ones(P[:, indx].shape), self.xl, knotsAllU)
                         topdata = decoded[:, offset]
 
-                        residual_decoded[:, offset] += (topdata[:] - top[:, -1])
+                        residual_decoded[:, offset] += bc_penalty * (topdata[:] - top[:, -1])
                         # residual_decoded[:, offset] += topdata[:] - 0.5 * (
                         #     decodedPrevIterate[:, offset] + top[:, -1])
                     else:
@@ -1384,7 +1365,7 @@ class InputControlBlock:
                         # bottomdata = decode1D(P[:, 0], np.ones(P[:, 0].shape), self.xl, knotsAllU)
                         bottomdata = decoded[:, offset]
 
-                        residual_decoded[:, offset] += (bottomdata[:] - bottom[:, 0])
+                        residual_decoded[:, offset] += bc_penalty * (bottomdata[:] - bottom[:, 0])
                         # residual_decoded[:,offset] += bottomdata[:] - 0.5 * (decodedPrevIterate[:, offset] + bottom[:, 0])
                     else:
                         ctrlpts_pos = getControlPoints(knotsAllU, degree)
@@ -1409,27 +1390,16 @@ class InputControlBlock:
                             # constrained_residual_norm2 += ( np.sum( ( (P[:, 1] - P[:, 0]) - ( 0.5 * constraints[:, 0] + 0.5 * bottomdata[:, 0] - bottomdata[:, 1]) )**2 ) / len(bottomdata[:,0]) )
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
-            if useDecodedConstraints or True:
-                # constraint error of solution on the subdomain interfaces
-                # net_residual_norm = decoded_residual_norm + (bc_penalty * np.sqrt(constrained_residual_norm) + np.power(bc_penalty, 1.0) * np.sqrt(constrained_residual_norm2) )
+            # constraint error of solution on the subdomain interfaces
 
-                # if verbose:
-                #     print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm, ' and constraint = ', np.sqrt(constrained_residual_norm), ' der = ', np.sqrt(constrained_residual_norm2))
+            # decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
+            # residual_decoded_cpts = np.matmul(np.matmul(decodeOpY.T, residual_decoded), decodeOpX)
+            residual_decoded_cpts = np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY)
+            residual_vec_encoded = residual_decoded_cpts.reshape(
+                residual_decoded_cpts.shape[0]*residual_decoded_cpts.shape[1], )
+            # print('Decoded residual: ', np.linalg.norm(residual_decoded, ord=2),
+            #       'Encoded residual: ', np.linalg.norm(residual_vec_encoded, ord=2))
 
-                # decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-                # print('Decodeoperator: ', decodeOpX.shape, decodeOpY.shape, 'residual_decoded: ', residual_decoded.shape)
-                # print('Decodeoperator: ', np.matmul(residual_decoded, decodeOpY).shape)
-                # print('Decodeoperator: ', np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY)).shape)
-                # print('Decodeoperator: ', np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY).shape)
-
-                # residual_decoded_cpts = np.matmul(decodeOpX.T, np.matmul(residual_decoded, decodeOpY))
-                residual_decoded_cpts = np.matmul(np.matmul(decodeOpX.T, residual_decoded), decodeOpY)
-                residual_vec_encoded = residual_decoded_cpts.reshape(
-                    residual_decoded_cpts.shape[0]*residual_decoded_cpts.shape[1], )
-                # print('Decoded residual: ', np.linalg.norm(residual_decoded, ord=2),
-                #       'Encoded residual: ', np.linalg.norm(residual_vec_encoded, ord=2))
-            else:
-                residual_vec_encoded = residual_decoded.reshape(W.shape[0]*W.shape[1])
             return residual_vec_encoded
 
         def print_iterate(P, res=None):
@@ -1657,7 +1627,7 @@ class InputControlBlock:
 
         self.outerIteration += 1
 
-        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.MIN)
+        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.LAND)
 
     # @profile
     def adaptive(self, iSubDom, xl, yl, zl, strategy='extend', weighted=False,
@@ -1685,7 +1655,6 @@ class InputControlBlock:
         self.Nv = basis(self.V[np.newaxis, :], degree, Tv[:, np.newaxis]).T
 
         if (np.sum(P) == 0 and len(P) > 0) or len(P) == 0:
-            # W = np.ones(self.nControlPoints)
             print(iSubDom, " - Applying the unconstrained solver.")
             P = self.LSQFit_NonlinearOptimize(iSubDom, W, degree, None)
 #             P,_ = lsqFit(self.Nu, self.Nv, W, self.zl)
@@ -1915,16 +1884,6 @@ class InputControlBlock:
                     print(iSubDom, " - Applying the adaptive constrained solver.")
                     P = self.LSQFit_NonlinearOptimize(iSubDom, W, degree, interface_constraints_obj)
 
-
-#             if len(self.leftconstraint) > 1:
-#                 print('Errors-left: ', P[0,:]-leftconstraint_projected[:])
-#             if len(self.rightconstraint) > 1:
-#                 print('Errors-right: ', P[-1,:]-rightconstraint_projected[:])
-#             if len(self.topconstraint) > 1:
-#                 print('Errors-top: ', P[:,-1]-topconstraint_projected[:])
-#             if len(self.bottomconstraint) > 1:
-#                 print('Errors-bottom: ', P[:,0]-bottomconstraint_projected[:])
-
             if not disableAdaptivity:
                 Tu = np.copy(Tunew)
                 Tv = np.copy(Tvnew)
@@ -2014,7 +1973,6 @@ domain_control = diy.DiscreteBounds([0, 0], [len(x)-1, len(y)-1])
 
 # Routine to recursively add a block and associated data to it
 
-
 def add_input_control_block2(gid, core, bounds, domain, link):
     print("Subdomain %d: " % gid, core, bounds, domain)
     minb = bounds.min
@@ -2023,10 +1981,8 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     xlocal = x[minb[0]:maxb[0]+1]
     ylocal = y[minb[1]:maxb[1]+1]
     zlocal = z[minb[0]:maxb[0]+1, minb[1]:maxb[1]+1]
-    # zlocal = z[minb[0]:maxb[0]+1,minb[1]:maxb[1]+1]
 
     # print("Subdomain %d: " % gid, minb[0], minb[1], maxb[0], maxb[1], z.shape, zlocal.shape)
-
     mc2.add(gid, InputControlBlock(gid, nControlPointsInput, core, bounds, xlocal, ylocal, zlocal), link)
 
 
@@ -2071,16 +2027,14 @@ for iterIdx in range(nASMIterations):
         # disableAdaptivity = False
         # constrainInterfaces = False
 
-    # disableAdaptivity = True
-    # constrainInterfaces = True
-
     if iterIdx > 0 and rank == 0:
         print("")
+    
+    # run our local subdomain solver
     mc2.foreach(InputControlBlock.solve_adaptive)
 
-    if disableAdaptivity:
-        # if rank == 0: print("")
-        mc2.foreach(InputControlBlock.check_convergence)
+    # check if we have locally converged within criteria
+    mc2.foreach(InputControlBlock.check_convergence)
 
     if showplot:
 
