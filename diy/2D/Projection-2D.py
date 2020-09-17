@@ -53,10 +53,10 @@ plt.rcParams.update(params)
 # --- set problem input parameters here ---
 nSubDomainsX = 2
 nSubDomainsY = 2
-degree = 3
+degree = 4
 problem = 1
 verbose = False
-showplot = False
+showplot = True
 useVTKOutput = False
 
 # ------------------------------------------
@@ -69,8 +69,8 @@ useDerivativeConstraints = 0
 #                      0      1       2         3              4             5
 solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov', 'krylov']
 solverScheme = solverMethods[0]
-solverMaxIter = 20
-nASMIterations = 8
+solverMaxIter = 10
+nASMIterations = 2
 
 projectData = True
 enforceBounds = False
@@ -81,7 +81,7 @@ constrainInterfaces = True
 useDecodedConstraints = True
 useDecodedResidual = useDecodedConstraints
 if useDecodedConstraints:
-    overlapData = 10
+    overlapData = 0
 else:
     overlapData = 0
 
@@ -131,7 +131,6 @@ def plot3D(fig, Z, x=None, y=None):
 commW = MPI.COMM_WORLD
 nprocs = commW.size
 rank = commW.rank
-isASMConverged = 0
 
 if rank == 0:
     print('Argument List:', str(sys.argv))
@@ -184,25 +183,39 @@ for opt, arg in opts:
 
 # -------------------------------------
 
+nSubDomains = nSubDomainsX * nSubDomainsY
+isConverged = np.zeros(nSubDomains, dtype='int32')
+L2err = np.zeros(nSubDomains)
 
 # def read_problem_parameters():
 x = y = z = None
 if problem == 1:
-    nPointsX = 10001
-    nPointsY = 10001
+    nPointsX = 4096
+    nPointsY = 4096
     scale = 1
-    shiftX = 0.5
-    shiftY = 0.5
+    shiftX = 0.0
+    shiftY = 0.0
     DminX = DminY = -4.
     DmaxX = DmaxY = 4.
 
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
+
+    z = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
+                                                  np.sinc(np.sqrt((X+2)**2 + (Y-2)**2)) -
+                                                  2 * (1-np.tanh((X)**2 + (Y)**2)) +
+                                                  np.exp(-((X-2)**2/2)-((Y-2)**2/2))
+                                                  #   + np.sign(X+Y)
+                                                  )
+    noise = np.random.uniform(0, 0.005, X.shape)
+
+    z = z * (1 + noise)
+
     # z = scale * (np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)))
-    z = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
+    # z = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
     # z = X**4 + Y**4 - X**3 * Y**3
-    # z = X
+    # z = X*Y
     z = z.T
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0:
@@ -262,7 +275,7 @@ elif problem == 4:
     if len(nControlPointsInput) == 0:
         nControlPointsInput = 20*np.array([1, 1])
 
-else:
+elif problem == 5:
     z = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(1800, 3600).T
     nPointsX = z.shape[0]
     nPointsY = z.shape[1]
@@ -276,6 +289,58 @@ else:
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0:
         nControlPointsInput = 25*np.array([1, 1])
+
+elif problem == 6:
+    # A grid of c-values
+    nPointsX = 501
+    nPointsY = 501
+    scale = 1.0
+    shiftX = 0.25
+    shiftY = 0.5
+    DminX = -2
+    DminY = -1.5
+    DmaxX = 1
+    DmaxY = 1.5
+
+    x = np.linspace(DminX, DmaxX, nPointsX)
+    y = np.linspace(DminY, DmaxY, nPointsY)
+    X, Y = np.meshgrid(x+shiftX, y+shiftY)
+
+    N_max = 255
+    some_threshold = 50.0
+
+    # from PIL import Image
+    # image = Image.new("RGB", (nPointsX, nPointsY))
+    mandelbrot_set = np.zeros((nPointsX, nPointsY))
+    for yi in range(nPointsY):
+        zy = yi * (DmaxY - DminY) / (nPointsY - 1) + DminY
+        y[yi] = zy
+        for xi in range(nPointsX):
+            zx = xi * (DmaxX - DminX) / (nPointsX - 1) + DminX
+            x[xi] = zx
+            z = zx + zy * 1j
+            c = z
+            for i in range(N_max):
+                if abs(z) > 2.0:
+                    break
+                z = z * z + c
+            # image.putpixel((xi, yi), (i % 4 * 64, i % 8 * 32, i % 16 * 16))
+            # RGB = (R*65536)+(G*256)+B
+            mandelbrot_set[xi, yi] = (i % 4 * 64) * 65536 + (i % 8 * 32) * 256 + (i % 16 * 16)
+
+    # image.show()
+
+    z = mandelbrot_set.T / 1e5
+
+    plt.imshow(z, extent=[DminX, DmaxX, DminY, DmaxY])
+    plt.show()
+
+    if len(nControlPointsInput) == 0:
+        nControlPointsInput = 50*np.array([1, 1])
+
+else:
+    print('Not a valid problem')
+    exit(1)
 
 # if nPointsX % nSubDomainsX > 0 or nPointsY % nSubDomainsY > 0:
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
@@ -1600,18 +1665,27 @@ class InputControlBlock:
     def print_error_metrics(self, cp):
         # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
         # print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
-        print('Rank:', commW.rank, ' SDom:', cp.gid(), ' Error: ', self.errorMetricsL2[-1],
-              ', Convergence: ', [self.errorMetricsL2[1:]-self.errorMetricsL2[0:-1]])
+        print(
+            'Rank:', commW.rank, ' SDom:', cp.gid(),
+            ' Error: ', self.errorMetricsL2[self.outerIteration - 1],
+            ', Convergence: ',
+            [self.errorMetricsL2[1: self.outerIteration] - self.errorMetricsL2[0: self.outerIteration - 1]])
+
+        # L2NormVector = MPI.gather(self.errorMetricsL2[self.outerIteration - 1], root=0)
 
     def check_convergence(self, cp):
 
+        global isConverged, L2err
         if len(self.decodedAdaptiveOld):
 
             # Let us compute the relative change in the solution between current and previous iteration
             iterateChangeVec = (self.decodedAdaptive - self.decodedAdaptiveOld)
-            errorMetricsSubDomL2 = np.linalg.norm(iterateChangeVec, ord=2) / np.linalg.norm(self.pAdaptive, ord=2)
-            errorMetricsSubDomLinf = np.linalg.norm(
-                iterateChangeVec, ord=np.inf) / np.linalg.norm(self.pAdaptive, ord=np.inf)
+            errorMetricsSubDomL2 = np.linalg.norm(iterateChangeVec.reshape(
+                iterateChangeVec.shape[0] * iterateChangeVec.shape[1]),
+                ord=2) / np.linalg.norm(self.pAdaptive, ord=2)
+            errorMetricsSubDomLinf = np.linalg.norm(iterateChangeVec.reshape(
+                iterateChangeVec.shape[0] * iterateChangeVec.shape[1]),
+                ord=np.inf) / np.linalg.norm(self.pAdaptive, ord=np.inf)
 
             self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
             self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
@@ -1620,14 +1694,15 @@ class InputControlBlock:
             #                 np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]),
             #                 errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10)
 
-            if errorMetricsSubDomLinf < 1e-8 and np.abs(
-                    self.errorMetricsL2[self.outerIteration] - self.errorMetricsL2[self.outerIteration - 1]) < 1e-10:
+            L2err[cp.gid()] = self.decodederrors[0]
+            if errorMetricsSubDomLinf < 1e-12 and np.abs(
+                    self.errorMetricsL2[self.outerIteration] - self.errorMetricsL2[self.outerIteration - 1]) < 1e-12:
                 print('Subdomain ', cp.gid()+1, ' has converged to its final solution with error = ', errorMetricsSubDomLinf)
-                self.outerIterationConverged = True
+                isConverged[cp.gid()] = 1
 
         self.outerIteration += 1
 
-        isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.LAND)
+        # isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.LAND)
 
     # @profile
     def adaptive(self, iSubDom, xl, yl, zl, strategy='extend', weighted=False,
@@ -1901,7 +1976,8 @@ class InputControlBlock:
     # @profile
     def solve_adaptive(self, cp):
 
-        if self.outerIterationConverged:
+        global isConverged
+        if isConverged[cp.gid()] == 1:
             print(cp.gid()+1, ' subdomain has already converged to its solution. Skipping solve ...')
             return
 
@@ -1946,7 +2022,10 @@ class InputControlBlock:
         self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
 
         # E = (self.decodedAdaptive[self.corebounds[0]:self.corebounds[1]] - self.zl[self.corebounds[0]:self.corebounds[1]])/zRange
-        E = (self.decodedAdaptive - self.zl)/zRange
+        E = (self.decodedAdaptive[self.corebounds[0]: self.corebounds[1],
+                                  self.corebounds[2]: self.corebounds[3]] - self.zl
+             [self.corebounds[0]: self.corebounds[1],
+              self.corebounds[2]: self.corebounds[3]]) / zRange
         E = (E.reshape(E.shape[0]*E.shape[1]))
         LinfErr = np.linalg.norm(E, ord=np.inf)
         L2Err = np.sqrt(np.sum(E**2)/len(E))
@@ -1972,6 +2051,7 @@ mc2 = diy.Master(commWorld)         # master
 domain_control = diy.DiscreteBounds([0, 0], [len(x)-1, len(y)-1])
 
 # Routine to recursively add a block and associated data to it
+
 
 def add_input_control_block2(gid, core, bounds, domain, link):
     print("Subdomain %d: " % gid, core, bounds, domain)
@@ -2029,12 +2109,14 @@ for iterIdx in range(nASMIterations):
 
     if iterIdx > 0 and rank == 0:
         print("")
-    
+
     # run our local subdomain solver
     mc2.foreach(InputControlBlock.solve_adaptive)
 
     # check if we have locally converged within criteria
     mc2.foreach(InputControlBlock.check_convergence)
+
+    isASMConverged = commW.allreduce(np.sum(isConverged), op=MPI.SUM)
 
     if showplot:
 
@@ -2063,9 +2145,9 @@ for iterIdx in range(nASMIterations):
         if rank == 0:
             WritePVTKFile(iterIdx)
 
-    if isASMConverged == 1:
+    if isASMConverged == nSubDomains:
         if rank == 0:
-            print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx))
+            print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx+1))
         break
 
 # mc2.foreach(InputControlBlock.print_solution)
@@ -2076,10 +2158,18 @@ sys.stdout.flush()
 if rank == 0:
     print('\nTotal computational time for solve = ', elapsed, '\n')
 
+avgL2err = commW.allreduce(np.sum(L2err[np.nonzero(L2err)]**2), op=MPI.SUM)
+avgL2err = np.sqrt(avgL2err/nSubDomains)
+maxL2err = commW.allreduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX)
+minL2err = commW.allreduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN)
+
 # np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
+    print("\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n" % (avgL2err, maxL2err, minL2err))
     print('')
+
+commW.Barrier()
 
 np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 mc2.foreach(InputControlBlock.print_error_metrics)
