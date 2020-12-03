@@ -1,11 +1,15 @@
 # coding: utf-8
 
-## TODO:
+# TODO:
 # Do not pin the internal subdomain boundary points
 # Encode and decode correctly. Same solution always as single subdomain case
 # Then start doing overlap of data/control points (?) and do iterative solution
 #
 import timeit
+from numba import jit
+
+import splipy as sp
+
 from cycler import cycler
 import sys
 import getopt
@@ -24,7 +28,7 @@ from scipy import linalg, matrix
 from scipy.interpolate import LSQUnivariateSpline, UnivariateSpline, interp1d, Rbf
 from scipy.optimize import minimize
 
-from makruth_solver import basis, getControlPoints, decode, Error, L2LinfErrors
+from makruth_solver import getControlPoints, Error, L2LinfErrors
 from makruth_solver import knotInsert, knotRefine, deCasteljau, pieceBezierDer22
 
 plt.style.use(['seaborn-whitegrid'])
@@ -35,16 +39,16 @@ params = {"ytick.color": "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomains = 3
-degree = 3
-nControlPoints = 20  # (3*degree + 1) #minimum number of control points
+nSubDomains = 2
+degree = 2
+nControlPoints = 10  # (3*degree + 1) #minimum number of control points
 useDecodedResidual = False
 overlapData = 0
 overlapCP = 0
 problem = 0
 scale = 1
 showplot = True
-nASMIterations = 4
+nASMIterations = 2
 # Look at ovRBFPower param below if using useDecodedResidual = True
 #
 # ------------------------------------------
@@ -57,7 +61,7 @@ disableAdaptivity = True
 #
 #                            0        1         2        3     4       5          6           7         8
 subdomainSolverSchemes = ['LCLSQ', 'SLSQP', 'L-BFGS-B', 'CG', 'lm', 'krylov', 'broyden2', 'anderson', 'custom']
-subdomainSolver = subdomainSolverSchemes[0]
+subdomainSolver = subdomainSolverSchemes[2]
 
 maxAbsErr = 1e-2
 maxRelErr = 1e-8
@@ -130,7 +134,7 @@ if problem == 0:
     nPoints = 1001
     x = np.linspace(Dmin, Dmax, nPoints)
     scale = 100
-    # y = scale * (np.sinc(x+1))
+    # y = scale * (np.sinc(x-1)+np.sinc(x+1))
     # y = scale * (np.sinc(x+1) + np.sinc(2*x) + np.sinc(x-1))
     y = scale * (np.sinc(x) + np.sinc(2*x-1) + np.sinc(3*x+1.5))
     # y = np.zeros(x.shape)
@@ -233,8 +237,12 @@ if rank == 0:
 EPS = 1e-14
 
 
-def basis(u, p, T): return ((T[:-1] <= u) * (u <= T[1:])).astype(np.float) if p == 0 else ((u - T[:-p]) / (
-    T[p:] - T[:-p]+EPS))[:-1] * basis(u, p-1, T)[:-1] + ((T[p+1:] - u)/(T[p+1:]-T[1:-p]+EPS)) * basis(u, p-1, T)[1:]
+@jit(nopython=True)  # Set "nopython" mode for best performance, equivalent to @njit
+def basis2(u, p, T):
+    if p == 0:
+        return 1.0 if ((T[:-1] <= u) * (u <= T[1:])) else 0.0
+    else:
+        return ((u - T[:-p]) / (T[p:] - T[:-p]+EPS))[:-1] * basis(u, p-1, T)[:-1] + ((T[p+1:] - u)/(T[p+1:]-T[1:-p]+EPS)) * basis(u, p-1, T)[1:]
 
 
 def dbasis(u, p, T): return ((T[:-1] <= u) * (u <= T[1:])).astype(np.float) if p == 0 else (
@@ -258,12 +266,14 @@ class InputControlBlock:
         self.nControlPoints = nControlPoints
         self.nControlPointSpans = nControlPoints - 1
         self.nInternalKnotSpans = self.nControlPointSpans - degree + 1
+        assert(self.nInternalKnotSpans > 1)
         self.nPointsPerSubD = xl.shape[0]  # int(nPoints / nSubDomains) + overlapData
         self.xbounds = xb
         # self.corebounds = coreb
         self.corebounds = [coreb.min[0]-xb.min[0], -1+coreb.max[0]-xb.max[0]]
         self.xl = xl
         self.yl = yl
+        self.B = None  # Basis function object
         self.pAdaptive = []
         self.WAdaptive = []
         self.knotsAdaptive = []
@@ -278,6 +288,10 @@ class InputControlBlock:
         self.interface_constraints_obj['T'] = [[], [], []]
         self.decodedAdaptive = np.zeros(yl.shape)
         self.decodedAdaptiveOld = np.zeros(yl.shape)
+
+        self.RN = []
+
+        self.leftclamped = self.rightclamped = False
 
         # Convergence related metrics and checks
         self.outerIteration = 0
@@ -296,38 +310,81 @@ class InputControlBlock:
              self.corebounds[1]))
         # cp.enqueue(diy.BlockID(1, 0), "abc")
 
+    def getLocalControlPoints2(self, knots, k):
+
+        nCtrlPts = len(knots) - k - 1
+        # nCtrlPts = len(knots)
+        # if self.leftclamped:
+        #     nCtrlPts -= k + 1
+        # if self.rightclamped and not self.leftclamped:
+        #     nCtrlPts -= k + 1
+        cx = np.zeros(nCtrlPts)
+        for i in range(nCtrlPts):
+            tsum = 0
+            for j in range(1, k+1) if self.leftclamped else range(1, k+1):
+                tsum += knots[i + j]
+            cx[i] = float(tsum) / (k)
+        return cx
+
+    # Greville points
+    def getLocalControlPoints(self, knots, k):
+
+        return np.array(sp.BSplineBasis(order=k+1, knots=knots).greville())
+        # return self.getLocalControlPoints2(knots, k)
+        if self.leftclamped and self.rightclamped:
+            return self.getLocalControlPoints2(knots, k)
+
+        # nCtrlPts = len(knots) - 1 - k
+        nCtrlPts = len(knots)
+        if self.leftclamped:
+            nCtrlPts -= k + 1
+        if self.rightclamped and not self.leftclamped:
+            nCtrlPts -= k + 1
+        cx = np.zeros(nCtrlPts)
+
+        offset = 0
+        cx[0] = knots[0]
+        if self.leftclamped:
+            offset += k + 2
+        else:
+            offset += 1
+
+        if self.rightclamped:
+            cx[1:-1] = knots[offset:-k-2]
+            cx[-1] = knots[-1]
+        else:
+            cx[1:] = knots[offset:]
+
+        return cx
+
+    # coeffs_x = getLocalControlPoints(t, degree)  # * (Dmax - Dmin) + Dmin
+    # print('Control point locations: ', coeffs_x, t)
+
     def plot(self, cp):
         #         print(w.rank, cp.gid(), self.core)
-        self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.xl,
-                                      self.knotsAdaptive,  # * (Dmax - Dmin) + Dmin,
-                                      degree)
-        coeffs_x = getControlPoints(self.knotsAdaptive, degree)  # * (Dmax - Dmin) + Dmin
-#         print ('Coeffs-x original: ', coeffs_x)
+        # self.decodedAdaptive = self.decode(self.pAdaptive)
+        coeffs_x = self.getLocalControlPoints(self.knotsAdaptive, degree)  # * (Dmax - Dmin) + Dmin
+        print(coeffs_x.shape, self.pAdaptive.shape, coeffs_x)
         plt.plot(self.xl, self.decodedAdaptive, linestyle='--', lw=2,
                  color=['r', 'g', 'b', 'y', 'c'][cp.gid() % 5], label="Decoded-%d" % (cp.gid()+1))
         plt.plot(coeffs_x, self.pAdaptive, marker='o', linestyle='', color=[
                  'r', 'g', 'b', 'y', 'c'][cp.gid() % 5], label="Control-%d" % (cp.gid()+1))
 
     def plot_error(self, cp):
-        #         print(w.rank, cp.gid(), self.core)
         error = self.decodedAdaptive - self.yl
         plt.plot(self.xl, error, linestyle='--', color=['r', 'g', 'b', 'y', 'c']
                  [cp.gid() % 5], lw=2, label="Subdomain(%d) Error" % (cp.gid()+1))
 
     def plot_with_cp(self, cp, cploc, ctrlpts, lgndtitle, indx):
-        #         print(w.rank, cp.gid(), self.core)
-        pMK = decode(ctrlpts, self.WAdaptive, self.xl,
-                     self.knotsAdaptive * (Dmax - Dmin) + Dmin, degree)
+        pMK = self.decode(ctrlpts)
         plt.plot(self.xl, pMK, linestyle='--', color=['g', 'b', 'y', 'c'][indx % 5], lw=3, label=lgndtitle)
 
     def plot_with_cp_and_knots(self, cp, cploc, knots, ctrlpts, weights, lgndtitle, indx):
-        #         print(w.rank, cp.gid(), self.core)
         print('Plot: shapes = ', ctrlpts.shape[0], cploc.shape[0], knots.shape[0], degree)
-        pMK = decode(ctrlpts, weights, self.xl, knots, degree)
+        pMK = self.decode(ctrlpts)
         plt.plot(self.xl, pMK, linestyle='--', color=['g', 'b', 'y', 'c'][indx], lw=3, label=lgndtitle)
 
     def print_error_metrics(self, cp):
-        # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
         print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
 
     def send(self, cp):
@@ -401,8 +458,6 @@ class InputControlBlock:
             self, idom, Nall, Wall, ysloc, U, t, degree, nSubDomains, constraintsAll=None, useDerivatives=0,
             solver='SLSQP'):
 
-        import bspline
-
         if constraintsAll is not None:
             constraints = np.array(constraintsAll['P'])
             knotsAll = np.array(constraintsAll['T'])
@@ -416,25 +471,31 @@ class InputControlBlock:
             return math.sqrt(E)
 
         def ComputeL2Error(P, N, W, ysl, U, t, degree):
-            RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
-            E = (RN.dot(P) - ysl)
+            # RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
+            E = (self.RN.dot(P) - ysl)
             return math.sqrt(np.sum(E**2)/len(E))
 
         # print('shapes idom, Nall, Wall, ysloc: ', idom, Nall.shape, Wall.shape, ysloc.shape)
         if useDerivatives > 0 and not useDecodedResidual and constraints is not None and len(constraints) > 0:
 
             # bzD = np.array(pieceBezierDer22(constraints[1], weightsAll[1], U, knotsAll[1], degree))
-            Bd = bspline.Bspline(knotsAll[1], degree)
-            BdD = Bd.collmat(knotsAll[1][degree:-degree], deriv_order=1)
+            # Bd = bspline.Bspline(knotsAll[1], degree)
+            # BdD = Bd.collmat(knotsAll[1][degree:-degree], deriv_order=1)
+            Bd = sp.BSplineBasis(order=degree, knots=knotsAll[1])
+            BdD = Bdp.evaluate(knotsAll[1][degree:-degree], d=1)
             if idom < nSubDomains:
                 # bzDp = np.array(pieceBezierDer22(constraints[2], weightsAll[2], U, knotsAll[2], degree))
-                Bdp = bspline.Bspline(knotsAll[2], degree)
-                BdDp = Bdp.collmat(knotsAll[2][degree:-degree], deriv_order=1)
+                # Bdp = bspline.Bspline(knotsAll[2], degree)
+                # BdDp = Bdp.collmat(knotsAll[2][degree:-degree], deriv_order=1)
+                Bdp = sp.BSplineBasis(order=degree, knots=knotsAll[2])
+                BdDp = Bdp.evaluate(knotsAll[2][degree:-degree], d=1)
                 print('2. Just internal knots:', knotsAll[2][degree:-degree])
             if idom > 1:
                 # bzDm = np.array(pieceBezierDer22(constraints[0], weightsAll[0], U, knotsAll[0], degree))
-                Bdm = bspline.Bspline(knotsAll[0], degree)
-                BdDm = Bdm.collmat(knotsAll[0][degree:-degree], deriv_order=1)
+                # Bdm = bspline.Bspline(knotsAll[0], degree)
+                # BdDm = Bdm.collmat(knotsAll[0][degree:-degree], deriv_order=1)
+                Bdm = sp.BSplineBasis(order=degree, knots=knotsAll[0])
+                Bdm = Bdm.evaluate(knotsAll[0][degree:-degree], d=1)
                 print('0. Just internal knots:', knotsAll[0][degree:-degree])
 
             if useDerivatives > 1:
@@ -451,7 +512,7 @@ class InputControlBlock:
         lenNRows = Nall.shape[0]
         if idom == 1:
             print('Left-most subdomain: right constraints')
-            indices = range(lenNRows-1, lenNRows)
+            indices = range(lenNRows-1-degree, lenNRows-degree)
             print('Indices:', indices, Wall.shape)
             N = np.delete(Nall, np.s_[indices], axis=0)
             M = np.array(Nall[-1:-2-useDerivatives:-1, :])
@@ -467,12 +528,12 @@ class InputControlBlock:
                     T[2] += np.dot(BdDDp[0], constraints[2])
         elif idom == nSubDomains:
             print('Right-most subdomain: left constraints')
-            indices = range(0, 1, 1)
+            indices = range(degree, degree+1, 1)
             print('Indices:', indices)
             N = np.delete(Nall, np.s_[indices], axis=0)
-            M = np.array(Nall[0:1+useDerivatives, :])
-            W = Wall[1:]
-            ysl = ysloc[1:]
+            M = np.array(Nall[degree:degree1+useDerivatives, :])
+            W = Wall[degree:]
+            ysl = ysloc[degree:]
             T = np.zeros((1+useDerivatives))
             T[0] = 0.5*(constraints[1][0] + constraints[0][-1])
             if useDerivatives > 0:
@@ -484,8 +545,8 @@ class InputControlBlock:
                     T[2] += np.dot(BdDDm[-1], constraints[0])
         else:
             print('Middle subdomain')
-            indices1 = range(0, 1, 1)
-            indices2 = range(lenNRows-1, lenNRows)
+            indices1 = range(degree, degree+1, 1)
+            indices2 = range(lenNRows-1-degree, lenNRows-degree)
             print('Indices:', indices1, indices2)
             N = np.delete(np.delete(Nall, np.s_[indices2], axis=0), np.s_[indices1], axis=0)
             # M = np.array([Nall[0:1+useDerivatives, :].T, Nall[-1:-2-useDerivatives:-1, :].T])[:, :, 0]
@@ -556,21 +617,22 @@ class InputControlBlock:
         return P
     #     return 0.5*(P+UnconstrainedLSQSol)
 
-    def lsqFit(self, N, W, y, U, t, degree):
-        RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
+    def lsqFit(self, yl):
+        print('lsqfit: ', self.RN.shape, yl.shape)
+        # print('lsqfit: ', t, np.sum(N*W, axis=1)[:, np.newaxis].T)
 
-        useLSQSolver = False
+        useLSQSolver = True
         if useLSQSolver:
-            return linalg.lstsq(RN, y)[0]
+            return linalg.lstsq(self.RN, yl)[0]
         else:
-            LHS = np.matmul(RN.T, RN)
-            RHS = np.matmul(RN.T, y)
+            LHS = np.matmul(self.RN.T, RN)
+            RHS = np.matmul(self.RN.T, yl)
             # print('LSQFIT: ', LHS.shape, RHS.shape)
             lu, piv = scipy.linalg.lu_factor(LHS)
             return scipy.linalg.lu_solve((lu, piv), RHS)
             # return linalg.lstsq(LHS, RHS)[0]
 
-    def lsqFitWithCons(self, N, W, ysl, U, t, degree, constraints=[], continuity=0):
+    def lsqFitWithCons(W, ysl, U, t, degree, constraints=[], continuity=0):
         def l2(P, W, ysl, U, t, degree):
             return np.sum(Error(P, W, ysl, U, t, degree)**2)
 
@@ -580,9 +642,9 @@ class InputControlBlock:
         return res.x
 
     def LSQFit_Constrained(
-            self, idom, N, W, ysl, U, t, degree, nSubDomains, constraintsAll=None, useDerivatives=0, solver='SLSQP'):
+            self, idom, W, ysl, U, t, degree, nSubDomains, constraintsAll=None, useDerivatives=0, solver='SLSQP'):
 
-        RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
+        # RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
 
         constraints = None
         if constraintsAll is not None:
@@ -617,7 +679,7 @@ class InputControlBlock:
             #         E = P - constraints[1]
 
             #         RN = (N*W)/(np.sum(N*W, axis=1)[:,np.newaxis])
-            E = (RN.dot(P) - ysl)/yRange
+            E = (self.RN.dot(P) - ysl)/yRange
     #         return math.sqrt(np.sum(E**2)/len(E))
 
     #         LHS = np.matmul(RN.T, RN)
@@ -708,7 +770,7 @@ class InputControlBlock:
             else:
 
                 #             initSol = np.ones_like(W)
-                initSol = lsqFit(N, W, ysl, U, t, degree)
+                initSol = lsqFit(ysl)
                 if enforceBounds:
                     bnds = np.tensordot(np.ones(initSol.shape[0]), np.array([ysl.min(), ysl.max()]), axes=0)
                 else:
@@ -757,7 +819,7 @@ class InputControlBlock:
             # Update the local decoded data
             if len(constraints) and useDecodedResidual:
                 decodedPrevIterate = RN.dot(constraints[1])
-    #             decodedPrevIterate = decode(constraints[1], weightsAll[1], U,  t * (Dmax - Dmin) + Dmin, degree)
+    #             decodedPrevIterate = decode(constraints[1])
 
             decodedconstraint = RN.dot(constraints[1])
             residual_decodedcons = (decodedconstraint - ysl)  # /yRange
@@ -789,7 +851,7 @@ class InputControlBlock:
 
             from autograd.numpy import linalg as LA
             decoded_data = RN.dot(Pin)  # RN @ Pin #
-    #         decoded_data = decode(Pin, W, U,  t * (Dmax - Dmin) + Dmin, degree)
+    #         decoded_data = decode(Pin)
             residual_decoded = (decoded_data[self.corebounds[0]: self.corebounds[1]] -
                                 ysl[self.corebounds[0]: self.corebounds[1]]) / yRange  # decoded_data[0:overlapData+1]
             residual_decoded_nrm = np.sqrt(np.sum(residual_decoded**2)/len(residual_decoded))
@@ -892,16 +954,18 @@ class InputControlBlock:
             return residual_nrm
 
         RNTRN = np.matmul(RN.T, RN)
+        QDec = RN.T @ ysl
+        # RNTRN = np.copy(RN)
+        # QDec = np.copy(ysl)
 
         def residual_operator_Ab(Pin, verbose=False, vverbose=False):  # checkpoint3
 
             # Aoper = np.zeros((Pin.shape[0], Pin.shape[0]))
-            Brhs = RN.T @ ysl
-
             Aoper = np.copy(RNTRN)
+            Brhs = np.copy(QDec)
+            print('Input P = ', Pin, Aoper.shape, Brhs.shape)
 
             # print('Aoper and Brhs: ', Aoper.shape, Brhs.shape)
-
             # 6 - constraints: 3 - left, 3- right
             # 3 - dofs in the middle
 
@@ -938,21 +1002,16 @@ class InputControlBlock:
 
             # NT N = D [ 3x3 ]
 
-            def pieceBezierNDer(order, P, W, U, T, degree):
+            # if useDerivatives > 0:
+            #     cbzD = np.array(pieceBezierDer22(Pin, W, U, knotsAll[1], degree))
+            #     if useDerivatives > 1:
+            #         cbzDD = np.array(pieceBezierDer22(cbzD, W, U, knotsAll[1][1:-2], degree-1))
 
-                assert(order > 0 and order <= degree - 1)
-                Q = np.copy(P)
-                for iorder in range(order):
-                    Q = pieceBezierDer22(Q, W, U, T[iorder:-1-iorder], degree-iorder)
+            # num_constraints = (degree)/2 if degree is even
+            # num_constraints = (degree+1)/2 if degree is odd
+            nconstraints = int(degree/2.0) if (degree % 2 == 0) else int((degree+1)/2.0)
+            print('nconstraints: ', nconstraints)
 
-                return Q
-
-            if useDerivatives > 0:
-                cbzD = np.array(pieceBezierDer22(Pin, W, U, knotsAll[1], degree))
-                if useDerivatives > 1:
-                    cbzDD = np.array(pieceBezierDer22(cbzD, W, U, knotsAll[1][1:-2], degree-1))
-
-            print('Data: ', t[degree:-degree])
             residual_constrained_nrm = 0
             nBndOverlap = 0
             # vverbose = True
@@ -971,10 +1030,20 @@ class InputControlBlock:
                         Brhs[0] = 0.5 * (decodedPrevIterate[overlapData] + lconstraints[-1])
                     else:
                         if useDerivatives >= 0:
-                            Aoper[0, :] = 0.0
-                            Aoper[0, 0] = 1.0
-                            Brhs[0] = 0.5 * (constraints[1][0] + constraints[0][-1])
-                            if useDerivatives > 0:
+
+                            for ic in range(nconstraints):
+                                Brhs[ic] = 0.5 * (Pin[ic] + constraints[0][-degree+ic])
+                                # Brhs[ic] = constraints[0][-degree+ic]
+                                Aoper[ic, :] = 0.0
+                                Aoper[ic, ic] = 1.0
+
+                            # for ic in range(nconstraints):
+                            #     constraintVal = constraints[0][-degree+ic]
+                            #     print('Constraint: ', ic, constraintVal,
+                            #           Brhs[ic], constraintVal * Aoper[:, ic])
+                            #     Brhs -= constraintVal * Aoper[:, ic]
+
+                            if useDerivatives > 0 and False:
                                 print('Left: ', t[degree+1]-t[1], t[degree+1], t[1],
                                       knotsAll[0][-1] - knotsAll[0][-2 - degree])
 
@@ -1014,10 +1083,21 @@ class InputControlBlock:
                         Brhs[-1] = 0.5 * (decodedPrevIterate[-1 - overlapData] + rconstraints[0])
                     else:
                         if useDerivatives >= 0:
-                            Aoper[-1, :] = 0.0
-                            Aoper[-1, -1] = 1.0
-                            Brhs[-1] = 0.5 * (constraints[1][-1] + constraints[2][0])
-                            if useDerivatives > 0:
+
+                            for ic in range(nconstraints):
+                                Brhs[-ic-1] = 0.5 * (Pin[-ic-1] + constraints[2][degree-1-ic])
+                                # Brhs[-ic-1] = constraints[2][degree-1-ic]
+                                Aoper[-ic-1, :] = 0.0
+                                Aoper[-ic-1, -ic-1] = 1.0
+
+                            # for ic in range(nconstraints):
+                            #     # constraintVal = 0.5 * (Pin[-ic-1] + constraints[2][degree-1-ic])
+                            #     constraintVal = constraints[2][degree-1-ic]
+                            #     print('Constraint: ', ic, constraintVal,
+                            #           Brhs[ic], constraintVal * Aoper[:, -ic-1])
+                            #     Brhs -= constraintVal * Aoper[:, -ic-1]
+
+                            if useDerivatives > 0 and False:
                                 print('Right: ', t[-1]-t[-2-degree], t[-1], t[-2-degree],
                                       (knotsAll[2][degree + 1] - knotsAll[2][1]))
 
@@ -1044,6 +1124,7 @@ class InputControlBlock:
                                     #                                     constraints[2][1] + 0.25 * constraints[2][2]) * (degree /
                                     #                                                                                      (t[degree + 1] - t[1])) ** 2
 
+            # print(Aoper, Brhs)
             return [Aoper, Brhs]
 
         def residual_operator(Pin, verbose=False, vverbose=False):  # checkpoint3
@@ -1185,9 +1266,12 @@ class InputControlBlock:
 
         [Aoper, Brhs] = residual_operator_Ab(constraints[1][:], False, False)
 
+        # print(Aoper)
         lu, piv = scipy.linalg.lu_factor(Aoper)
         # print(lu, piv)
         initSol = scipy.linalg.lu_solve((lu, piv), Brhs)
+
+        return initSol
 
         if solver in ['Nelder-Mead', 'Powell', 'Newton-CG', 'TNC', 'trust-ncg', 'trust-krylov', 'SLSQP', 'L-BFGS-B', 'CG']:
             minimizer_options = {'disp': False,
@@ -1235,6 +1319,60 @@ class InputControlBlock:
 
             return initSol
 
+    # def basis(self, u, degree, T):
+
+    #     # print('Basis: knots = ', T)
+    #     # print('Basis: evaluation = ', u)
+
+    #     # B = bspline.Bspline(T, degree)       # create spline basis of order p on knots T
+    #     # basisOp = B.collmat(u)           # collocation matrix for function value at sites "u"
+
+    #     self.B = sp.BSplineBasis(order=degree+1, knots=T)
+    #     basisOp = self.B.evaluate(u)
+
+    #     # print('Basis: at x=0: ', B(0.))
+    #     # print('Basis', basisOp)
+    #     # print('Knot spans', B.knot_spans())
+    #     # print('Greville', B.greville())
+    #     return basisOp
+
+    def compute_basis1(self, u, degree, T, W):
+        import bspline
+        self.B = bspline.Bspline(T, degree)       # create spline basis of order p on knots T
+
+        # N = basis(u[np.newaxis, :], degree, T[:, np.newaxis]).T
+
+        N = self.B.collmat(u)           # collocation matrix for function value at sites "u"
+
+        if self.leftclamped:
+            N[0, :] = 0.0
+            N[0, 0] = 1.0
+
+        if self.rightclamped:
+            N[-1, :] = 0.0
+            N[-1, -1] = 1.0
+
+        RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
+
+        return N, RN
+
+    def compute_basis2(self, u, degree, T, W):
+        self.B = sp.BSplineBasis(order=degree+1, knots=T)
+        N = np.array(self.B.evaluate(u))
+
+        RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
+
+        # print(N)
+
+        return N, RN
+
+    def compute_basis(self, u, degree, T, W):
+        # return self.compute_basis1(u, degree, T, W)
+        return self.compute_basis2(u, degree, T, W)
+
+    def decode(self, P):
+        return (self.RN @ P)   # self.RN.dot(P)
+
     def adaptive(
             self, iSubDom, interface_constraints_obj, u, xl, yl, strategy='reset', r=1, MAX_ERR=1e-2, MAX_ITER=5,
             split_all=True):
@@ -1247,10 +1385,18 @@ class InputControlBlock:
             P = interface_constraints_obj['P'][1]
             W = interface_constraints_obj['W'][1]
 
-        if len(P) == 0:
+        if np.linalg.norm(P, 1) == 0:
             W = np.ones(len(T) - 1 - degree)
-            N = basis(u[np.newaxis, :], degree, T[:, np.newaxis]).T
-            P = self.lsqFit(N, W, yl, u, T, degree)
+
+            # print('Before basis: ', u.shape, degree, T.shape, W.shape)
+            N, self.RN = self.compute_basis(u, degree, T, W)
+            # print('After basis: ', N.shape, self.RN.shape)
+
+            # k = splinelab.augknt(knots, p)  # add endpoint repeats as appropriate for spline order p
+            # B = bspline.Bspline(T, degree)       # create spline basis of order p on knots k
+            # N = B.collmat(u)
+
+            P = self.lsqFit(yl)
     #         P = LSQFit_Constrained(iSubDom, N, W, yl, u, T, degree, nSubDomains,
     #                        None, #interface_constraints_obj,
     #                        useDerivativeConstraints, 'SLSQP')
@@ -1258,14 +1404,13 @@ class InputControlBlock:
     #                                None, #interface_constraints_obj,
     #                                useDerivativeConstraints, subdomainSolver)
 
-            RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
-            decodedconstraint = RN @ P  # RN.dot(P)
+            decodedconstraint = self.decode(P)
             residual_decodedcons = (decodedconstraint - yl)  # /yRange
             MAX_ITER = 0
             # print(iSubDom, ' -- actual error in input decoded data after LSQFit: ', P, (residual_decodedcons))
 
         for iteration in range(MAX_ITER):
-            E = Error(P, W, yl, u, T, degree)[self.corebounds[0]:self.corebounds[1]]/yRange
+            E = (self.decode(P) - yl)[self.corebounds[0]:self.corebounds[1]]/yRange
 
             # L2Err = np.linalg.norm(E, ord=2)
             L2Err = np.sqrt(np.sum(E**2)/len(E))
@@ -1283,11 +1428,15 @@ class InputControlBlock:
                 u = Tnew[k+1]
                 P, W = deCasteljau(P, W, T, u, k, r)
             elif strategy == 'reset':
-                # Tnew = np.sort(Tnew)
+                Tnew = np.sort(Tnew)
                 W = np.ones(len(Tnew) - 1 - degree)
-                N = basis(u[np.newaxis, :], degree, Tnew[:, np.newaxis]).T
 
-    #             P = lsqFit(N, W, yl, u, Tnew, degree)
+                # N = basis(u[np.newaxis, :], degree, Tnew[:, np.newaxis]).T
+                # print('Before basis: ', u.shape, degree, Tnew.shape, W.shape)
+                N, self.RN = self.compute_basis(u, degree, Tnew, W)
+                # print('After basis: ', N.shape, self.RN.shape)
+
+    #             P = lsqFit(yl)
     #             return P, W, Tnew
 
     #             P = lsqFitWithCons(N, W, yl, u, Tnew, degree)
@@ -1295,12 +1444,14 @@ class InputControlBlock:
     #             if len(interface_constraints_obj['P'][iSubDom - 1]) > 0 and len(interface_constraints_obj['P'][iSubDom]) > 0 and len(interface_constraints_obj['P'][iSubDom - 2]) > 0:
                 if len(interface_constraints_obj['P'][1]) > 0:
 
-                    # Interpolate or project the data to new Knot locations: From (P, T) to (Pnew, Tnew)
-                    coeffs_x = getControlPoints(T, degree)  # * (Dmax - Dmin) + Dmin
-                    coeffs_xn = getControlPoints(Tnew, degree)  # * (Dmax - Dmin) + Dmin
+                    # # Interpolate or project the data to new Knot locations: From (P, T) to (Pnew, Tnew)
+                    # coeffs_x = getControlPoints(T, degree)  # * (Dmax - Dmin) + Dmin
+                    # coeffs_xn = getControlPoints(Tnew, degree)  # * (Dmax - Dmin) + Dmin
 
-                    PnewFn = Rbf(coeffs_x, P, function='cubic')
-                    Pnew = PnewFn(coeffs_xn)
+                    # PnewFn = Rbf(coeffs_x, P, function='cubic')
+                    # Pnew = PnewFn(coeffs_xn)
+
+                    Pnew = P[:]
 
     #                 PnewFn = interp1d(coeffs_x, P, kind='quintic') #, kind='cubic')
     #                 Pnew = PnewFn(coeffs_xn)
@@ -1329,7 +1480,7 @@ class InputControlBlock:
 
                 else:
                     print('Solving the unconstrained LSQ problem')
-                    P = self.lsqFit(N, W, yl, u, Tnew, degree)
+                    P = self.lsqFit(yl)
 
             else:
                 print("Not Implemented!!")
@@ -1337,6 +1488,54 @@ class InputControlBlock:
             T = Tnew
 
         return P, W, T
+
+    def initialize_data(self, cp):
+
+        # Subdomain ID: iSubDom = cp.gid()+1
+        domStart = self.xl[self.corebounds[0]]  # /(Dmax-Dmin)
+        domEnd = self.xl[self.corebounds[1]]  # /(Dmax-Dmin)
+        # domStart = self.xl[0]  # /(Dmax-Dmin)
+        # domEnd = self.xl[-1]  # /(Dmax-Dmin)
+
+        U = np.linspace(domStart, domEnd, self.nPointsPerSubD)
+
+        inc = (domEnd - domStart) / self.nInternalKnotSpans
+        print('data: ', inc, self.nInternalKnotSpans)
+        self.knotsAdaptive = np.linspace(domStart + inc, domEnd - inc, self.nInternalKnotSpans - 1)
+        if nSubDomains > 1:
+            if cp.gid() == 0:
+                # knots = np.concatenate(([domStart] * (degree+1), knots, [domEnd], [domEnd+inc]))
+                self.knotsAdaptive = np.concatenate(([domStart] * (degree+1), self.knotsAdaptive, [domEnd]))
+                self.leftclamped = True
+            elif cp.gid() == nSubDomains-1:
+                # knots = np.concatenate(([domStart-inc], [domStart], knots, [domEnd] * (degree+1)))
+                self.knotsAdaptive = np.concatenate(([domStart], self.knotsAdaptive, [domEnd] * (degree+1)))
+                self.rightclamped = True
+            else:
+                # knots = np.concatenate(([domStart-inc], [domStart], knots, [domEnd], [domEnd+inc]))
+                self.knotsAdaptive = np.concatenate(([domStart], self.knotsAdaptive, [domEnd]))
+                self.leftclamped = self.rightclamped = False
+        else:
+            self.knotsAdaptive = np.concatenate(([domStart] * (degree+1), self.knotsAdaptive, [domEnd] * (degree+1)))
+            self.leftclamped = self.rightclamped = True
+
+        # print("Subdomain: ", cp.gid(), self.corebounds, domStart, domEnd, " knots = ", self.knotsAdaptive)
+
+        self.pAdaptive = np.zeros(self.nControlPoints)
+        self.WAdaptive = np.ones(self.nControlPoints)
+
+    def augment_spans(self, cp):
+
+        print("Subdomain -- ", cp.gid()+1, ": before Shapes: ",
+              self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptive)
+        if not self.leftclamped:  # Pad knot spans from the left of subdomain
+            self.knotsAdaptive = np.concatenate((self.leftconstraintKnots[-degree-1:-1], self.knotsAdaptive))
+
+        if not self.rightclamped:  # Pad knot spans from the right of subdomain
+            self.knotsAdaptive = np.concatenate((self.knotsAdaptive, self.rightconstraintKnots[1:degree+1]))
+
+        print("Subdomain -- ", cp.gid()+1, ": after Shapes: ",
+              self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptive)
 
     def solve_adaptive(self, cp):
 
@@ -1346,35 +1545,19 @@ class InputControlBlock:
             return
 
         # Subdomain ID: iSubDom = cp.gid()+1
-#         domStart = (cp.gid()) * 1.0 / nSubDomains
-#         domEnd   = (cp.gid()+1) * 1.0 / nSubDomains
-        domStart = self.xl[0]  # /(Dmax-Dmin)
-        domEnd = self.xl[-1]  # /(Dmax-Dmin)
-
-        U = np.linspace(domStart, domEnd, self.nPointsPerSubD)
+        U = np.linspace(self.xl[0], self.xl[-1], self.nPointsPerSubD)
 
         newSolve = False
         if len(self.pAdaptive) == 0:
             newSolve = True
 
-        if newSolve:
+        knots = self.knotsAdaptive[:]
+        popt = self.pAdaptive[:]
+        W = self.WAdaptive[:]
+        nControlPoints = len(popt)
 
-            inc = (domEnd - domStart) / self.nInternalKnotSpans
-            knots = np.linspace(domStart + inc, domEnd - inc, self.nInternalKnotSpans - 1)
-            knots = np.concatenate(([domStart] * (degree+1), knots, [domEnd] * (degree+1)))
-
-            popt = []
-            W = []
-
-        else:
-
-            knots = self.knotsAdaptive[:]
-            popt = self.pAdaptive[:]
-            W = self.WAdaptive[:]
-            nControlPoints = len(popt)
-
-            self.nControlPointSpans = self.nControlPoints - 1
-            self.nInternalKnotSpans = self.nControlPointSpans - degree + 1
+        self.nControlPointSpans = self.nControlPoints - 1
+        self.nInternalKnotSpans = self.nControlPointSpans - degree + 1
 
         print("\nSubdomain -- ", cp.gid()+1, "starting adaptive solver ...")
 
@@ -1408,7 +1591,7 @@ class InputControlBlock:
         else:
             nmaxAdaptIter = 3
 
-        xSD = U * (Dmax - Dmin) + Dmin
+        # xSD = U * (Dmax - Dmin) + Dmin
 
         # Invoke the adaptive fitting routine for this subdomain
         self.pAdaptive, self.WAdaptive, self.knotsAdaptive = self.adaptive(cp.gid()+1, self.interface_constraints_obj, U,
@@ -1421,13 +1604,15 @@ class InputControlBlock:
                                                                            r=1, MAX_ITER=nmaxAdaptIter)
 
         # NAdaptive = basis(U[np.newaxis,:],degree,knotsAdaptive[:,np.newaxis]).T
+        # NAdaptive, self.RN = self.compute_basis(U, degree, self.knotsAdaptive, self.WAdaptive)
+
         # E = Error(pAdaptive, WAdaptive, ySD, U, knotsAdaptive, degree)
         # print ("Sum of squared error:", np.sum(E**2))
         # print ("Normalized max error:", np.abs(E).max()/yRange)
 
         # Update the local decoded data
         self.decodedAdaptiveOld = np.copy(self.decodedAdaptive)
-        self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.xl, self.knotsAdaptive, degree)
+        self.decodedAdaptive = self.decode(self.pAdaptive)
 
 #        print('Local decoded data for Subdomain: ', cp.gid(), self.xl.shape, self.decodedAdaptive.shape, self.xl, self.decodedAdaptive)
 
@@ -1488,7 +1673,7 @@ def add_input_control_block(gid, core, bounds, domain, link):
 
 
 # print "Initial condition data: ", interface_constraints
-errors = np.zeros([10, 1])  # Store L2, Linf errors as function of iteration
+errors = np.zeros([nASMIterations+1, 1])  # Store L2, Linf errors as function of iteration
 
 # Let us initialize DIY and setup the problem
 share_face = [True]
@@ -1512,16 +1697,22 @@ commW.Barrier()
 
 #########
 start_time = timeit.default_timer()
+
+# Before starting the solve, let us exchange the initial conditions
+# including the knot vector locations that need to be used for creating
+# padded knot vectors in each subdomain
+mc.foreach(InputControlBlock.initialize_data)
+
+mc.foreach(InputControlBlock.send)
+mc.exchange(False)
+mc.foreach(InputControlBlock.recv)
+
+mc.foreach(InputControlBlock.augment_spans)
+
 for iterIdx in range(nASMIterations):
 
     if rank == 0:
         print("\n---- Starting ASM Iteration: %d with %s inner solver ----" % (iterIdx, subdomainSolver))
-
-    # Now let us perform send-receive to get the data on the interface boundaries from
-    # adjacent nearest-neighbor subdomains
-    mc.foreach(InputControlBlock.send)
-    mc.exchange(False)
-    mc.foreach(InputControlBlock.recv)
 
     if iterIdx > 1:
         disableAdaptivity = True
@@ -1554,13 +1745,21 @@ for iterIdx in range(nASMIterations):
 
     # if rank == 0: print('')
 
-    commW.Barrier()
+    # commW.Barrier()
     sys.stdout.flush()
 
     if isASMConverged == nSubDomains:
         if rank == 0:
             print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx))
         break
+    else:
+
+        # Now let us perform send-receive to get the data on the interface boundaries from
+        # adjacent nearest-neighbor subdomains
+        mc.foreach(InputControlBlock.send)
+        mc.exchange(False)
+        mc.foreach(InputControlBlock.recv)
+
 
 elapsed = timeit.default_timer() - start_time
 
