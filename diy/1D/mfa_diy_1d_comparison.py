@@ -66,8 +66,9 @@ subdomainSolver = subdomainSolverSchemes[2]
 maxAbsErr = 1e-2
 maxRelErr = 1e-8
 
-solverMaxIter = 20
+solverMaxIter = 2
 globalTolerance = 1e-12
+fullyPinned = False
 
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
@@ -965,6 +966,8 @@ class InputControlBlock:
             Brhs = np.copy(QDec)
             print('Input P = ', Pin, Aoper.shape, Brhs.shape)
 
+            oddDegree = (degree % 2)
+
             # print('Aoper and Brhs: ', Aoper.shape, Brhs.shape)
             # 6 - constraints: 3 - left, 3- right
             # 3 - dofs in the middle
@@ -1009,7 +1012,8 @@ class InputControlBlock:
 
             # num_constraints = (degree)/2 if degree is even
             # num_constraints = (degree+1)/2 if degree is odd
-            nconstraints = int(degree/2.0) if (degree % 2 == 0) else int((degree+1)/2.0)
+            nconstraints = (1 + int(degree/2.0)) if not oddDegree else int((degree+1)/2.0)
+            # nconstraints = degree-1
             print('nconstraints: ', nconstraints)
 
             residual_constrained_nrm = 0
@@ -1031,8 +1035,14 @@ class InputControlBlock:
                     else:
                         if useDerivatives >= 0:
 
+                            loffset = 0 if oddDegree else -2
+
+                            if oddDegree:
+                                constraintVal = -0.5*(Pin[nconstraints] - constraints[0][-degree+nconstraints+loffset])
+                                Brhs -= constraintVal * Aoper[:, nconstraints]
+
                             for ic in range(nconstraints):
-                                Brhs[ic] = 0.5 * (Pin[ic] + constraints[0][-degree+ic])
+                                Brhs[ic] = 0.5 * (Pin[ic] + constraints[0][-degree+ic+loffset])
                                 # Brhs[ic] = constraints[0][-degree+ic]
                                 Aoper[ic, :] = 0.0
                                 Aoper[ic, ic] = 1.0
@@ -1084,8 +1094,15 @@ class InputControlBlock:
                     else:
                         if useDerivatives >= 0:
 
+                            loffset = 0 if oddDegree else 2
+
+                            if oddDegree:
+                                constraintVal = -0.5*(constraints[2]
+                                                      [degree-1-nconstraints+loffset]-Pin[-nconstraints-1])
+                                Brhs -= constraintVal * Aoper[:, -nconstraints-1]
+
                             for ic in range(nconstraints):
-                                Brhs[-ic-1] = 0.5 * (Pin[-ic-1] + constraints[2][degree-1-ic])
+                                Brhs[-ic-1] = 0.5 * (Pin[-ic-1] + constraints[2][degree-1-ic+loffset])
                                 # Brhs[-ic-1] = constraints[2][degree-1-ic]
                                 Aoper[-ic-1, :] = 0.0
                                 Aoper[-ic-1, -ic-1] = 1.0
@@ -1502,7 +1519,7 @@ class InputControlBlock:
         inc = (domEnd - domStart) / self.nInternalKnotSpans
         print('data: ', inc, self.nInternalKnotSpans)
         self.knotsAdaptive = np.linspace(domStart + inc, domEnd - inc, self.nInternalKnotSpans - 1)
-        if nSubDomains > 1:
+        if nSubDomains > 1 and not fullyPinned:
             if cp.gid() == 0:
                 # knots = np.concatenate(([domStart] * (degree+1), knots, [domEnd], [domEnd+inc]))
                 self.knotsAdaptive = np.concatenate(([domStart] * (degree+1), self.knotsAdaptive, [domEnd]))
@@ -1529,10 +1546,16 @@ class InputControlBlock:
         print("Subdomain -- ", cp.gid()+1, ": before Shapes: ",
               self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptive)
         if not self.leftclamped:  # Pad knot spans from the left of subdomain
-            self.knotsAdaptive = np.concatenate((self.leftconstraintKnots[-degree-1:-1], self.knotsAdaptive))
+            if degree % 2 == 0:
+                self.knotsAdaptive = np.concatenate((self.leftconstraintKnots[-degree-2:-1], self.knotsAdaptive))
+            else:
+                self.knotsAdaptive = np.concatenate((self.leftconstraintKnots[-degree-1:-1], self.knotsAdaptive))
 
         if not self.rightclamped:  # Pad knot spans from the right of subdomain
-            self.knotsAdaptive = np.concatenate((self.knotsAdaptive, self.rightconstraintKnots[1:degree+1]))
+            if degree % 2 == 0:
+                self.knotsAdaptive = np.concatenate((self.knotsAdaptive, self.rightconstraintKnots[1:degree+2]))
+            else:
+                self.knotsAdaptive = np.concatenate((self.knotsAdaptive, self.rightconstraintKnots[1:degree+1]))
 
         print("Subdomain -- ", cp.gid()+1, ": after Shapes: ",
               self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptive)
@@ -1707,7 +1730,8 @@ mc.foreach(InputControlBlock.send)
 mc.exchange(False)
 mc.foreach(InputControlBlock.recv)
 
-mc.foreach(InputControlBlock.augment_spans)
+if not fullyPinned:
+    mc.foreach(InputControlBlock.augment_spans)
 
 for iterIdx in range(nASMIterations):
 
