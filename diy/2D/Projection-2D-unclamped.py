@@ -53,9 +53,9 @@ params = {"ytick.color": "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomainsX = 3
-nSubDomainsY = 3
-degree = 1
+nSubDomainsX = 2
+nSubDomainsY = 2
+degree = 3
 problem = 1
 verbose = False
 showplot = False
@@ -78,7 +78,7 @@ useDerivativeConstraints = 0
 # L-BFGS-B: 1m7.170s, TNC: 0m35.488s
 #                      0      1       2         3              4             5
 solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'Newton-CG', 'trust-krylov', 'krylov']
-solverScheme = solverMethods[0]
+solverScheme = solverMethods[1]
 solverMaxIter = 10
 nASMIterations = 10
 
@@ -98,6 +98,14 @@ maxAdaptIter = 3
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
 interpOrder = 'cubic'
+
+extrapolate = False
+useAitken = True
+nWynnEWork = 3
+
+# override
+# extrapolate = True
+# useAitken = True
 # ------------------------------------------
 
 # tracemalloc.start()
@@ -221,10 +229,10 @@ if problem == 1:
     # noise = np.random.uniform(0, 0.005, X.shape)
     # z = z * (1 + noise)
 
-    # z = scale * (np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)))
+    z = scale * (np.sinc(np.sqrt(X**2 + Y**2)) + np.sinc(2*((X-2)**2 + (Y+2)**2)))
     # z = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
     # z = X**4 + Y**4 - 64 * X**3 * Y**3
-    z = X**3 * Y**3
+    # z = X**3 * Y**3
     z = z.T
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0:
@@ -906,7 +914,7 @@ class InputControlBlock:
         print("Domain: ", cp.gid()+1, "Exact - Decoded = ", np.abs(self.zl - self.pMK))
 
     def send(self, cp):
-        verbose = True
+        verbose = False
         debug = False
         link = cp.link()
         for i in range(len(link)):
@@ -1006,7 +1014,7 @@ class InputControlBlock:
             cp.enqueue(target, o)
 
     def recv(self, cp):
-        verbose = True
+        verbose = False
         debug = False
         link = cp.link()
         for i in range(len(link)):
@@ -1112,6 +1120,9 @@ class InputControlBlock:
         for i in range(2, n + 1):
             for j in range(2, i):
                 e[i, j] = e[i - 1, j - 2] + 1.0 / (e[i, j - 1] - e[i - 1, j - 1])
+        # for i in range(3, n + 2):
+        #     for j in range(3, i + 1):
+        #         e[i - 1, j - 1] = e[i - 2, j - 3] + 1 / (e[i - 1, j - 2] - e[i - 2, j - 2])
 
         er = e[:, 1:n + 1:2]
         return er
@@ -1132,33 +1143,33 @@ class InputControlBlock:
             return sn[2]
 
     def extrapolate_guess(self, cp, iterationNumber):
-        self.pAdaptiveHistory[:, :-1] = self.pAdaptiveHistory[:, 1:]
-        self.pAdaptiveHistory[:, -1] = self.pAdaptive[:]
+        plen = self.pAdaptive.shape[0]*self.pAdaptive.shape[1]
+        self.pAdaptiveHistory[:, 1:] = self.pAdaptiveHistory[:, :-1]
+        self.pAdaptiveHistory[:, 0] = np.copy(self.pAdaptive).reshape(plen)
 
         vAcc = []
         if not useAitken:
-            if iterationNumber > 2:  # For Wynn-E[silon
-                vAcc = np.zeros(self.pAdaptive.shape)
-                for dofIndex in range(len(self.pAdaptive)):
+            if iterationNumber > nWynnEWork:  # For Wynn-E[silon
+                vAcc = np.zeros(plen)
+                for dofIndex in range(plen):
                     expVal = self.WynnEpsilon(
                         self.pAdaptiveHistory[dofIndex, :],
-                        math.floor((self.pAdaptiveHistory.shape[1] - 1) / 2))
+                        math.floor((nWynnEWork - 1) / 2))
                     vAcc[dofIndex] = expVal[-1, -1]
                 print('Performing scalar Wynn-Epsilon algorithm: Error is ',
-                      np.linalg.norm(self.pAdaptive - vAcc), (self.pAdaptive - vAcc))
-                self.pAdaptive = vAcc[:]
+                      np.linalg.norm(self.pAdaptive.reshape(plen) - vAcc))  # , (self.pAdaptive - vAcc))
+                self.pAdaptive = vAcc[:].reshape(self.pAdaptive.shape[0],
+                                                 self.pAdaptive.shape[1])
 
         else:
             if iterationNumber > 3:  # For Aitken acceleration
-                vAcc = self.VectorAitken(self.pAdaptiveHistory)
+                vAcc = self.VectorAitken(self.pAdaptiveHistory).reshape(self.pAdaptive.shape[0],
+                                                                        self.pAdaptive.shape[1])
                 # vAcc = np.zeros(self.pAdaptive.shape)
                 # for dofIndex in range(len(self.pAdaptive)):
                 #     vAcc[dofIndex] = self.Aitken(self.pAdaptiveHistory[dofIndex, :])
                 print('Performing Aitken Acceleration algorithm: Error is ', np.linalg.norm(self.pAdaptive - vAcc))
                 self.pAdaptive = vAcc[:]
-
-        # Update the controil point vector
-        self.update_error_metrics(cp)
 
     def initialize_data(self, cp):
 
@@ -1248,30 +1259,30 @@ class InputControlBlock:
 
     def augment_spans(self, cp):
 
-        # print("Subdomain -- ", cp.gid()+1, ": before Shapes: ",
-        #       self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptiveU, self.knotsAdaptiveV)
+        print("Subdomain -- ", cp.gid()+1, ": before Shapes: ",
+              self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptiveU, self.knotsAdaptiveV)
         if not self.leftclamped:  # Pad knot spans from the left of subdomain
-            # print("\tSubdomain -- ", cp.gid()+1, ": left ghost: ", self.ghostleftknots)
+            print("\tSubdomain -- ", cp.gid()+1, ": left ghost: ", self.ghostleftknots)
             self.knotsAdaptiveU = np.concatenate(
-                (self.ghostleftknots[1:], self.knotsAdaptiveU))
+                (self.ghostleftknots[-1:0:-1], self.knotsAdaptiveU))
 
         if not self.rightclamped:  # Pad knot spans from the right of subdomain
-            # print("\tSubdomain -- ", cp.gid()+1, ": right ghost: ", self.ghostrightknots)
+            print("\tSubdomain -- ", cp.gid()+1, ": right ghost: ", self.ghostrightknots)
             self.knotsAdaptiveU = np.concatenate(
                 (self.knotsAdaptiveU, self.ghostrightknots[1:]))
 
         if not self.topclamped:  # Pad knot spans from the left of subdomain
-            # print("\tSubdomain -- ", cp.gid()+1, ": top ghost: ", self.ghosttopknots)
+            print("\tSubdomain -- ", cp.gid()+1, ": top ghost: ", self.ghosttopknots)
             self.knotsAdaptiveV = np.concatenate(
                 (self.knotsAdaptiveV, self.ghosttopknots[1:]))
 
         if not self.bottomclamped:  # Pad knot spans from the right of subdomain
-            # print("\tSubdomain -- ", cp.gid()+1, ": bottom ghost: ", self.ghostbottomknots)
+            print("\tSubdomain -- ", cp.gid()+1, ": bottom ghost: ", self.ghostbottomknots)
             self.knotsAdaptiveV = np.concatenate(
-                (self.ghostbottomknots[1:], self.knotsAdaptiveV))
+                (self.ghostbottomknots[-1:0:-1], self.knotsAdaptiveV))
 
-        # print("Subdomain -- ", cp.gid()+1, ": after Shapes: ",
-        #       self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptiveU, self.knotsAdaptiveV)
+        print("Subdomain -- ", cp.gid()+1, ": after Shapes: ",
+              self.pAdaptive.shape, self.WAdaptive.shape, self.knotsAdaptiveU, self.knotsAdaptiveV)
 
     def augment_inputdata(self, cp):
 
@@ -1449,7 +1460,8 @@ class InputControlBlock:
         def residual(Pin, verbose=False):
 
             P = Pin.reshape(W.shape)
-            bc_penalty = 1e7
+            bc_penalty = 1  # 1e7
+            decoded_penalty = 0
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             # Residuals are in the decoded space - so direct way to constrain the boundary data
@@ -1464,14 +1476,13 @@ class InputControlBlock:
 
             ltn = rtn = tpn = btn = 0
             constrained_residual_norm = 0
-            constrained_residual_norm2 = 0
             if constraints is not None and len(constraints) > 0 and constrainInterfaces:
                 if len(left) > 1:
 
                     # Compute the residual for left interface condition
                     # constrained_residual_norm += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata[:,0])
                     ltn = np.sqrt(
-                        (np.sum((P[0, :] - 0.5 * (constraints[0, :] + left[:, 0])) ** 2) / len(left[:, 0])))
+                        (np.sum((P[0, :] - 0.5 * (constraints[0, :] + left[:, degree-1])) ** 2) / len(P[0, :])))
                     constrained_residual_norm += ltn
                     # print(idom, ': Left constrained norm: ', ltn)
                     # print('Left Shapes knots: ', constrained_residual_norm, len(left[:]), len(
@@ -1482,7 +1493,7 @@ class InputControlBlock:
                     # Compute the residual for right interface condition
                     # constrained_residual_norm += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata[:,0])
                     rtn = np.sqrt(
-                        (np.sum((P[-1, :] - 0.5 * (constraints[-1, :] + right[:, -1]))**2) / len(right[:, -1])))
+                        (np.sum((P[-1, :] - 0.5 * (constraints[-1, :] + right[:, degree-1]))**2) / len(right[:, -1])))
                     constrained_residual_norm += rtn
                     # print(idom, ': Right constrained norm: ', rtn)
                     # print('Right Shapes knots: ', constrained_residual_norm, len(right[:]), len(
@@ -1493,7 +1504,7 @@ class InputControlBlock:
                     # Compute the residual for top interface condition
                     # constrained_residual_norm += np.sum( ( P[:,-1] - (topdata[:]) )**2 ) / len(topdata[:,0])
                     tpn = np.sqrt(
-                        (np.sum((P[:, -1] - 0.5 * (constraints[:, -1] + top[:, 0])) ** 2) / len(top[:, 0])))
+                        (np.sum((P[:, -1] - 0.5 * (constraints[:, -1] + top[:, degree-1])) ** 2) / len(top[:, 0])))
                     constrained_residual_norm += tpn
                     # print(idom, ': Top constrained norm: ', tpn)
                     # print('Top: ', constrained_residual_norm, P[:, -1],
@@ -1504,7 +1515,7 @@ class InputControlBlock:
                     # Compute the residual for bottom interface condition
                     # constrained_residual_norm += np.sum( ( P[:,0] - (bottomdata[:]) )**2 ) / len(bottomdata[:,0])
                     btn = np.sqrt(
-                        np.sum((P[:, 0] - 0.5 * (constraints[:, 0] + bottom[:, 0]))**2) / len(bottom[:, 0]))
+                        np.sum((P[:, 0] - 0.5 * (constraints[:, 0] + bottom[:, degree-1]))**2) / len(bottom[:, 0]))
                     constrained_residual_norm += btn
                     # print(idom, ': Bottom constrained norm: ', btn)
                     # print(
@@ -1516,13 +1527,11 @@ class InputControlBlock:
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
             # constraint error of solution on the subdomain interfaces
-            net_residual_norm = decoded_residual_norm + (
-                bc_penalty * (constrained_residual_norm) + np.power(bc_penalty, 0.5)
-                * np.sqrt(constrained_residual_norm2))
+            net_residual_norm = decoded_penalty * decoded_residual_norm + bc_penalty * constrained_residual_norm
 
             if verbose:
                 print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm,
-                      ' and constraint = ', constrained_residual_norm, ' der = ', np.sqrt(constrained_residual_norm2))
+                      ' and constraint = ', constrained_residual_norm)
                 # print('Constraint errors = ', ltn, rtn, tpn, btn, constrained_residual_norm)
 
             return net_residual_norm
@@ -1717,7 +1726,7 @@ class InputControlBlock:
 
         # L2NormVector = MPI.gather(self.errorMetricsL2[self.outerIteration - 1], root=0)
 
-    def check_convergence(self, cp):
+    def check_convergence(self, cp, iterationNum):
 
         global isConverged, L2err
         if len(self.decodedAdaptiveOld):
@@ -1734,9 +1743,9 @@ class InputControlBlock:
             self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
             self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
 
-            # print(cp.gid()+1, ' Convergence check: ', errorMetricsSubDomL2, errorMetricsSubDomLinf,
-            #                 np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]),
-            #                 errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10)
+            print(cp.gid()+1, ' Convergence check: ', errorMetricsSubDomL2, errorMetricsSubDomLinf,
+                  np.abs(self.errorMetricsLinf[self.outerIteration]-self.errorMetricsLinf[self.outerIteration-1]),
+                  errorMetricsSubDomLinf < 1e-8 and np.abs(self.errorMetricsL2[self.outerIteration]-self.errorMetricsL2[self.outerIteration-1]) < 1e-10)
 
             L2err[cp.gid()] = self.decodederrors[0]
             if errorMetricsSubDomLinf < 1e-12 and np.abs(
@@ -1744,6 +1753,7 @@ class InputControlBlock:
                 print('Subdomain ', cp.gid()+1, ' has converged to its final solution with error = ', errorMetricsSubDomLinf)
                 isConverged[cp.gid()] = 1
 
+        # self.outerIteration = iterationNum+1
         self.outerIteration += 1
 
         # isASMConverged = commW.allreduce(self.outerIterationConverged, op=MPI.LAND)
@@ -1774,7 +1784,7 @@ class InputControlBlock:
         # self.Nv = basis(self.V[np.newaxis, :], degree, Tv[:, np.newaxis]).T
         self.compute_basis(degree, Tu, Tv)
 
-        if (np.sum(np.abs(P)) < 1e-14 and len(P) > 0) or len(P) == 0:
+        if ((np.sum(np.abs(P)) < 1e-14 and len(P) > 0) or len(P) == 0) and self.outerIteration == 0:
             print(iSubDom, " - Applying the unconstrained solver.")
             P = self.LSQFit_NonlinearOptimize(iSubDom, W, degree, None)
 #             P,_ = lsqFit(self.Nu, self.Nv, W, self.zl)
@@ -2023,6 +2033,12 @@ class InputControlBlock:
                                                                                                                   split_all=True,
                                                                                                                   decodedError=adaptiveErr)
 
+        if len(self.pAdaptiveHistory) == 0:
+            if useAitken:
+                self.pAdaptiveHistory = np.zeros((self.pAdaptive.shape[0]*self.pAdaptive.shape[1], 3))
+            else:
+                self.pAdaptiveHistory = np.zeros((self.pAdaptive.shape[0]*self.pAdaptive.shape[1], nWynnEWork))
+
         # Update the local decoded data
         self.decodedAdaptiveOld = np.copy(self.decodedAdaptive)
         self.decodedAdaptive = decode(self.pAdaptive, self.WAdaptive, self.Nu, self.Nv)
@@ -2121,12 +2137,6 @@ for iterIdx in range(nASMIterations):
     if rank == 0:
         print("\n---- Starting Iteration: %d ----" % iterIdx)
 
-    # Now let us perform send-receive to get the data on the interface boundaries from
-    # adjacent nearest-neighbor subdomains
-    mc2.foreach(InputControlBlock.send)
-    mc2.exchange(False)
-    mc2.foreach(InputControlBlock.recv)
-
     if iterIdx > 1:
         disableAdaptivity = True
         constrainInterfaces = True
@@ -2141,7 +2151,7 @@ for iterIdx in range(nASMIterations):
     mc2.foreach(InputControlBlock.solve_adaptive)
 
     # check if we have locally converged within criteria
-    mc2.foreach(InputControlBlock.check_convergence)
+    mc2.foreach(lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx))
 
     isASMConverged = commW.allreduce(np.sum(isConverged), op=MPI.SUM)
 
@@ -2176,6 +2186,17 @@ for iterIdx in range(nASMIterations):
         if rank == 0:
             print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx+1))
         break
+
+    else:
+        if extrapolate:
+            mc2.foreach(lambda icb, cp: InputControlBlock.extrapolate_guess(icb, cp, iterIdx))
+
+        # Now let us perform send-receive to get the data on the interface boundaries from
+        # adjacent nearest-neighbor subdomains
+        mc2.foreach(InputControlBlock.send)
+        mc2.exchange(False)
+        mc2.foreach(InputControlBlock.recv)
+
 
 # mc2.foreach(InputControlBlock.print_solution)
 
