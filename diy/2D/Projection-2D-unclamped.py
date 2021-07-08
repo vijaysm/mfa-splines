@@ -53,8 +53,8 @@ params = {"ytick.color": "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-nSubDomainsX = 2
-nSubDomainsY = 2
+nSubDomainsX = 3
+nSubDomainsY = 3
 degree = 3
 problem = 1
 verbose = False
@@ -76,7 +76,7 @@ useDerivativeConstraints = 0
 
 #                      0      1       2         3          4       5       6      7       8
 solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'Newton-CG', 'TNC', 'krylov', 'lm', 'trf', 'anderson', 'hybr']
-solverScheme = solverMethods[1]
+solverScheme = solverMethods[0]
 solverMaxIter = 20
 nASMIterations = 10
 
@@ -90,8 +90,8 @@ useDeCastelJau = True
 disableAdaptivity = True
 variableResolution = False
 
-maxAbsErr = 1e-4
-maxRelErr = 1e-10
+maxAbsErr = 1e-6
+maxRelErr = 1e-12
 maxAdaptIter = 3
 # AdaptiveStrategy = 'extend'
 AdaptiveStrategy = 'reset'
@@ -205,8 +205,8 @@ L2err = np.zeros(nSubDomains)
 # def read_problem_parameters():
 x = y = z = None
 if problem == 1:
-    nPointsX = 1025
-    nPointsY = 1025
+    nPointsX = 1024
+    nPointsY = 1024
     scale = 1
     shiftX = 0.0
     shiftY = 0.0
@@ -241,7 +241,7 @@ if problem == 1:
 elif problem == 2:
     nPointsX = 501
     nPointsY = 501
-    scale = 1.0
+    scale = 1
     shiftX = 0.25*0
     shiftY = -0.25*0
     DminX = DminY = 0
@@ -250,13 +250,13 @@ elif problem == 2:
     x = np.linspace(DminX, DmaxX, nPointsX)
     y = np.linspace(DminY, DmaxY, nPointsY)
     X, Y = np.meshgrid(x+shiftX, y+shiftY)
-    z = scale * np.sin(X) * np.sin(Y)
+    # z = scale * np.sinc(X) * np.sinc(Y)
+    z = scale * np.sin(Y)
+    # z = scale * X * Y
     z = z.T
-    # z = scale * np.sin(Y)
-    # z = scale * X
     # (3*degree + 1) #minimum number of control points
     if len(nControlPointsInput) == 0:
-        nControlPointsInput = 4*np.array([1, 1])
+        nControlPointsInput = 10*np.array([1, 1])
     del X, Y
 
 elif problem == 3:
@@ -778,6 +778,7 @@ class InputControlBlock:
         self.V = []
         self.Nu = []
         self.Nv = []
+        self.bndconstraints = {}
         self.leftconstraint = []
         self.rightconstraint = []
         self.topconstraint = []
@@ -826,8 +827,8 @@ class InputControlBlock:
     def compute_basis(self, degree, Tu, Tv):
         self.Bx = sp.BSplineBasis(order=degree+1, knots=Tu)
         self.By = sp.BSplineBasis(order=degree+1, knots=Tv)
-        # print("TU = ", Tu, self.U[0], self.U[-1], self.Bx.greville())
-        # print("TV = ", Tv, self.V[0], self.V[-1], self.By.greville())
+        print("TU = ", Tu, self.U[0], self.U[-1], self.Bx.greville())
+        print("TV = ", Tv, self.V[0], self.V[-1], self.By.greville())
         self.Nu = np.array(self.Bx.evaluate(self.U))
         self.Nv = np.array(self.By.evaluate(self.V))
 
@@ -935,7 +936,7 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
                                   self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1].shape)
 
-                        cp.enqueue(target, self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1])
+                        cp.enqueue(target, self.pAdaptive[:, -1-degree-augmentSpanSpace:])
                         cp.enqueue(target, self.knotsAdaptiveU[:])
                         cp.enqueue(target, self.knotsAdaptiveV[-1:-2-degree-augmentSpanSpace:-1])
 
@@ -954,7 +955,7 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
                                   self.pAdaptive[-1:-2-degree-augmentSpanSpace:-1, :].shape)
 
-                        cp.enqueue(target, self.pAdaptive[-1:-2-degree-augmentSpanSpace:-1, :])
+                        cp.enqueue(target, self.pAdaptive[-1-degree-augmentSpanSpace:, :])
                         cp.enqueue(target, self.knotsAdaptiveV[:])
                         cp.enqueue(target, self.knotsAdaptiveU[-1:-2-degree-augmentSpanSpace:-1])
 
@@ -963,34 +964,40 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
                                   self.pAdaptive[degree+augmentSpanSpace::-1, :].shape)
 
-                        cp.enqueue(target, self.pAdaptive[degree+augmentSpanSpace::-1, :])
+                        cp.enqueue(target, self.pAdaptive[0:1+degree+augmentSpanSpace, :])
                         cp.enqueue(target, self.knotsAdaptiveV[:])
                         cp.enqueue(target, self.knotsAdaptiveU[0:(degree+augmentSpanSpace+1)])
 
                 else:
 
                     verbose = True
-                    if dir[0] > 0 and dir[1] > 0:  # target block is diagonally right to  current subdomain
-                        cp.enqueue(target, self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1])
+                    if dir[0] > 0 and dir[1] > 0:  # target block is diagonally top right to current subdomain
+
+                        cp.enqueue(target, self.pAdaptive)
+                        # cp.enqueue(target, self.pAdaptive[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
                         if verbose:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Diagonal = right-top: ',
-                                  self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1].shape)
-                    if dir[0] < 0 and dir[1] > 0:  # target block is diagonally left to current subdomain
-                        cp.enqueue(target, self.pAdaptive[:, 0:1+degree+augmentSpanSpace])
+                                  self.pAdaptive[-1:-2-degree-augmentSpanSpace:-1, :1+degree+augmentSpanSpace])
+                    if dir[0] < 0 and dir[1] > 0:  # target block is diagonally top left to current subdomain
+                        cp.enqueue(target, self.pAdaptive)
+                        # cp.enqueue(target, self.pAdaptive[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
                         if verbose:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Diagonal = left-top: ',
-                                  self.pAdaptive[:, 0:1+degree+augmentSpanSpace].shape)
+                                  self.pAdaptive[-1:-2-degree-augmentSpanSpace:-1, :1+degree+augmentSpanSpace])
 
                     if dir[0] < 0 and dir[1] < 0:  # target block is diagonally left bottom  current subdomain
-                        cp.enqueue(target, self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1])
+                        cp.enqueue(target, self.pAdaptive)
+                        # cp.enqueue(target, self.pAdaptive[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
+
                         if verbose:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Diagonal = left-bottom: ',
-                                  self.pAdaptive[:, -1:-2-degree-augmentSpanSpace:-1].shape)
-                    if dir[0] > 0 and dir[1] < 0:  # target block is diagonally left to current subdomain
-                        cp.enqueue(target, self.pAdaptive[:, 0:1+degree+augmentSpanSpace])
+                                  self.pAdaptive[:1+degree+augmentSpanSpace,  -1-degree-augmentSpanSpace:])
+                    if dir[0] > 0 and dir[1] < 0:  # target block is diagonally right bottom of current subdomain
+                        cp.enqueue(target, self.pAdaptive)
+                        # cp.enqueue(target, self.pAdaptive[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
                         if verbose:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Diagonal = right-bottom: ',
-                                  self.pAdaptive[:, 0:1+degree+augmentSpanSpace].shape)
+                                  self.pAdaptive[:1+degree+augmentSpanSpace,  -1 - degree - augmentSpanSpace:])
                     verbose = False
 
         return
@@ -1029,7 +1036,7 @@ class InputControlBlock:
                 if dir[0] < 0:  # target block is to the left of current subdomain
                     # print('Right: ', np.array(o[2:pl+2]).reshape(useDerivativeConstraints+1,pll).T)
 
-                    self.leftconstraint = cp.dequeue(tgid).T
+                    self.leftconstraint = cp.dequeue(tgid)
                     self.leftconstraintKnots = cp.dequeue(tgid)
                     self.ghostleftknots = cp.dequeue(tgid)
                     if verbose:
@@ -1038,7 +1045,7 @@ class InputControlBlock:
 
                 else:  # target block is to right of current subdomain
 
-                    self.rightconstraint = cp.dequeue(tgid).T
+                    self.rightconstraint = cp.dequeue(tgid)
                     self.rightconstraintKnots = cp.dequeue(tgid)
                     self.ghostrightknots = cp.dequeue(tgid)
                     if verbose:
@@ -1047,26 +1054,47 @@ class InputControlBlock:
             else:
 
                 verbose = True
-                if dir[0] < 0 and dir[1] < 0:  # sender block is diagonally right top to  current subdomain
+                # if dir[0] < 0 and dir[1] < 0:  # sender block is diagonally right top to  current subdomain
+                #     self.toprightconstraint = cp.dequeue(tgid)
+                #     if verbose:
+                #         print("Top-right: %d received from %d: from direction %s" %
+                #               (cp.gid(), tgid, dir), self.toprightconstraint.shape)
+                # if dir[0] > 0 and dir[1] < 0:  # sender block is diagonally left top to current subdomain
+                #     self.topleftconstraint = cp.dequeue(tgid)
+                #     if verbose:
+                #         print("Top-left: %d received from %d: from direction %s" %
+                #               (cp.gid(), tgid, dir), self.topleftconstraint.shape)
+                # if dir[0] > 0 and dir[1] > 0:  # sender block is diagonally left bottom  current subdomain
+                #     self.bottomleftconstraint = cp.dequeue(tgid)
+                #     if verbose:
+                #         print("Bottom-left: %d received from %d: from direction %s" %
+                #               (cp.gid(), tgid, dir), self.bottomleftconstraint.shape)
+                # if dir[0] < 0 and dir[1] > 0:  # sender block is diagonally left to current subdomain
+                #     self.bottomrightconstraint = cp.dequeue(tgid)
+                #     if verbose:
+                #         print("Bottom-right: %d received from %d: from direction %s" %
+                #               (cp.gid(), tgid, dir), self.bottomrightconstraint.shape)
+                if dir[0] > 0 and dir[1] > 0:  # sender block is diagonally right top to  current subdomain
                     self.toprightconstraint = cp.dequeue(tgid)
                     if verbose:
                         print("Top-right: %d received from %d: from direction %s" %
                               (cp.gid(), tgid, dir), self.toprightconstraint.shape)
                 if dir[0] > 0 and dir[1] < 0:  # sender block is diagonally left top to current subdomain
-                    self.topleftconstraint = cp.dequeue(tgid)
+                    self.bottomrightconstraint = cp.dequeue(tgid)
                     if verbose:
-                        print("Top-left: %d received from %d: from direction %s" %
-                              (cp.gid(), tgid, dir), self.topleftconstraint.shape)
-                if dir[0] > 0 and dir[1] > 0:  # sender block is diagonally left bottom  current subdomain
+                        print("Bottom-right: %d received from %d: from direction %s" %
+                              (cp.gid(), tgid, dir), self.bottomrightconstraint.shape)
+                if dir[0] < 0 and dir[1] < 0:  # sender block is diagonally left bottom  current subdomain
                     self.bottomleftconstraint = cp.dequeue(tgid)
                     if verbose:
                         print("Bottom-left: %d received from %d: from direction %s" %
                               (cp.gid(), tgid, dir), self.bottomleftconstraint.shape)
                 if dir[0] < 0 and dir[1] > 0:  # sender block is diagonally left to current subdomain
-                    self.bottomrightconstraint = cp.dequeue(tgid)
+                    self.topleftconstraint = cp.dequeue(tgid)
                     if verbose:
-                        print("Bottom-right: %d received from %d: from direction %s" %
-                              (cp.gid(), tgid, dir), self.bottomrightconstraint.shape)
+                        print("Top-left: %d received from %d: from direction %s" %
+                              (cp.gid(), tgid, dir), self.topleftconstraint.shape)
+                verbose = False
 
         return
 
@@ -1365,7 +1393,7 @@ class InputControlBlock:
 
         # Subdomain ID: iSubDom = cp.gid()+1
         self.nControlPointSpans = self.nControlPoints - 1
-        self.nInternalKnotSpans = self.nControlPoints - degree  # + 1
+        self.nInternalKnotSpans = self.nControlPoints - degree
 
         inc = (self.Dmaxi - self.Dmini) / self.nInternalKnotSpans
         # print ("self.nInternalKnotSpans = ", self.nInternalKnotSpans, " inc = ", inc)
@@ -1574,76 +1602,6 @@ class InputControlBlock:
         if constraints is not None:
             decodedPrevIterate = np.matmul(np.matmul(decodeOpX, constraints), decodeOpY.T)
 
-        def residual_operator_Ab(Pin, verbose=False):  # checkpoint3
-
-            P = Pin.reshape(W.shape)
-
-            # decodedValues = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-
-            # Error = Z - D
-            # D = (X * P) * Y^T
-            # X^T Z Y = (X^T * X) * P * (Y^T * Y)
-            Aoper = np.matmul(np.matmul(decodeOpX.T, decodeOpX), np.matmul(
-                decodeOpY.T, decodeOpY))  # np.matmul(RN.T, RN)
-            Brhs = np.matmul(np.matmul(decodeOpX.T, self.zl), decodeOpY)  # RN.T @ ysl
-            # print('Input P = ', Pin, Aoper.shape, Brhs.shape)
-
-            residual_nrm_vec = Brhs - Aoper @ P
-            residual_nrm = np.linalg.norm(residual_nrm_vec, ord=2)
-
-            print("Error Norm vector: ", residual_nrm)
-
-            oddDegree = (degree % 2)
-            oddDegreeImpose = True
-
-            # num_constraints = (degree)/2 if degree is even
-            # num_constraints = (degree+1)/2 if degree is odd
-            nconstraints = augmentSpanSpace + (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-            # if oddDegree and not oddDegreeImpose:
-            #     nconstraints -= 1
-            # nconstraints = degree-1
-            print('nconstraints: ', nconstraints)
-
-            residual_constrained_nrm = 0
-            nBndOverlap = 0
-            if constraints is not None and len(constraints) > 0:
-                if idom > 1:  # left constraint
-
-                    loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
-
-                    if oddDegree and not oddDegreeImpose:
-                        print('left: ', nconstraints, -degree+nconstraints+loffset,
-                              Pin[nconstraints], constraints[0][-degree+nconstraints+loffset])
-                        constraintVal = 0.5 * (Pin[nconstraints] - constraints[0][-degree+nconstraints+loffset])
-                        Brhs -= constraintVal * Aoper[:, nconstraints]
-
-                    for ic in range(nconstraints):
-                        Brhs[ic] = 0.5 * (Pin[ic] + constraints[0][-degree+ic+loffset])
-                        # Brhs[ic] = constraints[0][-degree+ic]
-                        Aoper[ic, :] = 0.0
-                        Aoper[ic, ic] = 1.0
-
-                if idom < nSubDomains:  # right constraint
-
-                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
-
-                    if oddDegree and not oddDegreeImpose:
-                        print('right: ', -nconstraints-1, degree-1-nconstraints+loffset,
-                              Pin[-nconstraints-1], constraints[2]
-                              [degree-1-nconstraints+loffset])
-                        constraintVal = -0.5 * (Pin[-nconstraints-1] - constraints[2]
-                                                [degree-1-nconstraints+loffset])
-                        Brhs -= constraintVal * Aoper[:, -nconstraints-1]
-
-                    for ic in range(nconstraints):
-                        Brhs[-ic-1] = 0.5 * (Pin[-ic-1] + constraints[2][degree-1-ic+loffset])
-                        # Brhs[-ic-1] = constraints[2][degree-1-ic]
-                        Aoper[-ic-1, :] = 0.0
-                        Aoper[-ic-1, -ic-1] = 1.0
-
-            # print(Aoper, Brhs)
-            return [Aoper, Brhs]
-
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
@@ -1651,18 +1609,21 @@ class InputControlBlock:
         def residual(Pin, verbose=False):
 
             P = Pin.reshape(W.shape)
-            alpha = 1
-            bc_penalty = 1e7
-            decoded_penalty = 1
-            # bc_penalty = 1
+            # alpha = 1
+            # beta = 1
+            bc_penalty = 1e5
+            if constraints is not None:
+                decoded_penalty = 1
+            else:
+                decoded_penalty = 1
+            # bc_penalty = 100
             # decoded_penalty = 0
             useDiagonalBlocks = True
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
-            # Residuals are in the decoded space - so direct way to constrain the boundary data
             # decoded = decode(P, W, self.Nu, self.Nv)
-            # decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
-            decoded = np.matmul(np.matmul(decodeOpY, P), decodeOpX.T)
+            decoded = np.matmul(np.matmul(decodeOpX, P), decodeOpY.T)
+            # decoded = np.matmul(np.matmul(decodeOpY, P), decodeOpX.T)
             residual_decoded = np.abs(decoded - self.zl)/zRange
             residual_vec_decoded = residual_decoded.reshape(residual_decoded.shape[0]*residual_decoded.shape[1])
             decoded_residual_norm = np.sqrt(np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
@@ -1672,69 +1633,99 @@ class InputControlBlock:
 
             ltn = rtn = tpn = btn = 0
             constrained_residual_norm = 0
+            diagonal_boundary_residual_norm = 0
+            oddDegree = (degree % 2)
+            nconstraints = augmentSpanSpace + (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+            # Odd degree: [nconstraints-1, -nconstraints]
+            # print('nconstraints = ', nconstraints)
+            # cIndex = (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
             if constraints is not None and len(constraints) > 0 and constrainInterfaces:
                 if len(self.leftconstraint):
 
+                    # degree 2: 1
+                    loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
+
                     # Compute the residual for left interface condition
                     # constrained_residual_norm += np.sum( ( P[0,:] - (leftdata[:]) )**2 ) / len(leftdata[:,0])
+                    if self.rightclamped:
+                        ltn = np.sum((P[nconstraints - 1, :] - 0.5 *
+                                      (constraints[nconstraints - 1, :] + self.leftconstraint
+                                       [-nconstraints + loffset, :])) ** 2)
+                    else:
+                        ltn = np.sum((P[nconstraints - 1, :] - 0.5 *
+                                      (constraints[nconstraints - 1, :] + self.leftconstraint
+                                       [-nconstraints + loffset, :])) ** 2)
                     # ltn = np.sqrt(
-                    #     (np.sum((P[0, :] - 0.5 * (constraints[0, :] + left[:, degree-1])) ** 2) / len(P[0, :])))
-                    ltn = np.sqrt(
-                        np.sum(
-                            (alpha * P[0, :] + (1 - alpha) * constraints[0, :] - self.leftconstraint[:, degree - 1]) ** 2) /
-                        len(P[0, :]))
-                    constrained_residual_norm += ltn
+                    #     np.sum(
+                    #         (alpha * P[0, :] + (1 - alpha) * constraints[0, :] - beta * self.leftconstraint
+                    #          [:, degree - 1]) ** 2) / len(P[0, :]))
+                    constrained_residual_norm += (ltn/len(P[0, :]))
                     # print(idom, ': Left constrained norm: ', ltn)
                     # print('Left Shapes knots: ', constrained_residual_norm, len(left[:]), len(
                     #     knotsAllV), self.yl.shape, left, (constraints[-1, :]), P[0, :], P[-1, :])
 
                 if len(self.rightconstraint):
 
+                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
+
                     # Compute the residual for right interface condition
                     # constrained_residual_norm += np.sum( ( P[-1,:] - (rightdata[:]) )**2 ) / len(rightdata[:,0])
+                    if self.leftclamped:
+                        rtn = np.sum((P[-nconstraints, :] - 0.5 *
+                                      (constraints[-nconstraints, :] + self.rightconstraint
+                                       [nconstraints - 1 + loffset, :])) ** 2)
+                    else:
+                        rtn = np.sum((P[-nconstraints, :] - 0.5 *
+                                      (constraints[-nconstraints, :] + self.rightconstraint
+                                       [nconstraints - 1 + loffset, :])) ** 2)
                     # rtn = np.sqrt(
-                    #     (np.sum((P[-1, :] - 0.5 * (constraints[-1, :] + right[:, degree-1]))**2) / len(right[:, -1])))
-                    rtn = np.sqrt(
-                        np.sum(
-                            (alpha * P[-1, :] + (1 - alpha) * constraints[-1, :] - self.rightconstraint[:, 1]) ** 2) /
-                        len(P[-1, :]))
+                    #     np.sum(
+                    #         (alpha * P[-1, :] + (1 - alpha) * constraints[-1, :] - beta * self.rightconstraint[:, degree-1]) ** 2) /
+                    #     len(P[-1, :]))
                     # rtn = np.sqrt(
                     #     (np.sum((0.5 * (P[-1, :] - right[:, degree-1]))**2) / len(P[-1, :])))
-                    constrained_residual_norm += rtn
+                    constrained_residual_norm += (rtn/len(P[-1, :]))
                     # print(idom, ': Right constrained norm: ', rtn)
                     # print('Right Shapes knots: ', constrained_residual_norm, len(right[:]), len(
                     #     knotsAllV), self.yl.shape, right, (constraints[0, :]), P[0, :], P[-1, :])
 
                 if len(self.topconstraint):
 
+                    loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
+
                     # Compute the residual for top interface condition
                     # constrained_residual_norm += np.sum( ( P[:,-1] - (topdata[:]) )**2 ) / len(topdata[:,0])
+                    tpn = np.sum((P[:, -nconstraints] - 0.5 *
+                                  (constraints[:, -nconstraints + loffset] + self.topconstraint
+                                   [:, nconstraints - 1 + loffset])) ** 2)
                     # tpn = np.sqrt(
-                    #     (np.sum((P[:, -1] - 0.5 * (constraints[:, -1] + top[:, degree-1])) ** 2) / len(top[:, 0])))
-                    tpn = np.sqrt(
-                        np.sum(
-                            (alpha * P[:, -1] + (1 - alpha) * constraints[:, -1] - self.topconstraint[:, degree - 1]) ** 2) /
-                        len(P[:, -1]))
+                    #     np.sum(
+                    #         (alpha * P[:, -1] + (1 - alpha) * constraints[:, -1] - beta * self.topconstraint
+                    #          [:, degree - 1]) ** 2) / len(P[:, -1]))
                     # tpn = np.sqrt(
                     #     (np.sum((0.5 * (P[:, -1] + top[:, degree-1])) ** 2) / len(P[:, -1])))
-                    constrained_residual_norm += tpn
+                    constrained_residual_norm += (tpn / len(P[:, -1]))
                     # print(idom, ': Top constrained norm: ', tpn)
                     # print('Top: ', constrained_residual_norm, P[:, -1],
                     #       constraints[:, -1], P[:, 0], constraints[:, 0], top[:])
 
                 if len(self.bottomconstraint):
 
+                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
+
                     # Compute the residual for bottom interface condition
                     # constrained_residual_norm += np.sum( ( P[:,0] - (bottomdata[:]) )**2 ) / len(bottomdata[:,0])
-                    # btn = np.sqrt(
-                    #     np.sum((P[:, 0] - 0.5 * (constraints[:, 0] + bottom[:, degree-1]))**2) / len(bottom[:, 0]))
-                    btn = np.sqrt(
-                        np.sum(
-                            (alpha * P[:, 0] + (1 - alpha) * constraints[:, 0] - self.bottomconstraint[:, degree - 1]) ** 2) /
-                        len(P[:, 0]))
+                    btn = np.sum(
+                        (P[:, nconstraints - 1] - 0.5 *
+                         (constraints[:, nconstraints - 1] + self.bottomconstraint
+                          [:, -nconstraints + loffset])) ** 2)
+                    # btn=np.sqrt(
+                    #     np.sum(
+                    #         (alpha * P[:, 0] + (1 - alpha) * constraints[:, 0] - beta * self.bottomconstraint
+                    #          [:, degree - 1]) ** 2) / len(P[:, 0]))
                     # btn = np.sqrt(
                     #     np.sum((0.5 * (P[:, 0] + bottom[:, degree-1]))**2) / len(P[:, 0]))
-                    constrained_residual_norm += btn
+                    constrained_residual_norm += (btn / len(P[:, 0]))
                     # print(idom, ': Bottom constrained norm: ', btn)
                     # print(
                     #     'Bottom: ', constrained_residual_norm, P[:, -1],
@@ -1744,51 +1735,62 @@ class InputControlBlock:
                     #     bottom[:])
 
                 if useDiagonalBlocks:
+                    nDiagonalConstraints = 0
 
                     if len(self.topleftconstraint):
 
                         # Compute the residual for top left interface condition
-                        bnderr = np.sqrt(np.sum(
-                            (alpha * P[: degree, : degree] + (1 - alpha) *
-                             constraints[: degree, : degree] - self.topleftconstraint
-                             [: degree, : degree].T) ** 2) / len(P[0, :]))
-                        constrained_residual_norm += bnderr
+                        # bnderr = np.sqrt(np.sum(
+                        #     (alpha * P[-degree:, : degree] + (1 - alpha) *
+                        #      constraints[-degree:, : degree] - beta * self.topleftconstraint
+                        #      [: degree, -degree:]) ** 2) / degree)
+                        bnderr = np.abs(P[:degree, -degree:] - self.topleftconstraint[-degree:, :degree])
+                        diagonal_boundary_residual_norm += bnderr[-1, -1]
+                        nDiagonalConstraints += 1
 
                     if len(self.toprightconstraint):
 
                         # Compute the residual for top left interface condition
-                        bnderr = np.sqrt(np.sum(
-                            (alpha * P[-degree:, : degree] + (1 - alpha) *
-                             constraints[-degree:, : degree] - self.toprightconstraint
-                             [: degree, : degree][-1:: -1, :]) ** 2) / len(P[0, :]))
-                        constrained_residual_norm += bnderr
+                        # bnderr = np.sqrt(np.sum(
+                        #     (alpha * P[: degree, : degree] + (1 - alpha) *
+                        #      constraints[: degree:, : degree] - beta * self.toprightconstraint
+                        #      [-degree:, -degree:]) ** 2) / degree)
+                        bnderr = np.abs(P[-degree:, -degree:] - self.toprightconstraint[:degree, :degree])
+                        diagonal_boundary_residual_norm += bnderr[-1, 0]
+                        nDiagonalConstraints += 1
 
                     if len(self.bottomleftconstraint):
 
                         # Compute the residual for top left interface condition
-                        bnderr = np.sqrt(np.sum(
-                            (alpha * P[: degree, -degree:] + (1 - alpha) *
-                             constraints[: degree, -degree:] - self.bottomleftconstraint
-                             [: degree, : degree].T) ** 2) / len(P[0, :]))
-                        constrained_residual_norm += bnderr
+                        # bnderr = np.sqrt(np.sum(
+                        #     (alpha * P[-degree:, -degree:] + (1 - alpha) *
+                        #      constraints[-degree:, -degree:] - beta * self.bottomleftconstraint
+                        #      [: degree, :degree]) ** 2) / degree)
+                        bnderr = np.abs(P[:degree, :degree] + - self.bottomleftconstraint[-degree:, -degree:])
+                        diagonal_boundary_residual_norm += bnderr[0, -1]
+                        nDiagonalConstraints += 1
 
                     if len(self.bottomrightconstraint):
 
                         # Compute the residual for top left interface condition
-                        bnderr = np.sqrt(np.sum(
-                            (alpha * P[-degree:, -degree:] + (1 - alpha) * constraints
-                             [-degree:, -degree:] - self.bottomrightconstraint[: degree, : degree]
-                             [-1:: -1, :]) ** 2) / len(P[0, :]))
-                        constrained_residual_norm += bnderr
+                        # bnderr = np.sqrt(np.sum(
+                        #     (alpha * P[:degree, -degree:] + (1 - alpha) * constraints
+                        #      [:degree, -degree:] - beta * self.bottomrightconstraint[-degree:, : degree]
+                        #      ) ** 2) / degree)
+                        bnderr = np.abs(P[-degree:, :degree] - self.bottomrightconstraint[:degree, -degree:])
+                        diagonal_boundary_residual_norm += bnderr[0, 0]
+                        nDiagonalConstraints += 1
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
             # constraint error of solution on the subdomain interfaces
-            net_residual_norm = decoded_penalty * decoded_residual_norm + bc_penalty * constrained_residual_norm
+            net_residual_norm = decoded_penalty * decoded_residual_norm + bc_penalty * (
+                np.sqrt(constrained_residual_norm) + (bc_penalty * diagonal_boundary_residual_norm / nDiagonalConstraints
+                                                      if useDiagonalBlocks else 0))
 
             if verbose:
-                print('Residual = ', net_residual_norm, ' and res_dec = ', decoded_residual_norm,
-                      ' and constraint = ', constrained_residual_norm)
-                # print('Constraint errors = ', ltn, rtn, tpn, btn, constrained_residual_norm)
+                print('Residual = ', net_residual_norm, ' and decoded = ', decoded_residual_norm,
+                      ', constraint = ', constrained_residual_norm, ', diagonal = ', diagonal_boundary_residual_norm)
+                print('Constraint errors = ', ltn, rtn, tpn, btn, constrained_residual_norm)
 
             return net_residual_norm
 
@@ -1962,7 +1964,7 @@ class InputControlBlock:
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
             solution, _ = lsqFit(self.Nu, self.Nv, W, self.zl)
-            solution = solution.reshape(W.shape)
+            # solution = solution.reshape(W.shape)
         else:
 
             print('Initial calculation')
