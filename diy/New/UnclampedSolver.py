@@ -38,10 +38,10 @@ params = {"ytick.color": "b",
 plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
-problem = 2
+problem = 1
 dimension = 2
-degree = 2
-nSubDomains = np.array([2] * dimension, dtype=np.uint32)
+degree = 4
+nSubDomains = np.array([3] * dimension, dtype=np.uint32)
 # nSubDomains = [2, 2]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
@@ -53,7 +53,7 @@ showplot = False if dimension > 1 else True
 useVTKOutput = True if dimension > 1 else False
 
 augmentSpanSpace = 0
-useDiagonalBlocks = False
+useDiagonalBlocks = True
 
 relEPS = 5e-2
 fullyPinned = False
@@ -111,7 +111,7 @@ try:
 except getopt.GetoptError:
     usage()
 
-nControlPointsInputIn = 16
+nControlPointsInputIn = 30
 # nSubDomainsX = nSubDomainsY = nSubDomainsZ = 1
 nPoints = np.array([1, 1, 1], dtype=np.uint32)
 Dmin = np.array(3, dtype=np.float)
@@ -753,7 +753,7 @@ class InputControlBlock:
     def compute_basis_1D(self, degree, knotVectors):
         self.basisFunction['x'] = sp.BSplineBasis(
             order=degree+1, knots=knotVectors['x'])
-        # print("TU = ", knotVectors['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunctio['x'].greville())
+        # print("TU = ", knotVectors['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
         self.NUVW['x'] = np.array(
             self.basisFunction['x'].evaluate(self.UVW['x']))
 
@@ -788,8 +788,8 @@ class InputControlBlock:
             Xi, Yi = np.meshgrid(
                 self.xyzCoordLocal['x'], self.xyzCoordLocal['y'])
 
-            Xi = Xi.reshape(1, Xi.shape[1], Xi.shape[0])
-            Yi = Yi.reshape(1, Yi.shape[1], Yi.shape[0])
+            Xi = Xi.reshape(1, Xi.shape[0], Xi.shape[1])
+            Yi = Yi.reshape(1, Yi.shape[0], Yi.shape[1])
             Zi = np.ones(Xi.shape)
             PmK = self.pMK.T.reshape(1, self.pMK.shape[1], self.pMK.shape[0])
             errorDecoded = errorDecoded.T.reshape(
@@ -1441,10 +1441,10 @@ class InputControlBlock:
             # P = Pin
             # alpha = 1
             # beta = 1
-            bc_penalty = 1e0
-            diag_penalty = 0
+            bc_penalty = 1
+            diag_penalty = 10
             if constraints is not None:
-                decoded_penalty = 1e5
+                decoded_penalty = 10 #10**(degree)
             else:
                 decoded_penalty = 1
             decoded_residual_norm = 0
@@ -1467,6 +1467,8 @@ class InputControlBlock:
             oddDegree = (degree % 2)
             nconstraints = augmentSpanSpace + \
                 (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+            # nconstraints = augmentSpanSpace + \
+            #     (degree if not oddDegree else degree+1)
             # Odd degree: [nconstraints-1, -nconstraints]
             # print('degree = ', degree, 'nconstraints = ', nconstraints)
             # cIndex = (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
@@ -1492,14 +1494,14 @@ class InputControlBlock:
 
                     if oddDegree:
                         ltn = np.sum(
-                            (P[0:nconstraints+1, :] - 0.5 *
-                                (constraints[0:nconstraints+1, :] +
-                                 self.boundaryConstraints['left'][-nconstraints-2:-1:, :])) ** 2)
+                            (P[degree-nconstraints, :] - 0.5 *
+                                (constraints[degree-nconstraints, :] +
+                                 self.boundaryConstraints['left'][-(degree-nconstraints)-1, :])) ** 2)
                     else:
                         ltn = np.sum(
-                            (P[nconstraints-1:2*nconstraints, :] - 0.5 *
-                                (constraints[nconstraints-1:2*nconstraints, :] +
-                                 self.boundaryConstraints['left'][-nconstraints-1:, :])) ** 2)
+                            (P[degree-nconstraints, :] - 0.5 *
+                                (constraints[degree-nconstraints, :] +
+                                 self.boundaryConstraints['left'][-(degree-nconstraints), :])) ** 2)
 
                     constrained_residual_norm += (ltn /
                                                   len(P[0, :])/nconstraints)
@@ -1519,17 +1521,17 @@ class InputControlBlock:
                     # constrained_residual_norm += (rtn/len(P[-1, :]))
 
                     if oddDegree:
-                        rtn = np.sum((P[-nconstraints-1::, :] - 0.5 *
-                                      (constraints[-nconstraints-1::, :] +
-                                     self.boundaryConstraints['right'][1:nconstraints+2, :])) ** 2)
+                        rtn = np.sum((P[-(degree-nconstraints)-1, :] - 0.5 *
+                                      (constraints[-(degree-nconstraints)-1, :] +
+                                     self.boundaryConstraints['right'][degree-nconstraints, :])) ** 2)
                     else:
                         # Degree = 4
                         # rtn = np.sum((P[-nconstraints-1::, :] - 0.5 *
                         #               (constraints[-nconstraints-1::, :] +
                         #              self.boundaryConstraints['right'][1:nconstraints+2, :])) ** 2)
-                        rtn = np.sum((P[-nconstraints-1:, :] - 0.5 *
-                                      (constraints[-nconstraints-1:, :] +
-                                     self.boundaryConstraints['right'][nconstraints-1:2*nconstraints, :])) ** 2)
+                        rtn = np.sum((P[-(degree-nconstraints), :] - 0.5 *
+                                      (constraints[-(degree-nconstraints), :] +
+                                     self.boundaryConstraints['right'][degree-nconstraints, :])) ** 2)
                         # degree = 4: nconstraints = 2; self.boundaryConstraints['right'][1:4, :]
                         # degree = 2: nconstraints = 1; self.boundaryConstraints['right'][0:2, :]
 
@@ -1550,13 +1552,13 @@ class InputControlBlock:
                     #                  self.boundaryConstraints['top'][:, nconstraints + (0 if not oddDegree else -1)])) ** 2)
                     # else:
                     if oddDegree:
-                        tpn = np.sum((P[:, -nconstraints-1::] - 0.5 *
-                                      (constraints[:, -nconstraints-2:-1:] +
-                                     self.boundaryConstraints['top'][:, 1:nconstraints+2])) ** 2)
+                        tpn = np.sum((P[:, -(degree-nconstraints)-1] - 0.5 *
+                                      (constraints[:, -(degree-nconstraints)-1] +
+                                     self.boundaryConstraints['top'][:, degree-nconstraints])) ** 2)
                     else:
-                        tpn = np.sum((P[:, -nconstraints-1:] - 0.5 *
-                                      (constraints[:, -nconstraints-2:-1:] +
-                                     self.boundaryConstraints['top'][:, nconstraints-1:2*nconstraints])) ** 2)
+                        tpn = np.sum((P[:, -(degree-nconstraints)] - 0.5 *
+                                      (constraints[:, -(degree-nconstraints)] +
+                                     self.boundaryConstraints['top'][:, degree-nconstraints])) ** 2)
 
                     constrained_residual_norm += (tpn /
                                                   len(P[:, -1])/nconstraints)
@@ -1576,13 +1578,13 @@ class InputControlBlock:
                     #                    self.boundaryConstraints['bottom'][:, -nconstraints])) ** 2)
                     # else:
                     if oddDegree:
-                        btn = np.sum((P[:, :nconstraints+1] - 0.5 *
-                                      (constraints[:, :nconstraints+1] +
-                                       self.boundaryConstraints['bottom'][:, -nconstraints-2:-1:])) ** 2)
+                        btn = np.sum((P[:, degree-nconstraints] - 0.5 *
+                                      (constraints[:, degree-nconstraints] +
+                                       self.boundaryConstraints['bottom'][:, -(degree-nconstraints)-1])) ** 2)
                     else:
-                        btn = np.sum((P[:, nconstraints-1:2*nconstraints] - 0.5 *
-                                      (constraints[:, nconstraints-1:2*nconstraints] +
-                                       self.boundaryConstraints['bottom'][:, -nconstraints-1:])) ** 2)
+                        btn = np.sum((P[:, degree-nconstraints] - 0.5 *
+                                      (constraints[:, degree-nconstraints] +
+                                       self.boundaryConstraints['bottom'][:, -(degree-nconstraints)])) ** 2)
 
                     constrained_residual_norm += (btn /
                                                   len(P[:, 0])/nconstraints)
@@ -1601,12 +1603,12 @@ class InputControlBlock:
                         #     (constraints[-nconstraints, nconstraints-1] + self.boundaryConstraints['top-left']
                         #      [nconstraints-1, -nconstraints]))
                         topleftBndErr = (
-                            P[nconstraints-1, -nconstraints] - 0.25 *
-                            (constraints[nconstraints-1, -nconstraints] + self.boundaryConstraints['top-left']
-                             [-nconstraints, nconstraints-1] +
-                             self.boundaryConstraints['top'][-nconstraints,
-                                                             nconstraints-1]
-                             + self.boundaryConstraints['left'][nconstraints-1, -nconstraints]
+                            P[(degree-nconstraints)-1, -(degree-nconstraints)] - 0.25 *
+                            (constraints[(degree-nconstraints)-1, -(degree-nconstraints)] + self.boundaryConstraints['top-left']
+                             [-(degree-nconstraints), (degree-nconstraints)-1] +
+                             self.boundaryConstraints['top'][-(degree-nconstraints),
+                                                             (degree-nconstraints)-1]
+                             + self.boundaryConstraints['left'][(degree-nconstraints)-1, -(degree-nconstraints)]
                              ))
                         diagonal_boundary_residual_norm += np.sum(
                             topleftBndErr**2)
@@ -1631,13 +1633,13 @@ class InputControlBlock:
 
                         # Compute the residual for bottom left interface condition
                         bottomleftBndErr = (
-                            P[nconstraints-1, nconstraints-1] - 0.25 *
-                            (constraints[nconstraints-1, nconstraints-1] + self.boundaryConstraints['bottom-left']
-                             [-nconstraints, -nconstraints] +
+                            P[(degree-nconstraints)-1, (degree-nconstraints)-1] - 0.25 *
+                            (constraints[(degree-nconstraints)-1, (degree-nconstraints)-1] + self.boundaryConstraints['bottom-left']
+                             [-(degree-nconstraints), -(degree-nconstraints)] +
                              self.boundaryConstraints['bottom']
-                             [nconstraints-1, -nconstraints] +
+                             [(degree-nconstraints)-1, -(degree-nconstraints)] +
                              self.boundaryConstraints['left']
-                             [-nconstraints, nconstraints-1]
+                             [-(degree-nconstraints)-1, (degree-nconstraints)-1]
                              ))
                         diagonal_boundary_residual_norm += np.sum(
                             bottomleftBndErr**2)
