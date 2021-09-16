@@ -8,7 +8,7 @@ from scipy import linalg, matrix
 from scipy.interpolate import LSQUnivariateSpline, UnivariateSpline
 from scipy.optimize import minimize, linprog
 from scipy.linalg import svd
-from quadprog import solve_qp
+# from quadprog import solve_qp
 
 EPS = 1e-14
 GTOL = 1e-2

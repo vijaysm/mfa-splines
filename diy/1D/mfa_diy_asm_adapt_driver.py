@@ -22,7 +22,7 @@ plt.rcParams.update(params)
 Dmin           = -4.
 Dmax           = 4.
 nPoints        = 21
-nSubDomains    = 1
+nSubDomains    = 4
 degree         = 3
 sincFunc       = False
 useAdditiveSchwartz = True
@@ -264,7 +264,7 @@ def lsqFitWithCons(N, W, ysl, U, t, degree, constraints=[], continuity=0):
                     options={'disp': True})
     return res.x
 
-def adaptive(iSubDom, interface_constraints_obj, u, xl, yl, strategy='reset', r=1, MAX_ERR=1e-2, MAX_ITER=5, split_all=True):
+def adaptive(iSubDom, interface_constraints_obj, u, xl, yl, strategy='reset', r=1, MAX_ERR=1e-2, MAX_ITER=0, split_all=True):
     splitIndeces = []
     r = min(r,degree) #multiplicity can not be larger than degree
     nPointsPerSubD = nPoints / nSubDomains

@@ -27,7 +27,7 @@ nPoints        = 501
 nSubDomains    = 4
 degree         = 3
 nControlPoints = (3*degree + 1) #minimum number of control points
-sincFunc       = True
+sincFunc       = False
 scale          = 1
 # ------------------------------------------
 # Solver parameters
@@ -188,7 +188,7 @@ def LSQFit_Constrained(idom, N, W, ysl, U, t, degree, nSubDomains, constraintsAl
 
 
 
-def adaptive(iSubDom, interface_constraints_obj, u, xl, yl, strategy='reset', r=1, MAX_ERR=1e-2, MAX_ITER=5, split_all=True):
+def adaptive(iSubDom, interface_constraints_obj, u, xl, yl, strategy='reset', r=1, MAX_ERR=1e-2, MAX_ITER=0, split_all=True):
     splitIndeces = []
     r = min(r,degree) #multiplicity can not be larger than degree
     nPointsPerSubD = nPoints / nSubDomains

@@ -6,7 +6,7 @@
 # Then start doing overlap of data/control points (?) and do iterative solution
 #
 import timeit
-from numba import jit
+#from numba import jit
 
 import splipy as sp
 
@@ -238,7 +238,7 @@ if rank == 0:
 EPS = 1e-14
 
 
-@jit(nopython=True)  # Set "nopython" mode for best performance, equivalent to @njit
+#@jit(nopython=True)  # Set "nopython" mode for best performance, equivalent to @njit
 def basis2(u, p, T):
     if p == 0:
         return 1.0 if ((T[:-1] <= u) * (u <= T[1:])) else 0.0

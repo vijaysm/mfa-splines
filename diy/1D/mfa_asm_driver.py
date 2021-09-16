@@ -37,18 +37,19 @@ plt.rcParams.update(params)
 
 # --- set problem input parameters here ---
 nSubDomains = 2
-degree = 2
+degree = 3
 nControlPoints = 12  # (3*degree + 1) #minimum number of control points
 overlapData = 0
 overlapCP = 0
 problem = 0
 scale = 1
-showplot = False
-nASMIterations = 2
+showplot = True
+nASMIterations = 4
 augmentSpanSpace = 0
 extrapolate = False
 useAitken = True
-nWynnEWork = 10
+nWynnEWork = 5
+relEPS = 5e-8
 #
 # ------------------------------------------
 # Solver parameters
@@ -155,6 +156,7 @@ elif problem == 1:
     Dmin = 0
     Dmax = 1.
     x = np.linspace(Dmin, Dmax, nPoints)
+    relEPS = 5e-8
 elif problem == 2:
     Y = np.fromfile("data/nek5000.raw", dtype=np.float64)
     Y = Y.reshape(200, 200)
@@ -314,8 +316,14 @@ class InputControlBlock:
 
     def plot_error(self, cp):
         error = self.yl - self.decodedAdaptive
-        plt.plot(self.xl[self.corebounds[0]: self.corebounds[1]+1],
-                 error[self.corebounds[0]: self.corebounds[1]+1],
+        # plt.plot(self.xl[self.corebounds[0]: self.corebounds[1]+1],
+        #          error[self.corebounds[0]: self.corebounds[1]+1],
+        #          # plt.plot(self.xl,
+        #          #          error,
+        #          linestyle='--', color=['r', 'g', 'b', 'y', 'c'][cp.gid() % 5],
+        #          lw=2, label="Subdomain(%d) Error" % (cp.gid() + 1))
+        plt.plot(self.xl,
+                 error,
                  # plt.plot(self.xl,
                  #          error,
                  linestyle='--', color=['r', 'g', 'b', 'y', 'c'][cp.gid() % 5],
@@ -341,39 +349,27 @@ class InputControlBlock:
             o = np.zeros(overlapCP+1)
             if target.gid > cp.gid():  # target is to the right of current subdomain
                 if len(self.pAdaptive):
-                    o = np.array(
-                        [self.pAdaptive.shape[0],
-                            self.knotsAdaptive.shape[0],
-                            self.pAdaptive[:],
-                            self.knotsAdaptive[:]])
+                    cp.enqueue(target, self.pAdaptive)
+                    cp.enqueue(target, self.knotsAdaptive)
                 # print("%d sending to %d: %s" % (cp.gid()+1, target.gid+1, o))
                 # print("%d sending to %d" % (cp.gid()+1, target.gid+1))
             else:  # target is to the left of current subdomain
                 if len(self.pAdaptive):
-                    o = np.array(
-                        [self.pAdaptive.shape[0],
-                            self.knotsAdaptive.shape[0],
-                            self.pAdaptive[:],
-                            self.knotsAdaptive[:]])
+                    cp.enqueue(target, self.pAdaptive)
+                    cp.enqueue(target, self.knotsAdaptive)
                 # print("%d sending to %d: %s" % (cp.gid()+1, target.gid+1, o))
                 # print("%d sending to %d" % (cp.gid()+1, target.gid+1))
-            cp.enqueue(target, o)
 
     def recv(self, cp):
         link = cp.link()
         for i in range(len(link)):
             tgid = link.target(i).gid
-            o = np.array(cp.dequeue(tgid))
             if tgid > cp.gid():  # target is to the right of current subdomain; receive constraint for right end point
-                nc = int(o[0]) if len(o) > 1 else 0
-                nk = int(o[1]) if len(o) > 1 else 0
-                self.rightconstraint = np.array(o[2]) if nc else np.zeros(1)
-                self.rightconstraintKnots = np.array(o[3]) if nk else np.zeros(1)
+                self.rightconstraint = cp.dequeue(tgid)
+                self.rightconstraintKnots = cp.dequeue(tgid)
             else:
-                nc = int(o[0]) if len(o) > 1 else 0
-                nk = int(o[1]) if len(o) > 1 else 0
-                self.leftconstraint = np.array(o[2]) if nc else np.zeros(1)
-                self.leftconstraintKnots = np.array(o[3]) if nk else np.zeros(1)
+                self.leftconstraint = cp.dequeue(tgid)
+                self.leftconstraintKnots = cp.dequeue(tgid)
             # print("%d received from %d: %s" % (cp.gid()+1, tgid+1, o))
             # print("%d received from %d" % (cp.gid()+1, tgid+1))
 
@@ -449,10 +445,11 @@ class InputControlBlock:
     def extrapolate_guess(self, cp, iterationNumber):
         self.pAdaptiveHistory[:, :-1] = self.pAdaptiveHistory[:, 1:]
         self.pAdaptiveHistory[:, -1] = self.pAdaptive[:]
+        # self.pAdaptiveHistory[:, 0] = self.pAdaptive[:]
 
         vAcc = []
         if not useAitken:
-            if iterationNumber > 3:  # For Wynn-E[silon
+            if iterationNumber > 2:  # For Wynn-E[silon
                 vAcc = np.zeros(self.pAdaptive.shape)
                 for dofIndex in range(len(self.pAdaptive)):
                     expVal = self.WynnEpsilon(
@@ -482,9 +479,9 @@ class InputControlBlock:
         constraints = None
         RN = (N*W)/(np.sum(N*W, axis=1)[:, np.newaxis])
         if constraintsAll is not None:
-            constraints = np.array(constraintsAll['P'])
-            knotsAll = np.array(constraintsAll['T'])
-            weightsAll = np.array(constraintsAll['W'])
+            constraints = constraintsAll['P']
+            knotsAll = constraintsAll['T']
+            weightsAll = constraintsAll['W']
             # print ('Constraints for Subdom = ', idom, ' is = ', constraints)
 
             decodedconstraint = RN.dot(constraints[1])
@@ -505,7 +502,7 @@ class InputControlBlock:
             # print('Input P = ', Pin, Aoper.shape, Brhs.shape)
 
             oddDegree = (degree % 2)
-            oddDegreeImpose = True
+            oddDegreeImpose = False
 
             # num_constraints = (degree)/2 if degree is even
             # num_constraints = (degree+1)/2 if degree is odd
@@ -558,12 +555,6 @@ class InputControlBlock:
         # Use previous iterate as initial solution
         initSol = constraints[1][:] if constraints is not None else np.ones_like(W)
         # initSol = np.ones_like(W)*0
-
-        if enforceBounds:
-            bnds = np.tensordot(np.ones(initSol.shape[0]), np.array([initSol.min(), initSol.max()]), axes=0)
-            # bnds = None
-        else:
-            bnds = None
 
         [Aoper, Brhs] = residual_operator_Ab(constraints[1][:], False, False)
 
@@ -728,20 +719,24 @@ class InputControlBlock:
     def augment_inputdata(self, cp):
 
         verbose = False
-        indices = np.where(np.logical_and(x >= self.knotsAdaptive[degree], x <= self.knotsAdaptive[-degree-1]))
+        indices = np.where(np.logical_and(
+            x >= self.knotsAdaptive[degree]-1e-10, x <= self.knotsAdaptive[-degree-1]+1e-10))
+        print(indices)
+        lbound = indices[0][0]-1 if indices[0][0] > 0 else 0
+        ubound = indices[0][-1]+1 if indices[0][-1] < len(x) else indices[0][-1]
 
         if verbose:
             print("Subdomain -- {0}: before augment -- left = {1}, right = {2}, shape = {3}".format(cp.gid()+1,
                                                                                                     self.xl[0], self.xl[-1], self.xl.shape))
 
-        self.xl = x[indices]
-        self.yl = y[indices]
+        self.xl = x[indices]  # x[lbound:ubound]
+        self.yl = y[indices]  # y[lbound:ubound]
         self.nPointsPerSubD = self.xl.shape[0]  # int(nPoints / nSubDomains) + overlapData
 
         h = (xmax-xmin)/nSubDomains
         # Store the core indices before augment
         cindices = np.array(np.where(np.logical_and(self.xl >= xmin + cp.gid()
-                                                    * h-1e-8, self.xl <= xmin + (cp.gid()+1)*h+1e-8)))
+                                                    * h-1e-10, self.xl <= xmin + (cp.gid()+1)*h+1e-10)))
         # print('cindices: ', cindices, self.xl,
         #       cp.gid(), h, xmin + cp.gid()*h-1e-8, xmin + (cp.gid()+1)*h+1e-8)
         self.corebounds = [cindices[0][0], cindices[0][-1]]
@@ -777,7 +772,7 @@ class InputControlBlock:
             return
 
         newSolve = False
-        if len(self.pAdaptive) == 0:
+        if np.sum(np.abs(self.pAdaptive)) < 1e-10:
             newSolve = True
 
         knots = self.knotsAdaptive[:]
@@ -874,7 +869,8 @@ class InputControlBlock:
 
             L2err[cp.gid()] = self.decodederrors[0]
             # if errorMetricsSubDomL2 < self.decodederrors[0] and self.errorMetricsLinf[self.outerIteration] < 5e-2 * self.decodederrors[0]:
-            if errorMetricsSubDomL2 < 5e-2 * self.decodederrors[0] and errorMetricsSubDomLinf < 5e-2 * self.decodederrors[1]:
+            if errorMetricsSubDomL2 < max(1e-14, relEPS * self.decodederrors[0]) and \
+                    errorMetricsSubDomLinf < max(1e-14, relEPS * self.decodederrors[1]):
                 # if errorMetricsSubDomLinf < 1e-10 and np.abs(
                 #         self.errorMetricsL2[self.outerIteration] - self.errorMetricsL2[self.outerIteration - 1]) < 1e-12:
                 print(
@@ -924,7 +920,6 @@ sys.stdout.flush()
 commW.Barrier()
 
 #########
-start_time = timeit.default_timer()
 
 # Before starting the solve, let us exchange the initial conditions
 # including the knot vector locations that need to be used for creating
@@ -937,8 +932,10 @@ mc.foreach(InputControlBlock.recv)
 
 if not fullyPinned:
     mc.foreach(InputControlBlock.augment_spans)
-    mc.foreach(InputControlBlock.augment_inputdata)
+    if augmentSpanSpace > 0:
+        mc.foreach(InputControlBlock.augment_inputdata)
 
+start_time = timeit.default_timer()
 for iterIdx in range(nASMIterations):
 
     if rank == 0:
@@ -962,7 +959,7 @@ for iterIdx in range(nASMIterations):
         # if nSubDomains > 5:
         #     plt.rc('axes', prop_cycle=(cycler('color', ['r', 'g', 'b', 'y', 'c']) + cycler('linestyle', ['-','--',':','-.',''])))
 
-        if True or isASMConverged or iterIdx == 0 or iterIdx == nASMIterations-1:
+        if isASMConverged or iterIdx == 0 or iterIdx == nASMIterations-1:
             plt.figure()
             plt.plot(x, y, 'b-', ms=5, label='Input')
             mc.foreach(InputControlBlock.plot)
