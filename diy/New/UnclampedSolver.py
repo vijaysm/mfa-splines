@@ -104,7 +104,7 @@ argv = sys.argv[1:]
 def usage():
     print(
         sys.argv[0],
-        '-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations>')
+        '-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations> -g <augmentSpanSpace>')
     sys.exit(2)
 
 
@@ -1674,8 +1674,8 @@ class InputControlBlock:
             #     W)
             # initSol = np.ones_like(W)*0
 
-            [Aoper, Brhs] = residual_operator_1D(self.controlPointData, False, False)
             if False:
+                [Aoper, Brhs] = residual_operator_1D(self.controlPointData, False, False)
                 # if type(Pin) is np.numpy_boxes.ArrayBox:
                 #     [Aoper, Brhs] = residual_operator_1D(Pin._value[:], False, False)
                 # else:
@@ -1688,13 +1688,14 @@ class InputControlBlock:
                 # residual_nrm_vec = Brhs - Aoper @ Pin
                 # residual_nrm = np.linalg.norm(residual_nrm_vec, ord=2)
                 residual_nrm = np.linalg.norm(initSol-Pin, ord=2)
+            else:
 
-            # New scheme like 2-D
-            decoded = decode(Pin, self.decodeOpXYZ)
-            residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
-            decoded_residual_norm = np.sqrt(np.sum(residual_decoded**2)/len(residual_decoded))
+                # New scheme like 2-D
+                decoded = decode(Pin, self.decodeOpXYZ)
+                residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
+                decoded_residual_norm = np.sqrt(np.sum(residual_decoded**2)/len(residual_decoded))
 
-            residual_nrm = (decoded_residual_norm-initialDecodedError)
+                residual_nrm = (decoded_residual_norm-initialDecodedError)
 
             if type(Pin) is not np.numpy_boxes.ArrayBox:
                 print('Residual 1D: ', decoded_residual_norm, residual_nrm)
@@ -2047,18 +2048,17 @@ class InputControlBlock:
                 nconstraints = augmentSpanSpace + \
                     (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
                 loffset = 2*augmentSpanSpace
-                print('Nconstraints = ', nconstraints, ' loffset = ', loffset)
+                print('Nconstraints = ', nconstraints, 'loffset = ', loffset)
                 # First update hte control point vector with constraints for supporting points
                 if 'left' in self.boundaryConstraints:
                     if dimension == 1:
                         if oddDegree:
-                            # print(
-                            #     "Current: ", initSol[: nconstraints],
-                            #     "greville: ", self.basisFunction['x'].greville(),
-                            #     " Left: ", self.boundaryConstraints['left'][-degree: -nconstraints + 1])
+                            print(
+                                "Current: ", initSol[: nconstraints],
+                                "greville: ", self.basisFunction['x'].greville(),
+                                " Left: ", self.boundaryConstraints['left'][-degree: -nconstraints + 1])
                             if nconstraints > 1:
-                                initSol[: nconstraints - 1 + loffset] = self.boundaryConstraints['left'][-degree -
-                                                                                                         loffset: -nconstraints + loffset]
+                                initSol[: nconstraints - 1] = self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
                             initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
                                 1-alpha) * self.boundaryConstraints['left'][-nconstraints]
                             # initSol[:(degree-nconstraints)] = alpha * initSol[:(degree-nconstraints)] + (1-alpha) * self.boundaryConstraints['left'][-(degree-nconstraints):]
@@ -2068,8 +2068,8 @@ class InputControlBlock:
                     else:
                         if oddDegree:
                             if nconstraints > 1:
-                                initSol[:nconstraints-1+loffset,
-                                        :] = self.boundaryConstraints['left'][-degree-loffset:-nconstraints+loffset, :]
+                                initSol[:nconstraints-1,
+                                        :] = self.boundaryConstraints['left'][-degree:-nconstraints, :]
                             initSol[nconstraints-1, :] = alpha * initSol[nconstraints-1,
                                                                          :] + (1-alpha) * self.boundaryConstraints['left'][-nconstraints, :]
                             # initSol[:(degree-nconstraints),:] = alpha * initSol[:(degree-nconstraints),:] + (1-alpha) * self.boundaryConstraints['left'][-(degree-nconstraints):,:]
@@ -2077,16 +2077,14 @@ class InputControlBlock:
                             initSol[:(degree-nconstraints), :] = alpha * initSol[:(degree-nconstraints),
                                                                                  :] + (1-alpha) * self.boundaryConstraints['left'][-(degree-nconstraints):, :]
                 if 'right' in self.boundaryConstraints:
-                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
                     if dimension == 1:
                         if oddDegree:
-                            # print(
-                            #     "Current: ", initSol[-nconstraints:],
-                            #     "greville: ", self.basisFunction['x'].greville(),
-                            #     " Right: ", self.boundaryConstraints['right'][nconstraints - 1: degree])
+                            print(
+                                "Current: ", initSol[-nconstraints:],
+                                "greville: ", self.basisFunction['x'].greville(),
+                                " Right: ", self.boundaryConstraints['right'][nconstraints - 1: degree])
                             if nconstraints > 1:
-                                initSol[-nconstraints - loffset + 1:] = self.boundaryConstraints['right'][loffset +
-                                                                                                          nconstraints: loffset + degree]
+                                initSol[-nconstraints + 1:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
                             initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
                                 1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
                             # initSol[-(degree-nconstraints):] = alpha * initSol[-(degree-nconstraints):] + (1-alpha) * self.boundaryConstraints['right'][:(degree-nconstraints)]
@@ -2105,7 +2103,6 @@ class InputControlBlock:
                             initSol[-(degree-nconstraints):, :] = alpha * initSol[-(degree-nconstraints):,
                                                                                   :] + (1-alpha) * self.boundaryConstraints['right'][:(degree-nconstraints), :]
                 if 'top' in self.boundaryConstraints:
-                    loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
                     if oddDegree:
                         if nconstraints > 1:
                             initSol[:, -nconstraints-loffset+1:] = self.boundaryConstraints['top'][:,
@@ -2116,7 +2113,6 @@ class InputControlBlock:
                     else:
                         initSol[:, -(degree-nconstraints):] = alpha * initSol[:, -(degree-nconstraints):] + (1-alpha) * self.boundaryConstraints['top'][:, :degree-nconstraints]
                 if 'bottom' in self.boundaryConstraints:
-                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
                     if oddDegree:
                         if nconstraints > 1:
                             initSol[:, : nconstraints - 1 + loffset] = self.boundaryConstraints['bottom'][:, -degree -
