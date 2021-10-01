@@ -444,7 +444,8 @@ def plot_solution(solVector):
         x = x.reshape(1, x.shape[1], x.shape[0])
         y = x.reshape(1, y.shape[1], y.shape[0])
         # gridToVTK("./structured", x, y, np.ones(x.shape), pointData={"solution": solVector.T.reshape(x.shape)})
-        gridToVTK("./structured", xcoord, ycoord, np.ones(1), pointData={"solution": solVector.reshape(1, xcoord.shape[0], ycoord.shape[0])})
+        gridToVTK("./structured", xcoord, ycoord, np.ones(1),
+                  pointData={"solution": solVector.reshape(1, xcoord.shape[0], ycoord.shape[0])})
     elif dimension == 3:
         x, y, z = np.meshgrid(xcoord, ycoord, zcoord)
         gridToVTK(
@@ -496,24 +497,28 @@ sys.stdout.flush()
 # Let us create a parallel VTK file
 # @profile
 
+
 def flattenList(t):
     return [item for sublist in t for item in sublist]
 
+
 def flattenDict(d):
     return(reduce(
-        lambda new_d, kv: \
-            isinstance(kv[1], dict) and \
-            {**new_d, **flatten(kv[1], kv[0])} or \
+        lambda new_d, kv:
+        isinstance(kv[1], dict) and
+        {**new_d, **flatten(kv[1], kv[0])} or
             {**new_d, kv[0]: kv[1]},
         d.items(),
         {}
     ))
+
 
 def flattenListDict(t):
     ndict = {}
     for item in t:
         ndict.update(item)
     return ndict
+
 
 def WritePVTKFile(iteration):
     # print(globalExtentDict)
@@ -970,10 +975,10 @@ class InputControlBlock:
                 #           pointData={"solution": PmK, "error": errorDecoded})
                 # del Xi, Yi, Zi
                 gridToVTK("./structured-%s" % (self.figSuffix), locX, locY, np.ones(1),
-                          pointData={ "solution": coreData.reshape(1, locX.shape[0], locY.shape[0]),
-                                      "error": errorDecoded.reshape(1, locX.shape[0], locY.shape[0])
-                                    }
-                        )
+                          pointData={"solution": coreData.reshape(1, locX.shape[0], locY.shape[0]),
+                                     "error": errorDecoded.reshape(1, locX.shape[0], locY.shape[0])
+                                     }
+                          )
 
                 cpx = np.array(self.basisFunction['x'].greville())
                 cpy = np.array(self.basisFunction['y'].greville())
@@ -1661,9 +1666,12 @@ class InputControlBlock:
                         self.knotsAdaptive['y'][degree],
                         self.knotsAdaptive['y'][-degree]))
 
-        self.nControlPoints[0] += (augmentSpanSpace if not self.isClamped['left'] else 0) + (augmentSpanSpace if not self.isClamped['right'] else 0)
-        if dimension > 1:
-            self.nControlPoints[1] += (augmentSpanSpace if not self.isClamped['top'] else 0) + (augmentSpanSpace if not self.isClamped['bottom'] else 0)
+        self.nControlPoints += augmentSpanSpace
+        # self.nControlPoints[0] += (augmentSpanSpace if not self.isClamped['left']
+        #                            else 0) + (augmentSpanSpace if not self.isClamped['right'] else 0)
+        # if dimension > 1:
+        #     self.nControlPoints[1] += (augmentSpanSpace if not self.isClamped['top']
+        #                                else 0) + (augmentSpanSpace if not self.isClamped['bottom'] else 0)
         self.nControlPointSpans = self.nControlPoints - 1
         self.nInternalKnotSpans = self.nControlPoints - degree
         self.controlPointData = np.zeros(self.nControlPoints)
@@ -2062,7 +2070,7 @@ class InputControlBlock:
                 #         residual_decoded
                 #         [self.corebounds[0][0]: self.corebounds[0][1],
                 #          self.corebounds[1][0]: self.corebounds[1][1]])
-                residual_decoded = residual_decoded[self.corebounds[0][0]: self.corebounds[0][1],self.corebounds[1][0]: self.corebounds[1][1]]
+                residual_decoded = residual_decoded[self.corebounds[0][0]: self.corebounds[0][1], self.corebounds[1][0]: self.corebounds[1][1]]
 
             residual_vec_decoded = residual_decoded.reshape(-1)
             # np.linalg.norm(residual_decoded, ord=2)
@@ -2072,7 +2080,6 @@ class InputControlBlock:
             #     decoded_residual_norm = np.linalg.norm(residual_decoded._value, ord=2)
             # else:
             #     decoded_residual_norm = np.linalg.norm(residual_decoded, ord=2)
-
 
             # return decoded_residual_norm
 
@@ -2181,7 +2188,7 @@ class InputControlBlock:
                 alpha = 0.5
                 nconstraints = augmentSpanSpace + \
                     (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-                loffset = augmentSpanSpace
+                loffset = 2*augmentSpanSpace
                 print('Nconstraints = ', nconstraints, 'loffset = ', loffset)
 
                 # First update hte control point vector with constraints for supporting points
@@ -2190,10 +2197,14 @@ class InputControlBlock:
                         if nconstraints > 1:
                             initSol[: nconstraints -
                                     1] = self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
-                        initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (1-alpha) * self.boundaryConstraints['left'][-nconstraints]
+                        initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
+                            1-alpha) * self.boundaryConstraints['left'][-nconstraints]
 
                     else:
-                        print('Error left: ', np.abs(self.boundaryConstraints['left'][-degree-loffset:-nconstraints, :]-initSol[:nconstraints-1, :]))
+                        print(
+                            'Error left: ', np.abs(
+                                self.boundaryConstraints['left'][-degree - loffset: -nconstraints, :] -
+                                initSol[: nconstraints - 1, :]))
                         if nconstraints > 1:
                             localBCAssembly[:nconstraints-1, :] = self.boundaryConstraints['left'][-degree -
                                                                                                    loffset:-nconstraints, :] - initSol[:nconstraints-1, :]
@@ -2201,13 +2212,13 @@ class InputControlBlock:
                         localBCAssembly[nconstraints-1, :] += self.boundaryConstraints['left'][-nconstraints, :]
                         localAssemblyWeights[nconstraints-1, :] += 1.0
 
-
                 if 'right' in self.boundaryConstraints:
                     if dimension == 1 and primaryaxis == 'x':
                         if nconstraints > 1:
                             initSol[-nconstraints +
                                     1:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
-                        initSol[-nconstraints] = alpha * initSol[-nconstraints] + (1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
+                        initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
+                            1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
 
                     else:
                         print(
@@ -2554,6 +2565,7 @@ if rank == 0:
 #########
 start_time = timeit.default_timer()
 
+
 def send_receive_all():
 
     masterControl.foreach(InputControlBlock.send_diy)
@@ -2561,6 +2573,7 @@ def send_receive_all():
     masterControl.foreach(InputControlBlock.recv_diy)
 
     return
+
 
 # Before starting the solve, let us exchange the initial conditions
 # including the knot vector locations that need to be used for creating
@@ -2581,7 +2594,8 @@ if useVTKOutput or showplot:
     print(rank, " - localExtents = ", localExtents)
     globalExtentDict = commWorld.gather(flattenDict(localExtents), root=0)
     if rank == 0:
-        if nprocs == 1: globalExtentDict = globalExtentDict[0]
+        if nprocs == 1:
+            globalExtentDict = globalExtentDict[0]
         else:
             globalExtentDict = flattenListDict(globalExtentDict)
         print("Global extents consolidated  = ", globalExtentDict)
