@@ -34,7 +34,7 @@ import diy
 # Plotting imports
 from matplotlib import pyplot as plt
 from matplotlib import cm
-from pyevtk.hl import gridToVTK
+# from pyevtk.hl import gridToVTK
 
 plt.style.use(['seaborn-whitegrid'])
 params = {"ytick.color": "b",
@@ -46,10 +46,9 @@ plt.rcParams.update(params)
 # --- set problem input parameters here ---
 problem = 1
 dimension = 2
-primaryaxis = 'x'  # 'x', 'y' for dimension == 1
 degree = 3
 nSubDomains = np.array([3] * dimension, dtype=np.uint32)
-nSubDomains = [3, 1]
+nSubDomains = [3, 3]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -59,7 +58,7 @@ verbose = False
 useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 1
+augmentSpanSpace = 2
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -74,7 +73,7 @@ alwaysSolveConstrained = False
 #                      0      1       2         3          4       5       6      7       8
 solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'Newton-CG',
                  'TNC', 'krylov', 'lm', 'trf']
-solverScheme = solverMethods[0]
+solverScheme = solverMethods[1]
 solverMaxIter = 2
 nASMIterations = 10
 maxAbsErr = 1e-6
@@ -120,7 +119,7 @@ try:
 except getopt.GetoptError:
     usage()
 
-nControlPointsInputIn = 12
+nControlPointsInputIn = 15
 # nSubDomainsX = nSubDomainsY = nSubDomainsZ = 1
 Dmin = np.array(3, dtype=np.float32)
 Dmax = np.array(3, dtype=np.float32)
@@ -410,8 +409,8 @@ elif dimension == 2:
 
 nControlPointsInput = np.array(
     [nControlPointsInputIn] * dimension, dtype=np.uint32)
-if dimension == 2:
-    nControlPointsInput = np.array([12, 15], dtype=np.uint32)
+# if dimension == 2:
+#     nControlPointsInput = np.array([12, 15], dtype=np.uint32)
 
 # if nPointsX % nSubDomainsX > 0 or nPointsY % nSubDomainsY > 0:
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
@@ -432,35 +431,36 @@ solutionShape = solution.shape
 
 
 def plot_solution(solVector):
+    from uvw import RectilinearGrid, DataArray
     if dimension == 1:
-        # x = xcoord[:]
-        # gridToVTK("./structured", xcoord, np.ones(x.shape[0]), np.ones(x.shape[0]),
-        #           pointData={"solution": solVector.reshape(1, x.shape[0])})
         mpl_fig = plt.figure()
         plt.plot(xcoord, solVector, 'r-', ms=2)
         mpl_fig.show()
     elif dimension == 2:
-        x, y = np.meshgrid(xcoord, ycoord)
-        x = x.reshape(1, x.shape[1], x.shape[0])
-        y = x.reshape(1, y.shape[1], y.shape[0])
-        # gridToVTK("./structured", x, y, np.ones(x.shape), pointData={"solution": solVector.T.reshape(x.shape)})
-        gridToVTK("./structured", xcoord, ycoord, np.ones(1),
-                  pointData={"solution": solVector.reshape(1, xcoord.shape[0], ycoord.shape[0])})
+        # x, y = np.meshgrid(xcoord, ycoord)
+        # x = x.reshape(1, x.shape[1], x.shape[0])
+        # y = x.reshape(1, y.shape[1], y.shape[0])
+        # gridToVTK("./structured", xcoord, ycoord, np.ones(1),
+        #           pointData={"solution": solVector.reshape(1, xcoord.shape[0], ycoord.shape[0])})
+        with RectilinearGrid("./structured.vtr", (xcoord, ycoord)) as rect:
+            rect.addPointData(DataArray(solVector, range(2), 'solution'))
     elif dimension == 3:
-        x, y, z = np.meshgrid(xcoord, ycoord, zcoord)
-        gridToVTK(
-            "./structured", x.reshape(x.shape[0],
-                                      x.shape[1],
-                                      x.shape[2]),
-            y.reshape(y.shape[0],
-                      y.shape[1],
-                      y.shape[2]),
-            z.reshape(x.shape[0],
-                      x.shape[1],
-                      x.shape[2]),
-            pointData={"solution": solVector.reshape(x.shape[0],
-                                                     x.shape[1],
-                                                     x.shape[2])})
+        with RectilinearGrid("./structured.vtr", (xcoord, ycoord, zcoord)) as rect:
+            rect.addPointData(DataArray(solVector, range(3), 'solution'))
+        # x, y, z = np.meshgrid(xcoord, ycoord, zcoord)
+        # gridToVTK(
+        #     "./structured", x.reshape(x.shape[0],
+        #                               x.shape[1],
+        #                               x.shape[2]),
+        #     y.reshape(y.shape[0],
+        #               y.shape[1],
+        #               y.shape[2]),
+        #     z.reshape(x.shape[0],
+        #               x.shape[1],
+        #               x.shape[2]),
+        #     pointData={"solution": solVector.reshape(x.shape[0],
+        #                                              x.shape[1],
+        #                                              x.shape[2])})
     else:
         print("No visualization output available for dimension > 2")
 
@@ -530,14 +530,19 @@ def WritePVTKFile(iteration):
     pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
                    (0, solutionShape[0]-1, 0, solutionShape[1]-1))
     pvtkfile.write('\n')
-    pvtkfile.write('    <PCellData>\n')
+    pvtkfile.write('    <PPointData>\n')
     pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
     pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
-    pvtkfile.write('    </PCellData>\n')
-    pvtkfile.write('    <PPoints>\n')
+    pvtkfile.write('    </PPointData>\n')
+    pvtkfile.write('    <PCellData></PCellData>\n')
+    pvtkfile.write('    <PCoordinates>\n')
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="points" NumberOfComponents="3"/>\n')
-    pvtkfile.write('    </PPoints>\n')
+        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write('    </PCoordinates>\n\n')
 
     isubd = 0
     # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
@@ -586,7 +591,7 @@ def WritePVTKControlFile(iteration):
     pvtkfile.write(
         '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
     pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' % (
-        0, nSubDomainsX*nControlPointsInput[0]-1, 0, nSubDomainsY*nControlPointsInput[1]-1, nconstraints+2*augmentSpanSpace))
+        0, nSubDomainsX*nControlPointsInput[0]-1, 0, nSubDomainsY*nControlPointsInput[1]-1, nconstraints+augmentSpanSpace))
     pvtkfile.write('\n')
     pvtkfile.write('    <PCellData>\n')
     pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
@@ -980,6 +985,10 @@ class InputControlBlock:
                                      }
                           )
 
+                # replace the whole extent
+                # pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
+                #                (0, solutionShape[0]-1, 0, solutionShape[1]-1))
+
                 cpx = np.array(self.basisFunction['x'].greville())
                 cpy = np.array(self.basisFunction['y'].greville())
 
@@ -999,6 +1008,58 @@ class InputControlBlock:
 
                 if False and cp.gid() == 0:
                     self.PlotControlPoints()
+
+    def output_vtk(self, cp):
+
+        from uvw import RectilinearGrid, DataArray
+        from uvw.parallel import PRectilinearGrid
+
+        assert(useVTKOutput)
+
+        self.pMK = decode(self.controlPointData,
+                          self.decodeOpXYZ)
+        errorDecoded = (self.refSolutionLocal -
+                        self.pMK) / solutionRange
+
+        locX = []
+        locY = []
+        if augmentSpanSpace > 0:
+            locX = self.xyzCoordLocal['x'][self.corebounds[0][0]: self.corebounds[0][1]]
+            locY = self.xyzCoordLocal['y'][self.corebounds[1][0]: self.corebounds[1][1]]
+
+            coreData = np.ascontiguousarray(
+                self.pMK
+                [self.corebounds[0][0]: self.corebounds[0][1],
+                    self.corebounds[1][0]: self.corebounds[1][1]])
+            errorDecoded = np.ascontiguousarray(
+                errorDecoded
+                [self.corebounds[0][0]: self.corebounds[0][1],
+                    self.corebounds[1][0]: self.corebounds[1][1]])
+
+        else:
+
+            locX = self.xyzCoordLocal['x']
+            locY = self.xyzCoordLocal['y']
+            coreData = self.pMK
+
+        # Indicating rank info with a cell array
+        proc = np.ones((locX.size-1, locY.size-1)) * commWorld.Get_rank()
+        # print("Writing using uvw VTK writer to uwv-structured-%s.pvtr" % (self.figSuffix))
+        # with PRectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY), [self.xbounds.min[0], self.xbounds.min[1]]) as rect:
+        with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY)) as rect:
+            rect.addPointData(DataArray(coreData, range(2), 'solution'))
+            rect.addPointData(DataArray(errorDecoded, range(2), 'error'))
+            rect.addCellData(DataArray(proc, range(2), 'process'))
+
+        # replace the whole extent
+        # pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
+        #                (0, solutionShape[0]-1, 0, solutionShape[1]-1))
+
+        # cpx = np.array(self.basisFunction['x'].greville())
+        # cpy = np.array(self.basisFunction['y'].greville())
+
+        # gridToVTK("./structuredcp-%s" % (self.figSuffix), cpx, cpy, np.ones(1),
+        #           pointData={"controlpoints": self.controlPointData.reshape(1, cpx.shape[0], cpy.shape[0])})
 
     def PlotControlPoints(self):
         import pyvista as pv
@@ -1666,12 +1727,12 @@ class InputControlBlock:
                         self.knotsAdaptive['y'][degree],
                         self.knotsAdaptive['y'][-degree]))
 
-        self.nControlPoints += augmentSpanSpace
-        # self.nControlPoints[0] += (augmentSpanSpace if not self.isClamped['left']
-        #                            else 0) + (augmentSpanSpace if not self.isClamped['right'] else 0)
-        # if dimension > 1:
-        #     self.nControlPoints[1] += (augmentSpanSpace if not self.isClamped['top']
-        #                                else 0) + (augmentSpanSpace if not self.isClamped['bottom'] else 0)
+        # self.nControlPoints += augmentSpanSpace
+        self.nControlPoints[0] += (augmentSpanSpace if not self.isClamped['left']
+                                   else 0) + (augmentSpanSpace if not self.isClamped['right'] else 0)
+        if dimension > 1:
+            self.nControlPoints[1] += (augmentSpanSpace if not self.isClamped['top']
+                                       else 0) + (augmentSpanSpace if not self.isClamped['bottom'] else 0)
         self.nControlPointSpans = self.nControlPoints - 1
         self.nInternalKnotSpans = self.nControlPoints - degree
         self.controlPointData = np.zeros(self.nControlPoints)
@@ -1810,270 +1871,19 @@ class InputControlBlock:
 
         def residual2D(Pin, verbose=False):
 
-            # P = np.array(Pin, copy=True).reshape(
-            #     self.weightsData.shape, order='C')
-            # if isinstance(Pin, autograd.numpy.)
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
-            # P = Pin
-            # alpha = 1
-            # beta = 1
-            bc_penalty = 0
-            diag_penalty = 0
-            if constraints is not None:
-                decoded_penalty = 1  # 10**(degree)
-            else:
-                decoded_penalty = 1
+
             decoded_residual_norm = 0
-
-            ltn = rtn = tpn = btn = 0
-            constrained_residual_norm = 0
-            diagonal_boundary_residual_norm = 0
-            oddDegree = (degree % 2)
-            nconstraints = augmentSpanSpace + \
-                (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-            # nconstraints = augmentSpanSpace + \
-            #     (degree if not oddDegree else degree+1)
-            # Odd degree: [nconstraints-1, -nconstraints]
-            # print('degree = ', degree, 'nconstraints = ', nconstraints)
-            # cIndex = (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-            # and idom not in [4, 7, 8]:
-            if constraints is not None and len(constraints) > 0:
-                # # First update hte control point vector with constraints for supporting points
-                # if 'left' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[:(degree-nconstraints),:] += self.boundaryConstraints['left'][-(degree-nconstraints):,:]
-                #     else:
-                #         self.controlPointData[:(degree-nconstraints),:] += self.boundaryConstraints['left'][-(degree-nconstraints):,:]
-                #     self.controlPointData[:(degree-nconstraints),:] *= 0.5
-                # if 'right' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[-(degree-nconstraints):,:] += self.boundaryConstraints['right'][:(degree-nconstraints),:]
-                #     else:
-                #         self.controlPointData[-(degree-nconstraints):,:] += self.boundaryConstraints['right'][:(degree-nconstraints),:]
-                #     self.controlPointData[-(degree-nconstraints):,:] *= 0.5
-                # if 'top' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[:,-(degree-nconstraints):] += self.boundaryConstraints['top'][:, :degree-nconstraints]
-                #     else:
-                #         self.controlPointData[:,-(degree-nconstraints):] += self.boundaryConstraints['top'][:, :degree-nconstraints]
-                #     self.controlPointData[:,-(degree-nconstraints):] *= 0.5
-                # if 'bottom' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[:,:(degree-nconstraints)] += self.boundaryConstraints['bottom'][:, -(degree-nconstraints):]
-                #     else:
-                #         self.controlPointData[:,:(degree-nconstraints)] += self.boundaryConstraints['bottom'][:, -(degree-nconstraints):]
-                #     self.controlPointData[:,:(degree-nconstraints)] *= 0.5
-
-                # if 'top-left' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[:(degree-nconstraints), -(degree-nconstraints):] += self.boundaryConstraints['top-left'][-(degree-nconstraints):, :degree-nconstraints]
-                #     else:
-                #         self.controlPointData[:(degree-nconstraints), -(degree-nconstraints):] += self.boundaryConstraints['top-left'][-(degree-nconstraints):, :degree-nconstraints]
-                #     self.controlPointData[:(degree-nconstraints), -(degree-nconstraints):] *= 0.5
-                # if 'bottom-left' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[:(degree-nconstraints),:(degree-nconstraints)] += self.boundaryConstraints['bottom-left'][-(degree-nconstraints):, -(degree-nconstraints):]
-                #     else:
-                #         self.controlPointData[:(degree-nconstraints),:(degree-nconstraints)] += self.boundaryConstraints['bottom-left'][-(degree-nconstraints):, -(degree-nconstraints):]
-                #     self.controlPointData[:(degree-nconstraints),:(degree-nconstraints)] *= 0.5
-                # if 'top-right' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[-(degree-nconstraints):, -(degree-nconstraints):] += self.boundaryConstraints['top-right'][:(degree-nconstraints), :degree-nconstraints]
-                #     else:
-                #         self.controlPointData[-(degree-nconstraints):, -(degree-nconstraints):] += self.boundaryConstraints['top-right'][:(degree-nconstraints), :degree-nconstraints]
-                #     self.controlPointData[-(degree-nconstraints):, -(degree-nconstraints):] *= 0.5
-                # if 'bottom-right' in self.boundaryConstraints:
-                #     if oddDegree:
-                #         self.controlPointData[-(degree-nconstraints):,:(degree-nconstraints)] += self.boundaryConstraints['bottom-right'][:(degree-nconstraints), -(degree-nconstraints):]
-                #     else:
-                #         self.controlPointData[-(degree-nconstraints):,:(degree-nconstraints)] += self.boundaryConstraints['bottom-right'][:(degree-nconstraints), -(degree-nconstraints):]
-                #     self.controlPointData[-(degree-nconstraints):,:(degree-nconstraints)] *= 0.5
-
-                if False:
-                    if 'left' in self.boundaryConstraints:
-
-                        # degree 2: 1
-                        loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
-
-                        if oddDegree:
-                            ltn = np.sum(
-                                (P[degree-nconstraints, :] - 0.5 *
-                                    (constraints[degree-nconstraints, :] +
-                                     self.boundaryConstraints['left'][-(degree-nconstraints)-1, :])) ** 2)
-                        else:
-                            ltn = np.sum(
-                                (P[degree-nconstraints, :] - 0.5 *
-                                    (constraints[degree-nconstraints, :] +
-                                     self.boundaryConstraints['left'][-(degree-nconstraints), :])) ** 2)
-
-                        constrained_residual_norm += (ltn /
-                                                      len(P[0, :])/nconstraints)
-
-                    if 'right' in self.boundaryConstraints:
-
-                        loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
-
-                        if oddDegree:
-                            rtn = np.sum((P[-(degree-nconstraints)-1, :] - 0.5 *
-                                          (constraints[-(degree-nconstraints)-1, :] +
-                                         self.boundaryConstraints['right'][degree-nconstraints, :])) ** 2)
-                        else:
-                            # Degree = 4
-                            rtn = np.sum((P[-(degree-nconstraints), :] - 0.5 *
-                                          (constraints[-(degree-nconstraints), :] +
-                                         self.boundaryConstraints['right'][degree-nconstraints, :])) ** 2)
-                            # degree = 4: nconstraints = 2; self.boundaryConstraints['right'][1:4, :]
-                            # degree = 2: nconstraints = 1; self.boundaryConstraints['right'][0:2, :]
-
-                        constrained_residual_norm += (rtn /
-                                                      len(P[-1, :])/nconstraints)
-
-                    if 'top' in self.boundaryConstraints:
-
-                        loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
-
-                        # Compute the residual for top interface condition
-                        if oddDegree:
-                            tpn = np.sum((P[:, -(degree-nconstraints)-1] - 0.5 *
-                                          (constraints[:, -(degree-nconstraints)-1] +
-                                         self.boundaryConstraints['top'][:, degree-nconstraints])) ** 2)
-                        else:
-                            tpn = np.sum((P[:, -(degree-nconstraints)] - 0.5 *
-                                          (constraints[:, -(degree-nconstraints)] +
-                                         self.boundaryConstraints['top'][:, degree-nconstraints])) ** 2)
-
-                        constrained_residual_norm += (tpn /
-                                                      len(P[:, -1])/nconstraints)
-
-                    if 'bottom' in self.boundaryConstraints:
-
-                        loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
-
-                        # Compute the residual for bottom interface condition
-                        if oddDegree:
-                            btn = np.sum((P[:, degree-nconstraints] - 0.5 *
-                                          (constraints[:, degree-nconstraints] +
-                                         self.boundaryConstraints['bottom'][:, -(degree-nconstraints)-1])) ** 2)
-                        else:
-                            btn = np.sum((P[:, degree-nconstraints] - 0.5 *
-                                          (constraints[:, degree-nconstraints] +
-                                         self.boundaryConstraints['bottom'][:, -(degree-nconstraints)])) ** 2)
-
-                        constrained_residual_norm += (btn /
-                                                      len(P[:, 0])/nconstraints)
-
-                    if useDiagonalBlocks:
-                        nDiagonalConstraints = 0
-                        diagonal_boundary_residual_norm = 0
-                        # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
-                        topleftBndErr = toprightBndErr = bottomleftBndErr = bottomrightBndErr = []
-
-                        if 'top-left' in self.boundaryConstraints:
-
-                            # Compute the residual for top left interface condition
-                            # topleftBndErr = (
-                            #     P[-nconstraints, nconstraints-1] - 0.5 *
-                            #     (constraints[-nconstraints, nconstraints-1] + self.boundaryConstraints['top-left']
-                            #      [nconstraints-1, -nconstraints]))
-                            if oddDegree:
-                                topleftBndErr = (
-                                    P[(degree-nconstraints), -(degree-nconstraints)-1] - 0.5 *
-                                    (constraints[(degree-nconstraints), -(degree-nconstraints)-1] + self.boundaryConstraints['top-left']
-                                     [-(degree-nconstraints)-1,
-                                        (degree-nconstraints)]
-                                     ))
-                            else:
-                                topleftBndErr = (
-                                    P[(degree-nconstraints), -(degree-nconstraints)] - 0.5 *
-                                    (constraints[(degree-nconstraints), -(degree-nconstraints)] + self.boundaryConstraints['top-left']
-                                     [-(degree-nconstraints),
-                                        (degree-nconstraints)-1]
-                                     ))
-
-                            diagonal_boundary_residual_norm += np.sum(
-                                topleftBndErr**2)
-                            nDiagonalConstraints += 1
-
-                        if 'top-right' in self.boundaryConstraints:
-
-                            # Compute the residual for top right interface condition
-                            if oddDegree:
-                                toprightBndErr = (
-                                    P[-(degree-nconstraints)-1, -(degree-nconstraints)-1] - 0.5 *
-                                    (constraints[-(degree-nconstraints)-1, -(degree-nconstraints)-1] +
-                                     self.boundaryConstraints['top-right'][(
-                                         degree-nconstraints), (degree-nconstraints)]
-                                     ))
-                            else:
-                                toprightBndErr = (
-                                    P[-(degree-nconstraints), -(degree-nconstraints)] - 0.5 *
-                                    (constraints[-(degree-nconstraints), -(degree-nconstraints)] +
-                                     self.boundaryConstraints['top-right'][(
-                                         degree-nconstraints), (degree-nconstraints)]
-                                     ))
-                            diagonal_boundary_residual_norm += np.sum(
-                                toprightBndErr**2)
-                            nDiagonalConstraints += 1
-
-                        if 'bottom-left' in self.boundaryConstraints:
-
-                            # Compute the residual for bottom left interface condition
-                            if oddDegree:
-                                bottomleftBndErr = (
-                                    P[(degree-nconstraints), degree-nconstraints] - 0.5 *
-                                    (constraints[(degree-nconstraints), degree-nconstraints] + self.boundaryConstraints['bottom-left']
-                                     [-(degree-nconstraints)-1, -
-                                        (degree-nconstraints)-1]
-                                     ))
-                            else:
-                                bottomleftBndErr = (
-                                    P[(degree-nconstraints), degree-nconstraints] - 0.5 *
-                                    (constraints[(degree-nconstraints), degree-nconstraints] + self.boundaryConstraints['bottom-left']
-                                     [-(degree-nconstraints), -
-                                        (degree-nconstraints)]
-                                     ))
-                            diagonal_boundary_residual_norm += np.sum(
-                                bottomleftBndErr**2)
-                            nDiagonalConstraints += 1
-
-                        if 'bottom-right' in self.boundaryConstraints:
-
-                            # Compute the residual for bottom right interface condition
-                            if oddDegree:
-                                bottomrightBndErr = (
-                                    P[-(degree-nconstraints)-1, degree-nconstraints] - 0.5 *
-                                    (constraints[-(degree-nconstraints)-1, degree-nconstraints] +
-                                     self.boundaryConstraints['bottom-right'][(
-                                         degree-nconstraints), -(degree-nconstraints)-1]
-                                     ))
-                            else:
-                                bottomrightBndErr = (
-                                    P[-(degree-nconstraints), degree-nconstraints] - 0.5 *
-                                    (constraints[-(degree-nconstraints), degree-nconstraints] +
-                                     self.boundaryConstraints['bottom-right'][(
-                                         degree-nconstraints), -(degree-nconstraints)]
-                                     ))
-                            diagonal_boundary_residual_norm += np.sum(
-                                bottomrightBndErr**2)
-                            nDiagonalConstraints += 1
-
-                        if nDiagonalConstraints > 0:
-                            # diagonal_boundary_residual_norm = diagonal_boundary_residual_norm / nDiagonalConstraints / degree**2
-                            diagonal_boundary_residual_norm = diagonal_boundary_residual_norm / nDiagonalConstraints
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = decode(P, self.decodeOpXYZ)
             residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
 
             if augmentSpanSpace > 0:
-                # residual_decoded = np.ascontiguousarray(
-                #         residual_decoded
-                #         [self.corebounds[0][0]: self.corebounds[0][1],
-                #          self.corebounds[1][0]: self.corebounds[1][1]])
-                residual_decoded = residual_decoded[self.corebounds[0][0]: self.corebounds[0][1], self.corebounds[1][0]: self.corebounds[1][1]]
+                residual_decoded = residual_decoded[self.corebounds[0][0]
+                    : self.corebounds[0][1], self.corebounds[1][0]: self.corebounds[1][1]]
 
             residual_vec_decoded = residual_decoded.reshape(-1)
-            # np.linalg.norm(residual_decoded, ord=2)
             decoded_residual_norm = np.sqrt(np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
 
             # if type(residual_decoded) is np.numpy_boxes.ArrayBox:
@@ -2088,8 +1898,7 @@ class InputControlBlock:
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
             # constraint error of solution on the subdomain interfaces
-            net_residual_norm = decoded_penalty * (decoded_residual_norm-initialDecodedError*0) + bc_penalty * (
-                constrained_residual_norm) + (diag_penalty * (diagonal_boundary_residual_norm) if useDiagonalBlocks else 0)
+            net_residual_norm = (decoded_residual_norm-initialDecodedError)
 
             # bc_penalty = 1e7
             # BCPenalty = np.ones(residual_decoded.shape)
@@ -2120,7 +1929,7 @@ class InputControlBlock:
                 #     print('Constraint diagonal errors = ', topleftBndErr, toprightBndErr, bottomleftBndErr,
                 #           bottomrightBndErr, diagonal_boundary_residual_norm)
 
-            return net_residual_norm*0
+            return net_residual_norm
 
         # Set a function handle to the appropriate residual evaluator
         residualFunction = None
@@ -2187,13 +1996,39 @@ class InputControlBlock:
                 # alpha = 0.5 if dimension == 2 or oddDegree else 0.0
                 alpha = 0.5
                 nconstraints = augmentSpanSpace + \
-                    (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+                    (int(degree/2.0)+1 if not oddDegree else int((degree+1)/2.0))
                 loffset = 2*augmentSpanSpace
                 print('Nconstraints = ', nconstraints, 'loffset = ', loffset)
 
+                if dimension == 2 and nconstraints > 1:
+                    if 'left' in self.boundaryConstraints:
+                        initSol[:nconstraints-1, :] = 0
+                        localAssemblyWeights[:nconstraints-1, :] = 1.0
+                    if 'right' in self.boundaryConstraints:
+                        initSol[-nconstraints + 1:, :] = 0
+                        localAssemblyWeights[-nconstraints+1:, :] = 1.0
+                    if 'top' in self.boundaryConstraints:
+                        initSol[:, -nconstraints+1:] = 0
+                        localAssemblyWeights[:, -nconstraints+1:] = 1.0
+                    if 'bottom' in self.boundaryConstraints:
+                        initSol[:, : nconstraints - 1] = 0
+                        localAssemblyWeights[:, : nconstraints - 1] = 1.0
+                    if 'top-left' in self.boundaryConstraints:
+                        initSol[: nconstraints - 1, -nconstraints + 1:] = 0
+                        localAssemblyWeights[: nconstraints - 1, -nconstraints + 1:] = 1.0
+                    if 'bottom-left' in self.boundaryConstraints:
+                        initSol[: nconstraints - 1, : nconstraints - 1] = 0
+                        localAssemblyWeights[: nconstraints - 1, : nconstraints - 1] = 1.0
+                    if 'top-right' in self.boundaryConstraints:
+                        initSol[-nconstraints + 1:, -nconstraints + 1:] = 0
+                        localAssemblyWeights[-nconstraints + 1:, -nconstraints + 1:] = 1.0
+                    if 'bottom-right' in self.boundaryConstraints:
+                        initSol[-nconstraints + 1:, : nconstraints - 1] = 0
+                        localAssemblyWeights[-nconstraints + 1:, : nconstraints - 1] = 1.0
+
                 # First update hte control point vector with constraints for supporting points
                 if 'left' in self.boundaryConstraints:
-                    if dimension == 1 and primaryaxis == 'x':
+                    if dimension == 1:
                         if nconstraints > 1:
                             initSol[: nconstraints -
                                     1] = self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
@@ -2201,19 +2036,15 @@ class InputControlBlock:
                             1-alpha) * self.boundaryConstraints['left'][-nconstraints]
 
                     else:
-                        print(
-                            'Error left: ', np.abs(
-                                self.boundaryConstraints['left'][-degree - loffset: -nconstraints, :] -
-                                initSol[: nconstraints - 1, :]))
-                        if nconstraints > 1:
-                            localBCAssembly[:nconstraints-1, :] = self.boundaryConstraints['left'][-degree -
-                                                                                                   loffset:-nconstraints, :] - initSol[:nconstraints-1, :]
-                            localAssemblyWeights[:nconstraints-1, :] = 1.0
                         localBCAssembly[nconstraints-1, :] += self.boundaryConstraints['left'][-nconstraints, :]
                         localAssemblyWeights[nconstraints-1, :] += 1.0
 
+                        if nconstraints > 1:
+                            localBCAssembly[:nconstraints-1, :] = self.boundaryConstraints['left'][-degree -
+                                                                                                   loffset:-nconstraints, :]
+
                 if 'right' in self.boundaryConstraints:
-                    if dimension == 1 and primaryaxis == 'x':
+                    if dimension == 1:
                         if nconstraints > 1:
                             initSol[-nconstraints +
                                     1:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
@@ -2221,86 +2052,91 @@ class InputControlBlock:
                             1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
 
                     else:
-                        print(
-                            'Error right: ', np.abs(
-                                self.boundaryConstraints['right'][nconstraints: degree + loffset, :] -
-                                initSol[-nconstraints + 1:, :]))
-                        if nconstraints > 1:
-                            localBCAssembly[-nconstraints + 1:, :] = self.boundaryConstraints['right'][
-                                nconstraints: degree + loffset, :] - initSol[-nconstraints + 1:, :]
-                            localAssemblyWeights[-nconstraints+1:, :] = 1.0
                         localBCAssembly[-nconstraints, :] += self.boundaryConstraints['right'][nconstraints-1, :]
                         localAssemblyWeights[-nconstraints, :] += 1.0
 
-                if 'top' in self.boundaryConstraints:
-                    if dimension == 1 and primaryaxis == 'y':
                         if nconstraints > 1:
-                            initSol[: nconstraints - 1] = self.boundaryConstraints['bottom'][-degree - loffset: -nconstraints]
-                        initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
-                            1-alpha) * self.boundaryConstraints['bottom'][-nconstraints]
+                            localBCAssembly[-nconstraints + 1:,
+                                            :] = self.boundaryConstraints['right'][nconstraints: degree + loffset, :]
 
-                    else:
-                        if nconstraints > 1:
-                            localBCAssembly[:, -nconstraints+1:] = self.boundaryConstraints['top'][:,
-                                                                                                   nconstraints:loffset+degree] - initSol[:, -nconstraints+1:]
-                            localAssemblyWeights[:, -nconstraints+1:] = 1.0
-                        localBCAssembly[:, -nconstraints] += self.boundaryConstraints['top'][:, nconstraints-1]
-                        localAssemblyWeights[:, -nconstraints] += 1.0
+                if 'top' in self.boundaryConstraints:
+                    localBCAssembly[:, -nconstraints] += self.boundaryConstraints['top'][:, nconstraints-1]
+                    localAssemblyWeights[:, -nconstraints] += 1.0
+
+                    if nconstraints > 1:
+                        localBCAssembly[:, -nconstraints+1:] = self.boundaryConstraints['top'][:,
+                                                                                               nconstraints:loffset+degree]
 
                 if 'bottom' in self.boundaryConstraints:
-                    if dimension == 1 and primaryaxis == 'y':
-                        if nconstraints > 1:
-                            initSol[-nconstraints+1:] = self.boundaryConstraints['top'][nconstraints:loffset+degree]
-                        initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
-                            1-alpha) * self.boundaryConstraints['top'][nconstraints-1]
+                    localBCAssembly[:, nconstraints-1] += self.boundaryConstraints['bottom'][:, -nconstraints]
+                    localAssemblyWeights[:, nconstraints-1] += 1.0
 
-                    else:
-                        if nconstraints > 1:
-                            localBCAssembly[:, : nconstraints - 1] = self.boundaryConstraints['bottom'][:, -degree -
-                                                                                                        loffset: -nconstraints] - initSol[:, : nconstraints - 1]
-                            localAssemblyWeights[:, : nconstraints - 1] = 1.0
-                        localBCAssembly[:, nconstraints-1] += self.boundaryConstraints['bottom'][:, -nconstraints]
-                        localAssemblyWeights[:, nconstraints-1] += 1.0
+                    if nconstraints > 1:
+                        localBCAssembly[:, : nconstraints - 1] = self.boundaryConstraints['bottom'][:, -degree -
+                                                                                                    loffset: -nconstraints]
 
                 if 'top-left' in self.boundaryConstraints:
-                    if nconstraints > 1:
-                        localBCAssembly[: nconstraints - 1, -nconstraints + 1:] = self.boundaryConstraints['top-left'][-degree -
-                                                                                                                       loffset: -nconstraints, nconstraints: degree + loffset] - initSol[: nconstraints - 1, -nconstraints + 1:]
-                        localAssemblyWeights[: nconstraints - 1, -nconstraints + 1:] = 1.0
                     localBCAssembly[nconstraints-1, -nconstraints] += self.boundaryConstraints['top-left'][-nconstraints, nconstraints-1]
                     localAssemblyWeights[nconstraints-1, -nconstraints] += 1.0
 
-                if 'bottom-left' in self.boundaryConstraints:
                     if nconstraints > 1:
-                        localBCAssembly[: nconstraints - 1, : nconstraints - 1] = self.boundaryConstraints['bottom-left'][-degree -
-                                                                                                                          loffset: -nconstraints, -degree - loffset: -nconstraints] - initSol[: nconstraints - 1, : nconstraints - 1]
-                        localAssemblyWeights[: nconstraints - 1, : nconstraints - 1] = 1.0
+                        localBCAssembly[: nconstraints - 1, -nconstraints + 1:] = self.boundaryConstraints['top-left'][-degree -
+                                                                                                                       loffset: -nconstraints, nconstraints: degree + loffset]
+
+                if 'bottom-left' in self.boundaryConstraints:
                     localBCAssembly[nconstraints-1,
                                     nconstraints-1] += self.boundaryConstraints['bottom-left'][-nconstraints, -nconstraints]
                     localAssemblyWeights[nconstraints-1, nconstraints-1] += 1.0
 
-                if 'top-right' in self.boundaryConstraints:
                     if nconstraints > 1:
-                        localBCAssembly[-nconstraints + 1:, -nconstraints + 1:] = self.boundaryConstraints['top-right'][
-                            nconstraints: degree + loffset, nconstraints: degree + loffset] - initSol[-nconstraints + 1:, -
-                                                                                                      nconstraints + 1:]
-                        localAssemblyWeights[-nconstraints + 1:, -nconstraints + 1:] = 1.0
+                        localBCAssembly[: nconstraints - 1, : nconstraints - 1] = self.boundaryConstraints['bottom-left'][-degree -
+                                                                                                                          loffset: -nconstraints, -degree - loffset: -nconstraints]
+
+                if 'top-right' in self.boundaryConstraints:
                     localBCAssembly[-nconstraints, -nconstraints] += self.boundaryConstraints['top-right'][nconstraints-1, nconstraints-1]
                     localAssemblyWeights[-nconstraints, -nconstraints] += 1.0
 
-                if 'bottom-right' in self.boundaryConstraints:
                     if nconstraints > 1:
-                        localBCAssembly[-nconstraints + 1:, : nconstraints - 1] = self.boundaryConstraints['bottom-right'][nconstraints:
-                                                                                                                           degree + loffset, -degree - loffset: -nconstraints] - initSol[-nconstraints + 1:, : nconstraints - 1]
-                        localAssemblyWeights[-nconstraints + 1:, : nconstraints - 1] = 1.0
+                        localBCAssembly[-nconstraints + 1:, -nconstraints + 1:] = self.boundaryConstraints['top-right'][
+                            nconstraints: degree + loffset, nconstraints: degree + loffset]
 
+                if 'bottom-right' in self.boundaryConstraints:
                     localBCAssembly[-nconstraints,
                                     nconstraints-1] += self.boundaryConstraints['bottom-right'][nconstraints-1, -nconstraints]
                     localAssemblyWeights[-nconstraints, nconstraints-1] += 1.0
 
+                    if nconstraints > 1:
+                        localBCAssembly[-nconstraints + 1:, : nconstraints - 1] = self.boundaryConstraints['bottom-right'][nconstraints:
+                                                                                                                           degree + loffset, -degree - loffset: -nconstraints]
+
+
                 if dimension > 1:
                     initSol = np.divide(initSol + localBCAssembly, localAssemblyWeights)
                     # initSol = (initSol + np.divide(localBCAssembly, localAssemblyWeights))
+
+            if idom in [5, 4, 2, 1]:
+                print('debug me here')
+
+            if 'left' in self.boundaryConstraints:
+                print(
+                    'Error left: ', np.abs(
+                        self.boundaryConstraints['left'][-degree - loffset: -nconstraints, :] -
+                        initSol[: nconstraints - 1, :]).T)
+            if 'right' in self.boundaryConstraints:
+                print(
+                    'Error right: ', np.abs(
+                        self.boundaryConstraints['right'][nconstraints: degree + loffset, :] -
+                        initSol[-nconstraints + 1:, :]).T)
+            if 'top' in self.boundaryConstraints:
+                print(
+                    'Error top: ', np.abs(
+                        self.boundaryConstraints['top'][:, nconstraints:loffset+degree] -
+                        initSol[:, -nconstraints+1:]))
+            if 'bottom' in self.boundaryConstraints:
+                print(
+                    'Error bottom: ', np.abs(
+                        self.boundaryConstraints['bottom'][:, -degree - loffset: -nconstraints] -
+                        initSol[:, : nconstraints - 1]))
 
             initialDecodedError = residualFunction(initSol, verbose=True)
 
@@ -2643,7 +2479,8 @@ for iterIdx in range(nASMIterations):
 
             masterControl.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(
                 icb, cp, None, None, "%d-%d" % (cp.gid(), iterIdx)))
-            masterControl.foreach(InputControlBlock.output_solution)
+            # masterControl.foreach(InputControlBlock.output_solution)
+            masterControl.foreach(InputControlBlock.output_vtk)
 
             if rank == 0:
                 WritePVTKFile(iterIdx)
