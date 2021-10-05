@@ -1,5 +1,7 @@
 *.vts
+*.vtr
 *.pvts
+*.pvtr
 __pycache__
 *.code-workspace
 diy/1D/diy
