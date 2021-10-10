@@ -174,12 +174,12 @@ if dimension == 1:
     if problem == 1:
         Dmin = [-4.]
         Dmax = [4.]
-        xcoord = np.linspace(Dmin[0], Dmax[0], 10001)
+        xcoord = np.linspace(Dmin[0], Dmax[0], 1025)
         scale = 100
-        # solution = scale * (np.sinc(xcoord-1)+np.sinc(xcoord+1))
+        solution = scale * (np.sinc(xcoord-1)+np.sinc(xcoord+1))
         # solution = scale * (np.sinc(xcoord+1) + np.sinc(2*xcoord) + np.sinc(xcoord-1))
-        solution = scale * (np.sinc(xcoord) + np.sinc(2 *
-                            xcoord-1) + np.sinc(3*xcoord+1.5))
+        # solution = scale * (np.sinc(xcoord) + np.sinc(2 *
+        #                     xcoord-1) + np.sinc(3*xcoord+1.5))
         # solution = np.zeros(xcoord.shape)
         # solution[xcoord <= 0] = 1
         # solution[xcoord > 0] = -1
@@ -276,9 +276,12 @@ elif dimension == 2:
         solution = scale * (np.sinc(np.sqrt(X**2 + Y**2)) +
                             np.sinc(2*((X-2)**2 + (Y+2)**2))).T
 
-        solution = scale * (np.sinc(X) + np.sinc(2 *
-                            X-1) + np.sinc(3*X+1.5)).T
-        solution = (X*Y).T
+        # solution = scale * (np.sinc(X) + np.sinc(2 *
+        #                     X-1) + np.sinc(3*X+1.5)).T
+        # solution = ((4-X)*(4-Y)).T
+
+        # Test against 1-d solution. Matches correctly
+        # solution = scale * (np.sinc(X-1)+np.sinc(X+1)).T
 
         # solution = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
         # solution = X**2 * (DmaxX - Y)**2 + X**2 * Y**2 + 64 * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)))
@@ -644,14 +647,11 @@ def compute_decode_operators(iNuvw):
 
     elif dimension == 2:
         W = np.ones((iNuvw['x'].shape[1], iNuvw['y'].shape[1]))
+
         RN['x'] = iNuvw['x'] * np.sum(W, axis=1)
-        # assert( np.min(np.sum(RN['x']*np.sum(W, axis=1), axis=1)) > 1e-8)
-        RN['x'] /= np.sum(RN['x']*np.sum(W, axis=1), axis=1)[:, np.newaxis]
+        RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
         RN['y'] = iNuvw['y'] * np.sum(W, axis=0)
-        # assert( np.min(np.sum(RN['x']*np.sum(W, axis=1), axis=1)) > 1e-8)
-        RN['y'] /= np.sum(RN['y']*np.sum(W, axis=0), axis=1)[:, np.newaxis]
-        # print('Decode error res: ', RNx.shape, RNy.shape)
-        # decoded = np.matmul(np.matmul(RNx, P), RNy.T)
+        RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
 
     else:
         error('No implementation')
@@ -872,21 +872,18 @@ class InputControlBlock:
                 self.NUVW['x'][entry, entry] = 0.0
 
     def compute_basis_2D(self, constraints=None):
-        self.basisFunction['x'] = sp.BSplineBasis(
-            order=degree+1, knots=self.knotsAdaptive['x'])
         # self.basisFunction['x'].reparam()
-        print("Number of basis functions = ",
-              self.basisFunction['x'].num_functions())
-        self.basisFunction['y'] = sp.BSplineBasis(
-            order=degree+1, knots=self.knotsAdaptive['y'])
         # self.basisFunction['y'].reparam()
         # print("TU = ", self.knotsAdaptive['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
         # print("TV = ", self.knotsAdaptive['y'], self.UVW['y'][0], self.UVW['y'][-1], self.basisFunction['y'].greville())
-        self.NUVW['x'] = np.array(
-            self.basisFunction['x'].evaluate(self.UVW['x']))
-        self.NUVW['y'] = np.array(
-            self.basisFunction['y'].evaluate(self.UVW['y']))
+        for dir in ['x', 'y']:
+            self.basisFunction[dir] = sp.BSplineBasis(
+                order=degree+1, knots=self.knotsAdaptive[dir])
+            self.NUVW[dir] = np.array(
+                self.basisFunction[dir].evaluate(self.UVW[dir]))
 
+        print("Number of basis functions = ",
+              self.basisFunction['x'].num_functions())
         if constraints is not None:
             for entry in constraints[0]:
                 self.NUVW['x'][entry, :] = 0.0
