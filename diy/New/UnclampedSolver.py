@@ -40,10 +40,11 @@ params = {"ytick.color": "b",
           "axes.edgecolor": "b"}
 plt.rcParams.update(params)
 
+directions = ['x', 'y', 'z']
 # --- set problem input parameters here ---
 problem = 1
 dimension = 2
-degree = 3
+degree = 2
 nSubDomains = np.array([3] * dimension, dtype=np.uint32)
 nSubDomains = [3, 1]
 nSubDomainsX = nSubDomains[0]
@@ -56,7 +57,7 @@ verbose = False
 useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 1
+augmentSpanSpace = 0
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -408,6 +409,52 @@ elif dimension == 2:
         print('Not a valid problem')
         exit(1)
 
+elif dimension == 3:
+    print('Setting up problem for 3-D')
+
+    if problem == 1:
+        nPoints[0] = 1025
+        nPoints[1] = 1025
+        nPoints[2] = 1025
+        scale = 100
+        Dmin = [-4., -4., -4.0]
+        Dmax = [4., 4., 4.]
+
+        xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+        ycoord = np.linspace(Dmin[2], Dmax[2], nPoints[2])
+        X, Y, Z = np.meshgrid(xcoord, ycoord, zcoord, indexing='ij')
+
+        # solution = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
+        #                                               np.sinc(np.sqrt((X+2)**2 + (Y-2)**2)) -
+        #                                               2 * (1-np.tanh((X)**2 + (Y)**2)) +
+        #                                               np.exp(-((X-2)**2/2)-((Y-2)**2/2))
+        #                                               #   + np.sign(X+Y)
+        #                                               )
+
+        # noise = np.random.uniform(0, 0.005, X.shape)
+        # solution = solution * (1 + noise)
+
+        # solution = scale * X * Y * Z
+        solution = scale * (np.sinc(np.sqrt(X**2 + Y**2)) +
+                            np.sinc(2*((X-2)**2 + (Y+2)**2))).T
+
+        # solution = scale * (np.sinc(X) + np.sinc(2 *
+        #                     X-1) + np.sinc(3*X+1.5)).T
+        # solution = ((4-X)*(4-Y)).T
+
+        # Test against 1-d solution. Matches correctly
+        # solution = scale * (np.sinc(X-1)+np.sinc(X+1)).T
+
+        # solution = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
+        # solution = X**2 * (DmaxX - Y)**2 + X**2 * Y**2 + 64 * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)))
+        # solution = (3-abs(X))**3 * (1-abs(Y))**5 + (1-abs(X))**3 * (3-abs(Y))**5
+        # solution = (Dmax[0]+X)**5 * (Dmax[1]-Y)**5
+        # solution = solution / np.linalg.norm(solution)
+        # solution = scale * (np.sinc(X) * np.sinc(Y))
+        # solution = solution.T
+        # (3*degree + 1) #minimum number of control points
+        del X, Y
 
 nControlPointsInput = np.array(
     [nControlPointsInputIn] * dimension, dtype=np.uint32)
@@ -641,6 +688,7 @@ GTOL = 1e-2
 
 def compute_decode_operators(iNuvw):
     RN = {'x': [], 'y': [], 'z': []}
+
     if dimension == 1:
         W = np.ones(iNuvw['x'].shape[1])
         RN['x'] = (iNuvw['x']*W)/(np.sum(iNuvw['x']*W, axis=1)[:, np.newaxis])
@@ -652,6 +700,16 @@ def compute_decode_operators(iNuvw):
         RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
         RN['y'] = iNuvw['y'] * np.sum(W, axis=0)
         RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
+
+    elif dimension == 3:
+        W = np.ones((iNuvw['x'].shape[1], iNuvw['y'].shape[1], iNuvw['z'].shape[1]))
+
+        RN['x'] = iNuvw['x'] * np.sum(W, axis=2)
+        RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
+        RN['y'] = iNuvw['y'] * np.sum(W, axis=1)
+        RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
+        RN['z'] = iNuvw['z'] * np.sum(W, axis=0)
+        RN['z'] /= np.sum(RN['z'], axis=1)[:, np.newaxis]
 
     else:
         error('No implementation')
@@ -1865,7 +1923,7 @@ class InputControlBlock:
 
         def residual2DRev(Pin):
 
-            bc_penalty = 1e4
+            bc_penalty = 1e1
             bc_norm = 0.0
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
 
@@ -1896,7 +1954,7 @@ class InputControlBlock:
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
 
             decoded_residual_norm = 0
-            bc_penalty = 1e7
+            bc_penalty = 0
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = decode(P, self.decodeOpXYZ)
@@ -1935,7 +1993,7 @@ class InputControlBlock:
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
             # constraint error of solution on the subdomain interfaces
-            net_residual_norm = decoded_residual_norm_a + bc_penalty * (decoded_residual_norm_b) * 0
+            net_residual_norm = decoded_residual_norm_a + bc_penalty * (decoded_residual_norm_b)
 
             # bc_penalty = 1e7
             # BCPenalty = np.ones(residual_decoded.shape)
@@ -1966,18 +2024,14 @@ class InputControlBlock:
                 #     print('Constraint diagonal errors = ', topleftBndErr, toprightBndErr, bottomleftBndErr,
                 #           bottomrightBndErr, diagonal_boundary_residual_norm)
 
-            return net_residual_norm*0
+            return net_residual_norm
 
         # Set a function handle to the appropriate residual evaluator
         residualFunction = None
         if dimension == 1:
             residualFunction = residual1D
         else:
-            residualFunction = residual2DRev
-
-        # Create a gradient function to pass to the minimizer
-        jacobianFunction = egrad(residualFunction)
-        # jacobianFunction =  jit(grad(residualFunction))
+            residualFunction = residual2D # residual2DRev
 
         def print_iterate(P):
             res = residualFunction(P)
@@ -1990,28 +2044,21 @@ class InputControlBlock:
             #             if jacobian_const is None:
             #                 jacobian_const = egrad(residual)(P)
 
-            jacobian = jacobianFunction(P)
+            # Create a gradient function to pass to the minimizer
+            jacobian = egrad(residualFunction)(P)
 #             jacobian = jacobian_const
             return jacobian
-
-        # if constraintsAll is not None:
-        #    jacobian_const = egrad(residual)(initSol)
 
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
             solution = lsqFit(
                 self.decodeOpXYZ['x'], self.decodeOpXYZ['y'], self.refSolutionLocal)
-            print('LSQFIT solution: min = ', np.min(solution), 'max = ', np.max(solution))
-            # solution = solution.reshape(W.shape)
+            # print('LSQFIT solution: min = ', np.min(solution), 'max = ', np.max(solution))
         else:
 
             if constraints is None and alwaysSolveConstrained:
                 initSol = lsqFit(
                     self.decodeOpXYZ['x'], self.decodeOpXYZ['y'], self.refSolutionLocal)
-
-            tsol = np.copy(initSol)
-
-            initialDecodedError0 = residualFunction(tsol)
 
             localAssemblyWeights = np.zeros(initSol.shape)
             localBCAssembly = np.zeros(initSol.shape)
@@ -2027,14 +2074,14 @@ class InputControlBlock:
                 print('Nconstraints = ', nconstraints, 'loffset = ', loffset)
 
                 freeBounds = [0, len(localBCAssembly[:, 0]), 0, len(localBCAssembly[0, :])]
-                if dimension == 2 and nconstraints > 1:
+                if dimension == 2:
 
-                    freeBounds[0] = 0 if self.isClamped['left'] else nconstraints-1
+                    freeBounds[0] = 0 if self.isClamped['left'] else (nconstraints-1 if oddDegree else nconstraints)
                     freeBounds[1] = len(localBCAssembly[:, 0]
-                                        ) if self.isClamped['right'] else len(localBCAssembly[:, 0])-nconstraints+1
-                    freeBounds[2] = 0 if self.isClamped['bottom'] else nconstraints-1
+                                        ) if self.isClamped['right'] else len(localBCAssembly[:, 0])-(nconstraints-1 if oddDegree else nconstraints)
+                    freeBounds[2] = 0 if self.isClamped['bottom'] else (nconstraints-1 if oddDegree else nconstraints)
                     freeBounds[3] = len(localBCAssembly[0, :]
-                                        ) if self.isClamped['top'] else len(localBCAssembly[0, :])-nconstraints+1
+                                        ) if self.isClamped['top'] else len(localBCAssembly[0, :])-(nconstraints-1 if oddDegree else nconstraints)
 
                 # First update hte control point vector with constraints for supporting points
                 if 'left' in self.boundaryConstraints:
@@ -2049,14 +2096,16 @@ class InputControlBlock:
                             initSol[: nconstraints] = self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
 
                     else:
-                        localBCAssembly[nconstraints-1, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['left'][-nconstraints, freeBounds[2]:freeBounds[3]]
-                        localAssemblyWeights[nconstraints-1, freeBounds[2]:freeBounds[3]] += 1.0
+                        if oddDegree:
+                            localBCAssembly[nconstraints-1, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['left'][-nconstraints, freeBounds[2]:freeBounds[3]]
+                            localAssemblyWeights[nconstraints-1, freeBounds[2]:freeBounds[3]] += 1.0
 
-                        if nconstraints > 1:
-                            initSol[:nconstraints-1, freeBounds[2]:freeBounds[3]] = 0
-                            localBCAssembly[:nconstraints-1, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
-                            localAssemblyWeights[:nconstraints-1, freeBounds[2]:freeBounds[3]] += 1.0
-                            # initSol[:nconstraints-1, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
+                            if nconstraints > 1:
+                                initSol[:nconstraints-1, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
+                                localAssemblyWeights[:nconstraints-1, freeBounds[2]:freeBounds[3]] += 1.0
+                        else:
+                            localAssemblyWeights[:nconstraints, freeBounds[2]:freeBounds[3]] += 1.0
+                            initSol[:nconstraints, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
 
                 if 'right' in self.boundaryConstraints:
                     if dimension == 1:
@@ -2070,86 +2119,107 @@ class InputControlBlock:
                             initSol[-nconstraints:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
 
                     else:
-                        localBCAssembly[-nconstraints, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['right'][nconstraints-1, freeBounds[2]:freeBounds[3]]
-                        localAssemblyWeights[-nconstraints, freeBounds[2]:freeBounds[3]] += 1.0
+                        if oddDegree:
+                            localBCAssembly[-nconstraints, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['right'][nconstraints-1, freeBounds[2]:freeBounds[3]]
+                            localAssemblyWeights[-nconstraints, freeBounds[2]:freeBounds[3]] += 1.0
 
-                        if nconstraints > 1:
-                            initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] = 0
-                            localBCAssembly[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] += self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
-                            localAssemblyWeights[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] += 1.0
-                            # initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
+                            if nconstraints > 1:
+                                initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
+                                localAssemblyWeights[-nconstraints + 1:, freeBounds[2]:freeBounds[3]] += 1.0
+                        else:
+                            localAssemblyWeights[-nconstraints:, freeBounds[2]:freeBounds[3]] += 1.0
+                            initSol[-nconstraints:, freeBounds[2]:freeBounds[3]] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
 
                 if 'top' in self.boundaryConstraints:
-                    localBCAssembly[freeBounds[0]: freeBounds[1],
-                                    -nconstraints] += self.boundaryConstraints['top'][freeBounds[0]: freeBounds[1],
-                                                                                      nconstraints - 1]
-                    localAssemblyWeights[freeBounds[0]:freeBounds[1], -nconstraints] += 1.0
+                    if oddDegree:
+                        localBCAssembly[freeBounds[0]: freeBounds[1],
+                                        -nconstraints] += self.boundaryConstraints['top'][freeBounds[0]: freeBounds[1],
+                                                                                        nconstraints - 1]
+                        localAssemblyWeights[freeBounds[0]:freeBounds[1], -nconstraints] += 1.0
 
-                    if nconstraints > 1:
-                        initSol[freeBounds[0]:freeBounds[1], -nconstraints+1:] = 0
-                        localAssemblyWeights[freeBounds[0]:freeBounds[1], -nconstraints+1:] += 1.0
-                        localBCAssembly[freeBounds[0]:freeBounds[1], -nconstraints+1:] += self.boundaryConstraints['top'][freeBounds[0]:freeBounds[1], nconstraints:loffset+degree]
+                        if nconstraints > 1:
+                            initSol[freeBounds[0]:freeBounds[1], -nconstraints+1:] = self.boundaryConstraints['top'][freeBounds[0]:freeBounds[1], nconstraints:loffset+degree]
+                            localAssemblyWeights[freeBounds[0]:freeBounds[1], -nconstraints+1:] += 1.0
+                    else:
+                        initSol[freeBounds[0]:freeBounds[1], -nconstraints:] = self.boundaryConstraints['top'][freeBounds[0]:freeBounds[1], nconstraints:loffset+degree]
+                        localAssemblyWeights[freeBounds[0]:freeBounds[1], -nconstraints:] += 1.0
 
                 if 'bottom' in self.boundaryConstraints:
-                    localBCAssembly[freeBounds[0]:freeBounds[1],
-                                    nconstraints-1] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -nconstraints]
-                    localAssemblyWeights[freeBounds[0]:freeBounds[1], nconstraints-1] += 1.0
+                    if oddDegree:
+                        localBCAssembly[freeBounds[0]:freeBounds[1],
+                                        nconstraints-1] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -nconstraints]
+                        localAssemblyWeights[freeBounds[0]:freeBounds[1], nconstraints-1] += 1.0
 
-                    if nconstraints > 1:
-                        initSol[freeBounds[0]:freeBounds[1], : nconstraints - 1] = 0
-                        localAssemblyWeights[freeBounds[0]:freeBounds[1], : nconstraints - 1] += 1.0
-                        localBCAssembly[freeBounds[0]:freeBounds[1], : nconstraints - 1] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -degree - loffset: -nconstraints]
+                        if nconstraints > 1:
+                            initSol[freeBounds[0]:freeBounds[1], : nconstraints - 1] = self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -degree - loffset: -nconstraints]
+                            localAssemblyWeights[freeBounds[0]:freeBounds[1], : nconstraints - 1] += 1.0
+                    else:
+                        initSol[freeBounds[0]:freeBounds[1], : nconstraints] = self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -degree - loffset: -nconstraints]
+                        localAssemblyWeights[freeBounds[0]:freeBounds[1], : nconstraints] += 1.0
 
                 if 'top-left' in self.boundaryConstraints:
-                    localBCAssembly[nconstraints-1, -nconstraints] += self.boundaryConstraints['top-left'][-nconstraints, nconstraints-1]
-                    localAssemblyWeights[nconstraints-1, -nconstraints] += 1.0
+                    if oddDegree:
+                        localBCAssembly[nconstraints-1, -nconstraints] += self.boundaryConstraints['top-left'][-nconstraints, nconstraints-1]
+                        localAssemblyWeights[nconstraints-1, -nconstraints] += 1.0
 
-                    if nconstraints > 1:
-                        assert(freeBounds[0] == nconstraints - 1)
-                        initSol[: nconstraints - 1, -nconstraints + 1:] = 0
-                        localAssemblyWeights[: nconstraints - 1, -nconstraints + 1:] += 1.0
-                        localBCAssembly[: nconstraints - 1, -nconstraints + 1:] += self.boundaryConstraints['top-left'][-degree -
-                                                                                                                       loffset: -nconstraints, nconstraints: degree + loffset]
+                        if nconstraints > 1:
+                            assert(freeBounds[0] == nconstraints - 1)
+                            initSol[: nconstraints - 1, -nconstraints + 1:] = 0
+                            localAssemblyWeights[: nconstraints - 1, -nconstraints + 1:] += 1.0
+                            localBCAssembly[: nconstraints - 1, -nconstraints + 1:] += self.boundaryConstraints['top-left'][-degree -
+                                                                                                                        loffset: -nconstraints, nconstraints: degree + loffset]
+                    else:
+                        initSol[: nconstraints, -nconstraints:] = self.boundaryConstraints['top-left'][-degree - loffset: -nconstraints, nconstraints: degree + loffset]
+                        localAssemblyWeights[: nconstraints, -nconstraints:] += 1.0
 
                 if 'bottom-right' in self.boundaryConstraints:
-                    localBCAssembly[-nconstraints,
-                                    nconstraints-1] += self.boundaryConstraints['bottom-right'][nconstraints-1, -nconstraints]
-                    localAssemblyWeights[-nconstraints, nconstraints-1] += 1.0
+                    if oddDegree:
+                        localBCAssembly[-nconstraints,
+                                        nconstraints-1] += self.boundaryConstraints['bottom-right'][nconstraints-1, -nconstraints]
+                        localAssemblyWeights[-nconstraints, nconstraints-1] += 1.0
 
-                    if nconstraints > 1:
-                        assert(freeBounds[2] == nconstraints - 1)
-                        initSol[-nconstraints + 1:, : nconstraints - 1] = 0
-                        localAssemblyWeights[-nconstraints + 1:, : nconstraints - 1] += 1.0
-                        localBCAssembly[-nconstraints + 1:, : nconstraints - 1] += self.boundaryConstraints['bottom-right'][nconstraints:
-                                                                                                                           degree + loffset, -degree - loffset: -nconstraints]
+                        if nconstraints > 1:
+                            assert(freeBounds[2] == nconstraints - 1)
+                            initSol[-nconstraints + 1:, : nconstraints - 1] = self.boundaryConstraints['bottom-right'][nconstraints:
+                                                                                                                            degree + loffset, -degree - loffset: -nconstraints]
+                            localAssemblyWeights[-nconstraints + 1:, : nconstraints - 1] += 1.0
+                    else:
+                        initSol[-nconstraints:, : nconstraints] = self.boundaryConstraints['bottom-right'][nconstraints:
+                                                                                                                        degree + loffset, -degree - loffset: -nconstraints]
+                        localAssemblyWeights[-nconstraints:, : nconstraints] += 1.0
 
                 if 'bottom-left' in self.boundaryConstraints:
-                    localBCAssembly[nconstraints-1,
-                                    nconstraints-1] += self.boundaryConstraints['bottom-left'][-nconstraints, -nconstraints]
-                    localAssemblyWeights[nconstraints-1, nconstraints-1] += 1.0
+                    if oddDegree:
+                        localBCAssembly[nconstraints-1,
+                                        nconstraints-1] += self.boundaryConstraints['bottom-left'][-nconstraints, -nconstraints]
+                        localAssemblyWeights[nconstraints-1, nconstraints-1] += 1.0
 
-                    if nconstraints > 1:
-                        assert(freeBounds[0] == nconstraints - 1)
-                        initSol[: nconstraints - 1, : nconstraints - 1] = 0
-                        localAssemblyWeights[: nconstraints - 1, : nconstraints - 1] += 1.0
-                        localBCAssembly[: nconstraints - 1, : nconstraints - 1] += self.boundaryConstraints['bottom-left'][-degree -
-                                                                                                                          loffset: -nconstraints, -degree - loffset: -nconstraints]
+                        if nconstraints > 1:
+                            assert(freeBounds[0] == nconstraints - 1)
+                            initSol[: nconstraints - 1, : nconstraints - 1] = self.boundaryConstraints['bottom-left'][-degree -
+                                                                                                                            loffset: -nconstraints, -degree - loffset: -nconstraints]
+                            localAssemblyWeights[: nconstraints - 1, : nconstraints - 1] += 1.0
+                    else:
+                        initSol[: nconstraints, : nconstraints] = self.boundaryConstraints['bottom-left'][-degree -
+                                                                                                                        loffset: -nconstraints, -degree - loffset: -nconstraints]
+                        localAssemblyWeights[: nconstraints, : nconstraints] += 1.0
 
                 if 'top-right' in self.boundaryConstraints:
-                    localBCAssembly[-nconstraints, -nconstraints] += self.boundaryConstraints['top-right'][nconstraints-1, nconstraints-1]
-                    localAssemblyWeights[-nconstraints, -nconstraints] += 1.0
+                    if oddDegree:
+                        localBCAssembly[-nconstraints, -nconstraints] += self.boundaryConstraints['top-right'][nconstraints-1, nconstraints-1]
+                        localAssemblyWeights[-nconstraints, -nconstraints] += 1.0
 
-                    if nconstraints > 1:
-                        initSol[-nconstraints + 1:, -nconstraints + 1:] = 0
-                        localAssemblyWeights[-nconstraints + 1:, -nconstraints + 1:] += 1.0
-                        localBCAssembly[-nconstraints + 1:, -nconstraints + 1:] += self.boundaryConstraints['top-right'][
+                        if nconstraints > 1:
+                            initSol[-nconstraints + 1:, -nconstraints + 1:] = self.boundaryConstraints['top-right'][
+                                nconstraints: degree + loffset, nconstraints: degree + loffset]
+                            localAssemblyWeights[-nconstraints + 1:, -nconstraints + 1:] += 1.0
+                    else:
+                        initSol[-nconstraints:, -nconstraints:] = self.boundaryConstraints['top-right'][
                             nconstraints: degree + loffset, nconstraints: degree + loffset]
+                        localAssemblyWeights[-nconstraints:, -nconstraints:] += 1.0
 
                 # All internal DoFs should get a weight = 1.0
                 localAssemblyWeights[freeBounds[0]:freeBounds[1], freeBounds[2]:freeBounds[3]] += 1.0
-
-                if idom in [5, 4, 2, 1]:
-                    print('debug me here')
 
                 if verbose:
                     if 'left' in self.boundaryConstraints:
@@ -2175,11 +2245,8 @@ class InputControlBlock:
 
                 if dimension > 1:
                     initSol = np.divide(initSol + localBCAssembly, localAssemblyWeights)
-                    # initSol = (initSol + np.divide(localBCAssembly, localAssemblyWeights))
 
-            print(tsol-initSol)
             initialDecodedError = residualFunction(initSol)
-
 
             if solverMaxIter > 0:
                 if enforceBounds:
