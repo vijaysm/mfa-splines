@@ -64,7 +64,7 @@ showplot = True
 useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 0
+augmentSpanSpace = 1
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -1254,6 +1254,7 @@ class InputControlBlock:
         oddDegree = (degree % 2)
         nconstraints = augmentSpanSpace + \
             (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+        loffset = degree + 2*augmentSpanSpace
         link = cp.link()
         for i in range(len(link)):
             target = link.target(i)
@@ -1271,8 +1272,9 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
                                   self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
 
-                        # cp.enqueue(target, self.controlPointData[:, -1-degree-augmentSpanSpace:])
-                        cp.enqueue(target, self.controlPointData)
+                        if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+                        # cp.enqueue(target, self.controlPointData)
                         cp.enqueue(target, self.knotsAdaptive['x'][:])
                         cp.enqueue(
                             target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
@@ -1282,8 +1284,9 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
                                   self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
 
-                        # cp.enqueue(target, self.controlPointData[:, 0:1+degree+augmentSpanSpace])
-                        cp.enqueue(target, self.controlPointData)
+                        if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:, :loffset])
+                        # cp.enqueue(target, self.controlPointData)
                         cp.enqueue(target, self.knotsAdaptive['x'][:])
                         cp.enqueue(
                             target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
@@ -1295,8 +1298,9 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
                                   self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
 
-                        # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :])
-                        cp.enqueue(target, self.controlPointData)
+                        if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                        elif dimension == 2: cp.enqueue(target, self.controlPointData[-loffset:, :])
+                        # cp.enqueue(target, self.controlPointData)
                         if dimension > 1:
                             cp.enqueue(target, self.knotsAdaptive['y'][:])
                         cp.enqueue(
@@ -1307,8 +1311,9 @@ class InputControlBlock:
                             print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
                                   self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
 
-                        # cp.enqueue(target, self.controlPointData[0:1+degree+augmentSpanSpace, :])
-                        cp.enqueue(target, self.controlPointData)
+                        if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:loffset, :])
+                        # cp.enqueue(target, self.controlPointData)
                         if dimension > 1:
                             cp.enqueue(target, self.knotsAdaptive['y'][:])
                         cp.enqueue(target, self.knotsAdaptive['x'][0:(
@@ -1316,11 +1321,11 @@ class InputControlBlock:
 
                 else:
 
-                    if useDiagonalBlocks:
+                    if useDiagonalBlocks and dimension > 1:
                         # target block is diagonally top right to current subdomain
                         if dir[0] > 0 and dir[1] > 0:
 
-                            cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
                             # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
                             if verbose:
                                 print(
@@ -1331,7 +1336,7 @@ class InputControlBlock:
                                      augmentSpanSpace])
                         # target block is diagonally top left to current subdomain
                         if dir[0] < 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
                             # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
                             if verbose:
                                 print(
@@ -1343,7 +1348,7 @@ class InputControlBlock:
 
                         # target block is diagonally left bottom  current subdomain
                         if dir[0] < 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
                             # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
 
                             if verbose:
@@ -1354,7 +1359,7 @@ class InputControlBlock:
                                     [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
                         # target block is diagonally right bottom of current subdomain
                         if dir[0] > 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
                             # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
                             if verbose:
                                 print(
@@ -2067,10 +2072,10 @@ class InputControlBlock:
                 decoded = decode(Pin, self.decodeOpXYZ)
                 residual_decoded = (
                     self.refSolutionLocal - decoded)/solutionRange
-                residual_decoded = residual_decoded[self.corebounds[0]
+                residual_decoded2 = residual_decoded[self.corebounds[0]
                                                     [0]: self.corebounds[0][1]]
                 decoded_residual_norm = np.sqrt(
-                    np.sum(residual_decoded**2)/len(residual_decoded))
+                    np.sum(residual_decoded2**2)/len(residual_decoded2))
 
                 if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
                     print('Residual decoded 1D: ', decoded_residual_norm)
