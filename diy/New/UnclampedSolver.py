@@ -9,6 +9,7 @@ import timeit
 import autograd
 # import numpy as np
 from functools import reduce
+from numpy import dtype
 
 import splipy as sp
 import pandas as pd
@@ -16,6 +17,7 @@ import pandas as pd
 # Autograd AD impots
 from autograd import elementwise_grad as egrad
 import autograd.numpy as np
+import numpy as npo
 
 from pymoab import core, types
 from pymoab.scd import ScdInterface
@@ -29,6 +31,8 @@ from scipy import linalg
 # MPI imports
 from mpi4py import MPI
 import diy
+
+from numba import jit
 
 # Plotting imports
 from matplotlib import pyplot as plt
@@ -46,9 +50,9 @@ directions = ['x', 'y', 'z']
 # --- set problem input parameters here ---
 problem = 1
 dimension = 1
-degree = 2
+degree = 3
 nSubDomains = np.array([3] * dimension, dtype=np.uint32)
-nSubDomains = [2, 1]
+# nSubDomains = [2, 1]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -66,7 +70,7 @@ useDiagonalBlocks = True
 relEPS = 5e-5
 fullyPinned = False
 useAdditiveSchwartz = True
-enforceBounds = False
+enforceBounds = True
 alwaysSolveConstrained = False
 
 # ------------------------------------------
@@ -74,9 +78,9 @@ alwaysSolveConstrained = False
 
 #                      0      1       2         3          4         5
 solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'COBYLA', 'Newton-CG', 'TNC']
-solverScheme = solverMethods[1]
+solverScheme = solverMethods[0]
 solverMaxIter = 0
-nASMIterations = 2
+nASMIterations = 5
 maxAbsErr = 1e-6
 maxRelErr = 1e-12
 
@@ -207,9 +211,33 @@ L2err = np.zeros(nTotalSubDomains)
 # globalExtentDict[cp.gid()*4:cp.gid()*4+4] = extents
 localExtents = {}
 
+def interpolate_inputdata(solprofile, Xi, newX, Yi=None, newY=None, Zi=None, newZ=None):
+
+    from scipy.interpolate import interp1d
+    from scipy.interpolate import RectBivariateSpline
+    from scipy.interpolate import RegularGridInterpolator
+
+    # InterpCp = interp1d(coeffs_x, self.pAdaptive, kind=interpOrder)
+    if dimension == 1:
+        interp_oneD = interp1d(Xi, solprofile, kind='cubic')
+
+        return interp_oneD(newX)
+
+    elif dimension == 2:
+        interp_spline = RectBivariateSpline(Xi, Yi, solprofile)
+
+        return interp_spline(newX, newY)
+
+    else:
+        interp_multiD = RegularGridInterpolator((Xi, Yi, Zi), solprofile)
+
+        return interp_multiD((newX, newY, newZ))
+
+
 # def read_problem_parameters():
 xcoord = ycoord = zcoord = None
 solution = None
+
 if dimension == 1:
     print('Setting up problem for 1-D')
 
@@ -220,21 +248,21 @@ if dimension == 1:
         scale = 100
         solution = scale * (np.sinc(xcoord-1)+np.sinc(xcoord+1))
         # solution = scale * (np.sinc(xcoord+1) + np.sinc(2*xcoord) + np.sinc(xcoord-1))
-        # solution = scale * (np.sinc(xcoord) + np.sinc(2 *
-        #                     xcoord-1) + np.sinc(3*xcoord+1.5))
+        solution = scale * (np.sinc(xcoord) + np.sinc(2 *
+                            xcoord-1) + np.sinc(3*xcoord+1.5))
         # solution = np.zeros(xcoord.shape)
         # solution[xcoord <= 0] = 1
         # solution[xcoord > 0] = -1
         # solution = scale * np.sin(math.pi * xcoord/4)
     elif problem == 2:
-        solution = np.fromfile("input/1d/s3d.raw", dtype=np.float64)
+        solution = np.fromfile("data/s3d.raw", dtype=np.float64)
         print('Real data shape: ', solution.shape)
         Dmin = [0.]
         Dmax = [1.]
         xcoord = np.linspace(Dmin[0], Dmax[0], solution.shape[0])
         relEPS = 5e-8
     elif problem == 3:
-        Y = np.fromfile("input/2d/nek5000.raw", dtype=np.float64)
+        Y = np.fromfile("data/nek5000.raw", dtype=np.float64)
         Y = Y.reshape(200, 200)
         solution = Y[100, :]  # Y[:,150] # Y[110,:]
         Dmin = [0.]
@@ -356,92 +384,130 @@ elif dimension == 2:
         del X, Y
 
     elif problem == 3:
+        nPoints[0] = 1000
+        nPoints[1] = 1000
         solution = np.fromfile(
-            "input/2d/nek5000.raw", dtype=np.float64).reshape(200, 200)
-        print("Nek5000 shape:", z.shape)
-        nPoints[0] = z.shape[0]
-        nPoints[1] = z.shape[1]
+            "data/nek5000.raw", dtype=np.float64).reshape(200, 200)
+
         Dmin = [0, 0]
         Dmax = [100., 100.]
-
         xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+
+        if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
+            solution = interpolate_inputdata( solprofile=np.copy(solution),
+                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=xcoord,
+                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=ycoord )
+        print("Nek5000 shape:", solution.shape)
+
         # (3*degree + 1) #minimum number of control points
         if nControlPointsInputIn == 0:
             nControlPointsInputIn = 20
 
     elif problem == 4:
 
+        nPoints[0] = 5400
+        nPoints[1] = 7040
         binFactor = 4.0
         solution = np.fromfile(
-            "input/2d/s3d_2D.raw", dtype=np.float64).reshape(540, 704)
-        # z = z[:540,:540]
-        # z = zoom(z, 1./binFactor, order=4)
-        nPoints[0] = z.shape[0]
-        nPoints[1] = z.shape[1]
+            "data/s3d_2D.raw", dtype=np.float64).reshape(540, 704)
+
         Dmin = [0, 0]
         Dmax = nPoints
-        print("S3D shape:", z.shape)
         xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
+        if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
+            solution = interpolate_inputdata( solprofile=np.copy(solution),
+                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=xcoord,
+                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=ycoord )
+        # z = z[:540,:540]
+        # z = zoom(z, 1./binFactor, order=4)
+        print("S3D shape:", solution.shape)
+
+
     elif problem == 5:
-        solution = np.fromfile("input/2d/FLDSC_1_1800_3600.dat",
+        nPoints[0] = 1800
+        nPoints[1] = 3600
+        solution = np.fromfile("data/FLDSC_1_1800_3600.dat",
                                dtype=np.float32).reshape(1800, 3600)
-        nPointsX = z.shape[0]
-        nPointsY = z.shape[1]
-        DminX = DminY = 0
-        DmaxX = 1.0*nPointsX
-        DmaxY = 1.0*nPointsY
-        print("CESM data shape: ", z.shape)
+        Dmin = [0, 0]
+        Dmax = nPoints
         xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+
+        if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
+            solution = interpolate_inputdata( solprofile=np.copy(solution),
+                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=xcoord,
+                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=ycoord )
+        print("CESM data shape: ", solution.shape)
 
     elif problem == 6:
         # A grid of c-values
-        nPointsX = 501
-        nPointsY = 501
+        nPoints[0] = 2501
+        nPoints[1] = 2501
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
-        DminX = -2
-        DminY = -1.5
-        DmaxX = 1
-        DmaxY = 1.5
-
-        x = np.linspace(DminX, DmaxX, nPoints[0])
-        y = np.linspace(DminY, DmaxY, nPoints[1])
-        X, Y = np.meshgrid(x+shiftX, y+shiftY)
+        Dmin = [-2, -1.5]
+        Dmax = [1, 1.5]
 
         N_max = 255
         some_threshold = 50.0
 
-        # from PIL import Image
-        # image = Image.new("RGB", (nPointsX, nPointsY))
-        mandelbrot_set = np.zeros((nPoints[0], nPoints[1]))
-        for yi in range(nPointsY):
-            zy = yi * (DmaxY - DminY) / (nPointsY - 1) + DminY
-            y[yi] = zy
-            for xi in range(nPoints[0]):
-                zx = xi * (DmaxX - DminX) / (nPointsX - 1) + DminX
-                x[xi] = zx
-                z = zx + zy * 1j
-                c = z
-                for i in range(N_max):
-                    if abs(z) > 2.0:
-                        break
-                    z = z * z + c
-                # image.putpixel((xi, yi), (i % 4 * 64, i % 8 * 32, i % 16 * 16))
-                # RGB = (R*65536)+(G*256)+B
-                mandelbrot_set[xi, yi] = (
-                    i % 4 * 64) * 65536 + (i % 8 * 32) * 256 + (i % 16 * 16)
+        @jit
+        def mandelbrot(c,maxiter):
+            z = c
+            for n in range(maxiter):
+                if abs(z) > 2:
+                    return (n % 4 * 64) * 65536 + (n % 8 * 32) * 256 + (n % 16 * 16)
+                    # return n
+                z = z*z + c
+            return 0
 
-        # image.show()
+        @jit
+        def mandelbrot_set(xmin,xmax,ymin,ymax,width,height,maxiter):
+            r1 = npo.linspace(xmin, xmax, width, dtype=npo.float)
+            r2 = npo.linspace(ymin, ymax, height, dtype=npo.float)
+            n3 = npo.empty((width,height))
+            for i in range(width):
+                for j in range(height):
+                    n3[i,j] = mandelbrot(r1[i] + 1j*r2[j],maxiter)
+            return (r1,r2,n3)
 
-        z = mandelbrot_set.T / 1e5
+        xcoord, ycoord, solution = mandelbrot_set(Dmin[0],Dmax[0],Dmin[1],Dmax[1],nPoints[0],nPoints[1],N_max)
+        solution /= 1e4
 
-        plt.imshow(z, extent=[DminX, DmaxX, DminY, DmaxY])
-        plt.show()
+        # xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        # ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+        # # X, Y = np.meshgrid(xcoord+shiftX, ycoord+shiftY)
+
+        # # from PIL import Image
+        # # image = Image.new("RGB", (nPoints[0], nPoints[1]))
+        # mandelbrot_set = np.zeros((nPoints[0], nPoints[1]))
+        # for yi in range(nPoints[1]):
+        #     zy = yi * (Dmax[1] - Dmin[1]) / (nPoints[1] - 1) + Dmin[1]
+        #     ycoord[yi] = zy
+        #     for xi in range(nPoints[0]):
+        #         zx = xi * (Dmax[0] - Dmin[0]) / (nPoints[0] - 1) + Dmin[0]
+        #         xcoord[xi] = zx
+        #         z = zx + zy * 1j
+        #         c = z
+        #         for i in range(N_max):
+        #             if abs(z) > 2.0:
+        #                 break
+        #             z = z * z + c
+        #         # image.putpixel((xi, yi), (i % 4 * 64, i % 8 * 32, i % 16 * 16))
+        #         # RGB = (R*65536)+(G*256)+B
+        #         mandelbrot_set[xi, yi] = (
+        #             i % 4 * 64) * 65536 + (i % 8 * 32) * 256 + (i % 16 * 16)
+
+        # # image.show()
+
+        # solution = mandelbrot_set / 1e5
+
+        # plt.imshow(solution, extent=[Dmin[0], Dmax[0], Dmin[1], Dmax[1]])
+        # plt.show()
 
         if nControlPointsInputIn == 0:
             nControlPointsInputIn = 50
@@ -808,11 +874,11 @@ def decode(P, RN):
         error('Not implemented and invalid dimension')
 
 
-def lsqFit(RNx, RNy, z):
+def lsqFit(RN, z):
     if dimension == 1:
         # RN = (Nu*W)/(np.sum(Nu*W, axis=1)[:, np.newaxis])
         z = z.reshape(z.shape[0], 1)
-        return linalg.lstsq(RNx, z)[0]
+        return linalg.lstsq(RN['x'], z)[0]
     elif dimension == 2:
         use_cho = False
         # RNx = Nu * np.sum(W, axis=1)
@@ -821,15 +887,15 @@ def lsqFit(RNx, RNy, z):
         # RNy /= np.sum(RNy, axis=1)[:, np.newaxis]
         if use_cho:
             X = linalg.cho_solve(linalg.cho_factor(
-                np.matmul(RNx.T, RNx)), RNx.T)
+                np.matmul(RN['x'].T, RN['x'])), RN['x'].T)
             Y = linalg.cho_solve(linalg.cho_factor(
-                np.matmul(RNy.T, RNy)), RNy.T)
+                np.matmul(RN['y'].T, RN['y'])), RN['y'].T)
             zY = np.matmul(z, Y.T)
             return np.matmul(X, zY)
         else:
-            NTNxInv = np.linalg.inv(np.matmul(RNx.T, RNx))
-            NTNyInv = np.linalg.inv(np.matmul(RNy.T, RNy))
-            NxTQNy = np.matmul(RNx.T, np.matmul(z, RNy))
+            NTNxInv = np.linalg.inv(np.matmul(RN['x'].T, RN['x']))
+            NTNyInv = np.linalg.inv(np.matmul(RN['y'].T, RN['y']))
+            NxTQNy = np.matmul(RN['x'].T, np.matmul(z, RN['y']))
             return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
 # Let do the recursive iterations
@@ -1185,6 +1251,9 @@ class InputControlBlock:
 
     def send_diy(self, cp):
 
+        oddDegree = (degree % 2)
+        nconstraints = augmentSpanSpace + \
+            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
         link = cp.link()
         for i in range(len(link)):
             target = link.target(i)
@@ -1925,6 +1994,7 @@ class InputControlBlock:
             residual_constrained_nrm = 0
             nBndOverlap = 0
             if constraints is not None and len(constraints) > 0:
+
                 if idom > 1:  # left constraint
 
                     loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
@@ -1968,7 +2038,7 @@ class InputControlBlock:
             # print(Aoper, Brhs)
             return [Aoper, Brhs]
 
-        def residual1D(Pin):
+        def residual1D(Pin, printVerbose=False):
 
             # Use previous iterate as initial solution
             # initSol = constraints[1][:] if constraints is not None else np.ones_like(
@@ -1993,18 +2063,37 @@ class InputControlBlock:
             else:
 
                 # New scheme like 2-D
-                print('Corebounds: ', self.corebounds)
+                # print('Corebounds: ', self.corebounds)
                 decoded = decode(Pin, self.decodeOpXYZ)
                 residual_decoded = (
                     self.refSolutionLocal - decoded)/solutionRange
-                # residual_decoded = residual_decoded[self.corebounds[0]
-                #                                     [0]: self.corebounds[0][1]]
+                residual_decoded = residual_decoded[self.corebounds[0]
+                                                    [0]: self.corebounds[0][1]]
                 decoded_residual_norm = np.sqrt(
                     np.sum(residual_decoded**2)/len(residual_decoded))
 
-                residual_nrm = decoded_residual_norm
+                if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
+                    print('Residual decoded 1D: ', decoded_residual_norm)
 
-            if type(Pin) is not np.numpy_boxes.ArrayBox:
+                oddDegree = (degree % 2)
+                nconstraints = augmentSpanSpace + \
+                    (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+
+                residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, residual_decoded)
+                lbound = 0
+                ubound = len(residual_encoded)
+                if not self.isClamped['left']:
+                    lbound = nconstraints+1 if oddDegree else nconstraints
+                if not self.isClamped['right']:
+                    ubound -= nconstraints+1 if oddDegree else nconstraints
+
+                bc_penalty = 0
+                decoded_residual_norm = np.sqrt(
+                    np.sum(residual_encoded[lbound:ubound]**2)/len(residual_encoded[lbound:ubound])) + bc_penalty * np.sqrt(np.sum(residual_encoded[:lbound]**2)+np.sum(residual_encoded[ubound:]**2))
+
+                residual_nrm = (decoded_residual_norm-initialDecodedError*0)
+
+            if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
                 print('Residual 1D: ', decoded_residual_norm, residual_nrm)
 
             return residual_nrm
@@ -2013,7 +2102,7 @@ class InputControlBlock:
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
 
-        def residual2DRev(Pin):
+        def residual2DRev(Pin, printVerbose=False):
 
             bc_penalty = 1e2
             bc_norm = 0.0
@@ -2142,7 +2231,7 @@ class InputControlBlock:
             residualFunction = residual2DRev  # residual2DRev
 
         def print_iterate(P):
-            res = residualFunction(P)
+            res = residualFunction(P, printVerbose=True)
             # print('NLConstrained residual vector norm: ', np.linalg.norm(res, ord=2))
             self.globalIterationNum += 1
             return False
@@ -2153,25 +2242,24 @@ class InputControlBlock:
             #                 jacobian_const = egrad(residual)(P)
 
             # Create a gradient function to pass to the minimizer
-            jacobian = egrad(residualFunction)(P)
+            jacobian = egrad(residualFunction)(P, printVerbose=False)
 #             jacobian = jacobian_const
             return jacobian
 
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
-            solution = lsqFit(
-                self.decodeOpXYZ['x'], self.decodeOpXYZ['y'], self.refSolutionLocal)
+            solution = lsqFit(self.decodeOpXYZ, self.refSolutionLocal)
             print('LSQFIT solution: min = ', np.min(
                 solution), 'max = ', np.max(solution))
         else:
 
             if constraints is None and alwaysSolveConstrained:
-                initSol = lsqFit(
-                    self.decodeOpXYZ['x'], self.decodeOpXYZ['y'], self.refSolutionLocal)
+                initSol = lsqFit(self.decodeOpXYZ, self.refSolutionLocal)
 
             oddDegree = (degree % 2)
             # alpha = 0.5 if dimension == 2 or oddDegree else 0.0
             alpha = 0.5
+            beta = 0.0
             localAssemblyWeights = np.zeros(initSol.shape)
             localBCAssembly = np.zeros(initSol.shape)
             freeBounds = [0, len(localBCAssembly[:, 0]),
@@ -2186,7 +2274,6 @@ class InputControlBlock:
                         if dimension == 1:
                             initSol[0] = alpha * initSol[0] + (
                                 1-alpha) * self.boundaryConstraints['left'][-1]
-
                         else:
                             initSol[0, :] += self.boundaryConstraints['left'][-1, :]
                             localAssemblyWeights[0, :] += 1.0
@@ -2194,7 +2281,6 @@ class InputControlBlock:
                         if dimension == 1:
                             initSol[-1] = alpha * initSol[-1] + (
                                 1-alpha) * self.boundaryConstraints['right'][0]
-
                         else:
                             initSol[-1, :] += self.boundaryConstraints['right'][0, :]
                             localAssemblyWeights[-1, :] += 1.0
@@ -2240,11 +2326,11 @@ class InputControlBlock:
                             if oddDegree:
                                 if nconstraints > 1:
                                     initSol[: nconstraints -
-                                            1] = self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
+                                            1] = beta * initSol[: nconstraints -1] + (1-beta) * self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
                                 initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
                                     1-alpha) * self.boundaryConstraints['left'][-nconstraints]
                             else:
-                                initSol[: nconstraints] = self.boundaryConstraints['left'][-degree -
+                                initSol[: nconstraints] = beta * initSol[: nconstraints] + (1-beta) * self.boundaryConstraints['left'][-degree -
                                                                                            loffset: -nconstraints]
 
                         else:
@@ -2270,11 +2356,12 @@ class InputControlBlock:
                             if oddDegree:
                                 if nconstraints > 1:
                                     initSol[-nconstraints +
-                                            1:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
+                                            1:] = beta * initSol[-nconstraints +
+                                            1:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
                                 initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
                                     1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
                             else:
-                                initSol[-nconstraints:] = self.boundaryConstraints['right'][nconstraints: degree+loffset]
+                                initSol[-nconstraints:] = beta * initSol[-nconstraints:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
 
                         else:
                             if oddDegree:
@@ -2447,21 +2534,36 @@ class InputControlBlock:
                     initSol = np.divide(
                         initSol + localBCAssembly, localAssemblyWeights)
 
-            initialDecodedError = residualFunction(initSol)
+            initialDecodedError = residualFunction(initSol, printVerbose=True)
 
             if solverMaxIter > 0:
                 if enforceBounds:
                     if dimension == 1:
                         nshape = self.controlPointData.shape[0]
+                        bnds = np.tensordot(np.ones(nshape),
+                                            self.controlPointBounds, axes=0)
+
+                        oddDegree = (degree % 2)
+                        nconstraints = augmentSpanSpace + \
+                            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+
+                        if not self.isClamped['left']:
+                            for i in range(nconstraints+1):
+                                bnds[i][:] = initSol[i]
+                        if not self.isClamped['right']:
+                            for i in range(nconstraints):
+                                bnds[-i-1][:] = initSol[-i-1]
                     elif dimension == 2:
                         nshape = self.controlPointData.shape[0] * \
                             self.controlPointData.shape[1]
+                        bnds = np.tensordot(np.ones(nshape),
+                                            self.controlPointBounds, axes=0)
                     else:
                         nshape = self.controlPointData.shape[0] * \
                             self.controlPointData.shape[1] * \
                             self.controlPointData.shape[2]
-                    bnds = np.tensordot(np.ones(nshape),
-                                        self.controlPointBounds, axes=0)
+                        bnds = np.tensordot(np.ones(nshape),
+                                            self.controlPointBounds, axes=0)
                 else:
                     bnds = None
 
