@@ -19,9 +19,9 @@ from autograd import elementwise_grad as egrad
 import autograd.numpy as np
 import numpy as npo
 
-from pymoab import core, types
-from pymoab.scd import ScdInterface
-from pymoab.hcoord import HomCoord
+#from pymoab import core, types
+#from pymoab.scd import ScdInterface
+#from pymoab.hcoord import HomCoord
 
 # SciPY imports
 import scipy
@@ -60,8 +60,8 @@ nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
 nControlPointsInputIn = 10
 debugProblem = False
 verbose = False
-showplot = True
-useVTKOutput = True
+showplot = False
+useVTKOutput = False
 useMOABMesh = False
 
 augmentSpanSpace = 1
@@ -239,7 +239,7 @@ xcoord = ycoord = zcoord = None
 solution = None
 
 if dimension == 1:
-    print('Setting up problem for 1-D')
+    if rank == 0: print('Setting up problem for 1-D')
 
     if problem == 1:
         Dmin = [-4.]
@@ -322,8 +322,8 @@ elif dimension == 2:
         debugProblem = True
 
     elif problem == 1:
-        nPoints[0] = 1025
-        nPoints[1] = 1025
+        nPoints[0] = 9001
+        nPoints[1] = 9001
         scale = 100
         Dmin = [-4., -4.]
         Dmax = [4., 4.]
@@ -444,8 +444,8 @@ elif dimension == 2:
 
     elif problem == 6:
         # A grid of c-values
-        nPoints[0] = 2501
-        nPoints[1] = 2501
+        nPoints[0] = 3201
+        nPoints[1] = 3201
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
@@ -622,7 +622,7 @@ def plot_solution(solVector):
 
 
 # Store the reference solution
-plot_solution(solution)
+if useVTKOutput: plot_solution(solution)
 
 ### Print parameter details ###
 if rank == 0:
@@ -2811,7 +2811,7 @@ contigAssigner = diy.ContiguousAssigner(nprocs, nTotalSubDomains)
 
 discreteDec.decompose(rank, contigAssigner, add_input_control_block2)
 
-masterControl.foreach(InputControlBlock.show)
+if verbose: masterControl.foreach(InputControlBlock.show)
 
 sys.stdout.flush()
 commWorld.Barrier()
@@ -2820,8 +2820,8 @@ if rank == 0:
     print("\n---- Starting Global Iterative Loop ----")
 
 #########
+commWorld.Barrier()
 start_time = timeit.default_timer()
-
 
 def send_receive_all():
 
@@ -2858,6 +2858,14 @@ if useVTKOutput or showplot:
         print("Global extents consolidated  = ", globalExtentDict)
 
 del xcoord, ycoord, solution
+
+elapsed = timeit.default_timer() - start_time
+sys.stdout.flush()
+if rank == 0:
+    print('\nTotal setup time for solver = ', elapsed, '\n')
+
+commWorld.Barrier()
+start_time = timeit.default_timer()
 
 for iterIdx in range(nASMIterations):
 
