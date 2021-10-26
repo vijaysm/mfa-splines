@@ -49,7 +49,7 @@ plt.rcParams.update(params)
 directions = ['x', 'y', 'z']
 # --- set problem input parameters here ---
 problem = 1
-dimension = 1
+dimension = 3
 degree = 3
 nSubDomains = np.array([3] * dimension, dtype=np.uint32)
 # nSubDomains = [2, 1]
@@ -60,7 +60,7 @@ nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
 nControlPointsInputIn = 10
 debugProblem = False
 verbose = False
-showplot = False
+showplot = True
 useVTKOutput = False
 useMOABMesh = False
 
@@ -70,7 +70,7 @@ useDiagonalBlocks = True
 relEPS = 5e-5
 fullyPinned = False
 useAdditiveSchwartz = True
-enforceBounds = True
+enforceBounds = False
 alwaysSolveConstrained = False
 
 # ------------------------------------------
@@ -118,8 +118,8 @@ def usage():
 
 
 # nSubDomainsX = nSubDomainsY = nSubDomainsZ = 1
-Dmin = np.array(3, dtype=np.float32)
-Dmax = np.array(3, dtype=np.float32)
+Dmin = np.array(dimension, dtype=np.float32)
+Dmax = np.array(dimension, dtype=np.float32)
 
 ######################################################################
 # Get the argumnts from command-line to override options
@@ -444,8 +444,8 @@ elif dimension == 2:
 
     elif problem == 6:
         # A grid of c-values
-        nPoints[0] = 3201
-        nPoints[1] = 3201
+        nPoints[0] = 6001 #2501
+        nPoints[1] = 6001 #2501
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
@@ -520,16 +520,16 @@ elif dimension == 3:
     print('Setting up problem for 3-D')
 
     if problem == 1:
-        nPoints[0] = 1025
-        nPoints[1] = 1025
-        nPoints[2] = 1025
+        nPoints[0] = 101
+        nPoints[1] = 101
+        nPoints[2] = 101
         scale = 100
         Dmin = [-4., -4., -4.0]
         Dmax = [4., 4., 4.]
 
         xcoord = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         ycoord = np.linspace(Dmin[1], Dmax[1], nPoints[1])
-        ycoord = np.linspace(Dmin[2], Dmax[2], nPoints[2])
+        zcoord = np.linspace(Dmin[2], Dmax[2], nPoints[2])
         X, Y, Z = np.meshgrid(xcoord, ycoord, zcoord, indexing='ij')
 
         # solution = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
@@ -543,8 +543,8 @@ elif dimension == 3:
         # solution = solution * (1 + noise)
 
         # solution = scale * X * Y * Z
-        solution = scale * (np.sinc(np.sqrt(X**2 + Y**2)) +
-                            np.sinc(2*((X-2)**2 + (Y+2)**2))).T
+        solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
+                            np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2))).T
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
@@ -561,7 +561,7 @@ elif dimension == 3:
         # solution = scale * (np.sinc(X) * np.sinc(Y))
         # solution = solution.T
         # (3*degree + 1) #minimum number of control points
-        del X, Y
+        del X, Y, Z
 
 nControlPointsInput = np.array(
     [nControlPointsInputIn] * dimension, dtype=np.uint32)
@@ -582,9 +582,8 @@ if dimension > 1:
         xyzMax[2] = zcoord.max()
 
 solutionBounds = [solution.min(), solution.max()]
-solutionRange = solution.max() - solution.min()
+solutionRange = solutionBounds[1] - solutionBounds[0]
 solutionShape = solution.shape
-
 
 def plot_solution(solVector):
     from uvw import RectilinearGrid, DataArray
@@ -593,30 +592,11 @@ def plot_solution(solVector):
         plt.plot(xcoord, solVector, 'r-', ms=2)
         mpl_fig.show()
     elif dimension == 2:
-        # x, y = np.meshgrid(xcoord, ycoord)
-        # x = x.reshape(1, x.shape[1], x.shape[0])
-        # y = x.reshape(1, y.shape[1], y.shape[0])
-        # gridToVTK("./structured", xcoord, ycoord, np.ones(1),
-        #           pointData={"solution": solVector.reshape(1, xcoord.shape[0], ycoord.shape[0])})
         with RectilinearGrid("./structured.vtr", (xcoord, ycoord)) as rect:
             rect.addPointData(DataArray(solVector, range(2), 'solution'))
     elif dimension == 3:
         with RectilinearGrid("./structured.vtr", (xcoord, ycoord, zcoord)) as rect:
             rect.addPointData(DataArray(solVector, range(3), 'solution'))
-        # x, y, z = np.meshgrid(xcoord, ycoord, zcoord)
-        # gridToVTK(
-        #     "./structured", x.reshape(x.shape[0],
-        #                               x.shape[1],
-        #                               x.shape[2]),
-        #     y.reshape(y.shape[0],
-        #               y.shape[1],
-        #               y.shape[2]),
-        #     z.reshape(x.shape[0],
-        #               x.shape[1],
-        #               x.shape[2]),
-        #     pointData={"solution": solVector.reshape(x.shape[0],
-        #                                              x.shape[1],
-        #                                              x.shape[2])})
     else:
         print("No visualization output available for dimension > 2")
 
@@ -651,13 +631,8 @@ if rank == 0:
 
 sys.stdout.flush()
 
-# Let us create a parallel VTK file
-# @profile
-
-
 def flattenList(t):
     return [item for sublist in t for item in sublist]
-
 
 def flattenDict(d):
     return(reduce(
@@ -669,241 +644,16 @@ def flattenDict(d):
         {}
     ))
 
-
 def flattenListDict(t):
     ndict = {}
     for item in t:
         ndict.update(item)
     return ndict
 
-
-def WritePVTKFile(iteration):
-    # print(globalExtentDict)
-    pvtkfile = open("pstructured-mfa-%d.pvtr" % (iteration), "w")
-
-    pvtkfile.write('<?xml version="1.0"?>\n')
-    pvtkfile.write(
-        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
-    pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
-                   (0, solutionShape[0]-1, 0, solutionShape[1]-1))
-    pvtkfile.write('\n')
-    pvtkfile.write('    <PPointData>\n')
-    pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
-    pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
-    pvtkfile.write('    </PPointData>\n')
-    pvtkfile.write('    <PCellData></PCellData>\n')
-    pvtkfile.write('    <PCoordinates>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write('    </PCoordinates>\n\n')
-
-    isubd = 0
-    # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
-    # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-    # dxyz = [solutionShape[0]/nSubDomains[0], solutionShape[1]/nSubDomains[1]]
-    # print("Dxyz = ", dxyz)
-    # yoff = 0
-    # ncy = 0
-    for iy in range(nSubDomainsY):
-        # xoff = 0
-        # ncx = 0
-        for ix in range(nSubDomainsX):
-            # pvtkfile.write(
-            #     '    <Piece Extent="0.0 0.0 %f %f %f %f" Source="structured-%d-%d.vts"/>\n' %
-            #     (max(xoff-dxyz[0], xyzMin[0]), min(xyzMax[0], xoff+dxyz[0]), max(yoff-dxyz[1], xyzMin[1]), min(xyzMax[1], yoff+dxyz[1]), isubd, iteration))
-
-            pvtkfile.write(
-                '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n' %
-                (0,
-                 globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
-                 0,
-                 globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
-                 isubd, iteration))
-            isubd += 1
-            # xoff += globalExtentDict[isubd][0]
-            # ncx += nControlPointsInput[0]
-        # yoff += globalExtentDict[isubd][1]
-        # ncy += nControlPointsInput[1]
-    pvtkfile.write('\n')
-    pvtkfile.write('</PRectilinearGrid>\n')
-    pvtkfile.write('</VTKFile>\n')
-
-    pvtkfile.close()
-
-# Write control point data
-
-
-def WritePVTKControlFile(iteration):
-    nconstraints = (int(degree/2.0) if not degree %
-                    2 else int((degree+1)/2.0))
-    # nconstraints=1
-    print('Nconstraints = ', nconstraints)
-    pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
-
-    pvtkfile.write('<?xml version="1.0"?>\n')
-    pvtkfile.write(
-        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
-    pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' %
-                   (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
-                    0, nSubDomainsY *
-                    nControlPointsInput[1] - (nSubDomainsY - 1),
-                    0 * (nconstraints + augmentSpanSpace)))
-    pvtkfile.write('\n')
-    pvtkfile.write('    <PPointData>\n')
-    pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
-    pvtkfile.write('    </PPointData>\n')
-    pvtkfile.write('    <PCellData></PCellData>\n')
-    pvtkfile.write('    <PCoordinates>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write(
-        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write('    </PCoordinates>\n\n')
-
-    isubd = 0
-    # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
-    # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-    dxyz = (xyzMax-xyzMin)/nSubDomains
-    yoff = xyzMin[1]
-    ncy = 0
-    for iy in range(nSubDomainsY):
-        xoff = xyzMin[0]
-        ncx = 0
-        for ix in range(nSubDomainsX):
-            pvtkfile.write(
-                '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n' %
-                (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, isubd, iteration))
-            isubd += 1
-            xoff += dxyz[0]
-            ncx += nControlPointsInput[0]
-        yoff += dxyz[1]
-        ncy += nControlPointsInput[1]
-    pvtkfile.write('\n')
-    pvtkfile.write('</PRectilinearGrid>\n')
-    pvtkfile.write('</VTKFile>\n')
-
-    pvtkfile.close()
-
-
-# ------------------------------------
-
-EPS = 1e-32
-GTOL = 1e-2
-
-
-def compute_decode_operators(iNuvw):
-    RN = {'x': [], 'y': [], 'z': []}
-
-    if dimension == 1:
-        W = np.ones(iNuvw['x'].shape[1])
-        RN['x'] = (iNuvw['x']*W)/(np.sum(iNuvw['x']*W, axis=1)[:, np.newaxis])
-
-    elif dimension == 2:
-        W = np.ones((iNuvw['x'].shape[1], iNuvw['y'].shape[1]))
-
-        RN['x'] = iNuvw['x'] * np.sum(W, axis=1)
-        RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
-        RN['y'] = iNuvw['y'] * np.sum(W, axis=0)
-        RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
-
-    elif dimension == 3:
-        W = np.ones(
-            (iNuvw['x'].shape[1], iNuvw['y'].shape[1], iNuvw['z'].shape[1]))
-
-        RN['x'] = iNuvw['x'] * np.sum(W, axis=2)
-        RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
-        RN['y'] = iNuvw['y'] * np.sum(W, axis=1)
-        RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
-        RN['z'] = iNuvw['z'] * np.sum(W, axis=0)
-        RN['z'] /= np.sum(RN['z'], axis=1)[:, np.newaxis]
-
-    else:
-        error('No implementation')
-
-    return RN
-
-
-def decode_2D(P, RN):
-    decoded = []
-    method = 2
-    if method == 1:
-        Nu = iNu[..., np.newaxis]
-        Nv = iNv[:, np.newaxis]
-        NN = []
-        for ui in range(Nu.shape[0]):
-            for vi in range(Nv.shape[0]):
-                NN.append(Nu[ui]*Nv[vi])
-        NN = np.array(NN)
-
-        decoded = np.tensordot(NN, P * W) / np.tensordot(NN, W)
-        del NN
-        decoded = decoded.reshape((Nu.shape[0], Nv.shape[0]))
-    else:
-
-        # RNx = iNu * np.sum(W, axis=1)
-        # RNx /= np.sum(RNx, axis=1)[:, np.newaxis]
-        # RNy = iNv * np.sum(W, axis=0)
-        # RNy /= np.sum(RNy, axis=1)[:, np.newaxis]
-        # print('Decode error res: ', RNx.shape, RNy.shape)
-
-        decoded = np.matmul(np.matmul(RN['x'], P), RN['y'].T)
-        # print('Decode error res: ', decoded.shape, decoded2.shape, np.max(np.abs(decoded.reshape((Nu.shape[0], Nv.shape[0])) - decoded2)))
-        # print('Decode error res: ', z.shape, decoded.shape)
-
-    return decoded
-
-
-def decode_1D(P, RN):
-    # RN = Nu * np.sum(W, axis=0)
-    # RN = (Nu*W)/(np.sum(Nu*W, axis=1)[:, np.newaxis])
-    return (RN['x'] @ P)   # self.RN.dot(P)
-
-
-def decode(P, RN):
-    if dimension == 1:
-        return decode_1D(P, RN)
-    elif dimension == 2:
-        return decode_2D(P, RN)
-    else:
-        error('Not implemented and invalid dimension')
-
-
-def lsqFit(RN, z):
-    if dimension == 1:
-        # RN = (Nu*W)/(np.sum(Nu*W, axis=1)[:, np.newaxis])
-        z = z.reshape(z.shape[0], 1)
-        return linalg.lstsq(RN['x'], z)[0]
-    elif dimension == 2:
-        use_cho = False
-        # RNx = Nu * np.sum(W, axis=1)
-        # RNx /= np.sum(RNx, axis=1)[:, np.newaxis]
-        # RNy = Nv * np.sum(W, axis=0)
-        # RNy /= np.sum(RNy, axis=1)[:, np.newaxis]
-        if use_cho:
-            X = linalg.cho_solve(linalg.cho_factor(
-                np.matmul(RN['x'].T, RN['x'])), RN['x'].T)
-            Y = linalg.cho_solve(linalg.cho_factor(
-                np.matmul(RN['y'].T, RN['y'])), RN['y'].T)
-            zY = np.matmul(z, Y.T)
-            return np.matmul(X, zY)
-        else:
-            NTNxInv = np.linalg.inv(np.matmul(RN['x'].T, RN['x']))
-            NTNyInv = np.linalg.inv(np.matmul(RN['y'].T, RN['y']))
-            NxTQNy = np.matmul(RN['x'].T, np.matmul(z, RN['y']))
-            return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
-
 # Let do the recursive iterations
 # The variable `additiveSchwartz` controls whether we use
 # Additive vs Multiplicative Schwartz scheme for DD resolution
 ####
-
-
 class InputControlBlock:
 
     def __init__(self, bid, nCPi, coreb, xb, pl, xl, yl=None, zl=None):
@@ -950,6 +700,37 @@ class InputControlBlock:
                              'toprightx': [], 'toprighty': [],
                              'bottomleftx': [], 'bottomlefty': [],
                              'bottomrightx': [], 'bottomrighty': []}
+
+        elif dimension == 3:
+            self.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1], xb.min[2], xb.max[2]]
+            self.corebounds = [[coreb.min[0]-xb.min[0], len(xl)],
+                               [coreb.min[1]-xb.min[1], len(yl)],
+                               [coreb.min[2]-xb.min[2], len(zl)]]
+            # int(nPointsX / nSubDomainsX)
+            self.xyzCoordLocal = {'x': np.copy(xl[:]),
+                                  'y': np.copy(yl[:]),
+                                  'z': np.copy(zl[:])}
+            self.Dmini = np.array([min(xl), min(yl), min(zl)])
+            self.Dmaxi = np.array([max(xl), max(yl), max(zl)])
+            # Basis function object in x-dir and y-dir
+            self.basisFunction = {'x': None, 'y': None, 'z': None}
+            self.decodeOpXYZ = {'x': None, 'y': None, 'z': None}
+            self.knotsAdaptive = {
+                'x': [],
+                'y': [],
+                'z': [] }
+            self.isClamped = {'left': False, 'right': False,
+                              'top': False, 'bottom': False,
+                              'up': False, 'down': False}
+            self.greville = {'leftx': [], 'lefty': [], 'leftz': [],
+                             'rightx': [], 'righty': [], 'rightz': [],
+                             'bottomx': [], 'bottomy': [], 'bottomz': [],
+                             'topx': [], 'topy': [], 'topz': [],
+                             'topleftx': [], 'toplefty': [], 'topleftz': [],
+                             'toprightx': [], 'toprighty': [], 'toprightz': [],
+                             'bottomleftx': [], 'bottomlefty': [], 'bottomleftz': [],
+                             'bottomrightx': [], 'bottomrighty': [], 'bottomrightz': []
+                             }
 
         else:
 
@@ -1103,12 +884,199 @@ class InputControlBlock:
         if useMOABMesh:
             print("MOAB structured mesh now has", len(verts), "vertices")
 
+    def WritePVTKFile(self, iteration):
+        # print(globalExtentDict)
+        pvtkfile = open("pstructured-mfa-%d.pvtr" % (iteration), "w")
+
+        pvtkfile.write('<?xml version="1.0"?>\n')
+        pvtkfile.write(
+            '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
+                    (0, solutionShape[0]-1, 0, solutionShape[1]-1))
+        pvtkfile.write('\n')
+        pvtkfile.write('    <PPointData>\n')
+        pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
+        pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
+        pvtkfile.write('    </PPointData>\n')
+        pvtkfile.write('    <PCellData></PCellData>\n')
+        pvtkfile.write('    <PCoordinates>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write('    </PCoordinates>\n\n')
+
+        isubd = 0
+        # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
+        # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
+        # dxyz = [solutionShape[0]/nSubDomains[0], solutionShape[1]/nSubDomains[1]]
+        # print("Dxyz = ", dxyz)
+        # yoff = 0
+        # ncy = 0
+        for iy in range(nSubDomainsY):
+            # xoff = 0
+            # ncx = 0
+            for ix in range(nSubDomainsX):
+                # pvtkfile.write(
+                #     '    <Piece Extent="0.0 0.0 %f %f %f %f" Source="structured-%d-%d.vts"/>\n' %
+                #     (max(xoff-dxyz[0], xyzMin[0]), min(xyzMax[0], xoff+dxyz[0]), max(yoff-dxyz[1], xyzMin[1]), min(xyzMax[1], yoff+dxyz[1]), isubd, iteration))
+
+                pvtkfile.write(
+                    '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n' %
+                    (0,
+                    globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
+                    0,
+                    globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
+                    isubd, iteration))
+                isubd += 1
+                # xoff += globalExtentDict[isubd][0]
+                # ncx += nControlPointsInput[0]
+            # yoff += globalExtentDict[isubd][1]
+            # ncy += nControlPointsInput[1]
+        pvtkfile.write('\n')
+        pvtkfile.write('</PRectilinearGrid>\n')
+        pvtkfile.write('</VTKFile>\n')
+
+        pvtkfile.close()
+
+    # Write control point data
+
+
+    def WritePVTKControlFile(self, iteration):
+        nconstraints = (int(degree/2.0) if not degree %
+                        2 else int((degree+1)/2.0))
+        # nconstraints=1
+        print('Nconstraints = ', nconstraints)
+        pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
+
+        pvtkfile.write('<?xml version="1.0"?>\n')
+        pvtkfile.write(
+            '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' %
+                    (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
+                        0, nSubDomainsY *
+                        nControlPointsInput[1] - (nSubDomainsY - 1),
+                        0 * (nconstraints + augmentSpanSpace)))
+        pvtkfile.write('\n')
+        pvtkfile.write('    <PPointData>\n')
+        pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
+        pvtkfile.write('    </PPointData>\n')
+        pvtkfile.write('    <PCellData></PCellData>\n')
+        pvtkfile.write('    <PCoordinates>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write(
+            '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
+        pvtkfile.write('    </PCoordinates>\n\n')
+
+        isubd = 0
+        # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
+        # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
+        dxyz = (xyzMax-xyzMin)/nSubDomains
+        yoff = xyzMin[1]
+        ncy = 0
+        for iy in range(nSubDomainsY):
+            xoff = xyzMin[0]
+            ncx = 0
+            for ix in range(nSubDomainsX):
+                pvtkfile.write(
+                    '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n' %
+                    (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, isubd, iteration))
+                isubd += 1
+                xoff += dxyz[0]
+                ncx += nControlPointsInput[0]
+            yoff += dxyz[1]
+            ncy += nControlPointsInput[1]
+        pvtkfile.write('\n')
+        pvtkfile.write('</PRectilinearGrid>\n')
+        pvtkfile.write('</VTKFile>\n')
+
+        pvtkfile.close()
+
+
+    # ------------------------------------
+
+    def compute_decode_operators(self):
+        RN = {'x': [], 'y': [], 'z': []}
+
+        if dimension == 1:
+            W = np.ones(self.NUVW['x'].shape[1])
+            RN['x'] = (self.NUVW['x']*W)/(np.sum(self.NUVW['x']*W, axis=1)[:, np.newaxis])
+
+        elif dimension == 2:
+            W = np.ones((self.NUVW['x'].shape[1], self.NUVW['y'].shape[1]))
+
+            RN['x'] = self.NUVW['x'] * np.sum(W, axis=1)
+            RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
+            RN['y'] = self.NUVW['y'] * np.sum(W, axis=0)
+            RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
+
+        elif dimension == 3:
+            W = np.ones(
+                (self.NUVW['x'].shape[1], self.NUVW['y'].shape[1], self.NUVW['z'].shape[1]))
+
+            RN['x'] = self.NUVW['x'] * np.sum(W, axis=2)
+            RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
+            RN['y'] = self.NUVW['y'] * np.sum(W, axis=1)
+            RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
+            RN['z'] = self.NUVW['z'] * np.sum(W, axis=0)
+            RN['z'] /= np.sum(RN['z'], axis=1)[:, np.newaxis]
+
+        else:
+            error('No implementation')
+
+        return RN
+
+
+    def decode_3D(self, P, RN):
+        return np.matmul(np.matmul(RN['x'], P), np.matmul(RN['y'].T, np.matmul(RN['z'], P)))
+
+    def decode_2D(self, P, RN):
+        return np.matmul(np.matmul(RN['x'], P), RN['y'].T)
+
+    def decode_1D(self, P, RN):
+        return np.matmul(RN['x'], P)
+
+    def decode(self, P, RN):
+        if dimension == 1:
+            return self.decode_1D(P, RN)
+        elif dimension == 2:
+            return self.decode_2D(P, RN)
+        elif dimension == 3:
+            return self.decode_3D(P, RN)
+        else:
+            error('Not implemented and invalid dimension')
+
+
+    def lsqFit(self):
+        if dimension == 1:
+            self.refSolutionLocal = self.refSolutionLocal.reshape(self.refSolutionLocal.shape[0], 1)
+            return linalg.lstsq(self.decodeOpXYZ['x'], self.refSolutionLocal)[0]
+        elif dimension == 2:
+            use_cho = False
+            if use_cho:
+                X = linalg.cho_solve(linalg.cho_factor(
+                    np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])), self.decodeOpXYZ['x'].T)
+                Y = linalg.cho_solve(linalg.cho_factor(
+                    np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y'])), self.decodeOpXYZ['y'].T)
+                zY = np.matmul(self.refSolutionLocal, Y.T)
+                return np.matmul(X, zY)
+            else:
+                NTNxInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x']))
+                NTNyInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y']))
+                NxTQNy = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['y']))
+                return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
+
     def output_solution(self, cp):
 
         if dimension == 1:
 
             # axHnd = self.figHnd.gca()
-            self.pMK = decode(self.controlPointData, self.decodeOpXYZ)
+            self.pMK = self.decode(self.controlPointData, self.decodeOpXYZ)
 
             xl = self.xyzCoordLocal['x'].reshape(
                 self.xyzCoordLocal['x'].shape[0], 1)
@@ -1260,7 +1228,7 @@ class InputControlBlock:
             target = link.target(i)
             if len(self.controlPointData):
                 dir = link.direction(i)
-                if dir[0] == 0 and dir[1] == 0:
+                if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
                     continue
 
                 # ONLY consider coupling through faces and not through verties
@@ -1977,12 +1945,13 @@ class InputControlBlock:
 
         def residual_operator_1D(Pin):  # checkpoint3
 
-            RN = (self.NUVW['x'] * self.weightsData) / \
-                (np.sum(self.NUVW['x']*self.weightsData,
-                 axis=1)[:, np.newaxis])
-            Aoper = np.matmul(RN.T, RN)
-            Brhs = RN.T @ self.refSolutionLocal
-            # print('Input P = ', Pin, Aoper.shape, Brhs.shape)
+            # RN = (self.NUVW['x'] * self.weightsData) / \
+            #     (np.sum(self.NUVW['x']*self.weightsData,
+            #      axis=1)[:, np.newaxis])
+            Aoper = np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])
+            Brhs = self.decodeOpXYZ['x'].T @ self.refSolutionLocal
+            Brhs = Brhs.reshape(Pin.shape)
+            # print('Input P = ', Pin.shape, Aoper.shape, Brhs.shape)
 
             oddDegree = (degree % 2)
             oddDegreeImpose = True
@@ -1991,8 +1960,8 @@ class InputControlBlock:
             # num_constraints = (degree+1)/2 if degree is odd
             nconstraints = augmentSpanSpace + \
                 (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-            if oddDegree and not oddDegreeImpose:
-                nconstraints -= 1
+            # if oddDegree and not oddDegreeImpose:
+            #     nconstraints -= 1
             # nconstraints = degree-1
             # print('nconstraints: ', nconstraints)
 
@@ -2007,16 +1976,16 @@ class InputControlBlock:
                     if oddDegree and not oddDegreeImpose:
                         # print('left: ', nconstraints, -degree+nconstraints+loffset,
                         #       Pin[nconstraints], self.boundaryConstraints['left'][-degree+nconstraints+loffset])
-                        constraintVal = 0.5 * \
-                            (Pin[nconstraints] - self.boundaryConstraints['left']
-                             [-degree+nconstraints+loffset])
-                        Brhs -= constraintVal * Aoper[:, nconstraints]
+                        constraintVal = initSol[nconstraints-1, 0]
+                        print((constraintVal * Aoper[:, nconstraints]).shape, Aoper[:, nconstraints].shape, Brhs.shape)
+                        Brhs -= (constraintVal * Aoper[:, nconstraints]).reshape(Brhs.shape)
 
                     for ic in range(nconstraints):
-                        Brhs[ic] = 0.5 * \
-                            (Pin[ic] + self.boundaryConstraints['left']
-                             [-degree+ic+loffset])
-                        # Brhs[ic] = constraints[0][-degree+ic]
+                        # Brhs[ic] = 0.5 * \
+                        #     (Pin[ic] + self.boundaryConstraints['left']
+                        #      [-degree+ic+loffset])
+                        # print('Left: ', Brhs[ic], Pin[ic])
+                        if oddDegree and oddDegreeImpose: Brhs[ic] = initSol[ic,0]
                         Aoper[ic, :] = 0.0
                         Aoper[ic, ic] = 1.0
 
@@ -2028,15 +1997,15 @@ class InputControlBlock:
                         # print('right: ', -nconstraints-1, degree-1-nconstraints+loffset,
                         #       Pin[-nconstraints-1], self.boundaryConstraints['right']
                         #       [degree-1-nconstraints+loffset])
-                        constraintVal = -0.5 * (Pin[-nconstraints-1] - self.boundaryConstraints['right']
-                                                [degree-1-nconstraints+loffset])
-                        Brhs -= constraintVal * Aoper[:, -nconstraints-1]
+                        constraintVal = initSol[-nconstraints, 0]
+                        Brhs -= (constraintVal * Aoper[:, -nconstraints]).reshape(Brhs.shape)
 
                     for ic in range(nconstraints):
-                        Brhs[-ic-1] = 0.5 * \
-                            (Pin[-ic-1] + self.boundaryConstraints['right']
-                             [degree-1-ic+loffset])
-                        # Brhs[-ic-1] = constraints[2][degree-1-ic]
+                        # Brhs[-ic-1] = 0.5 * \
+                        #     (Pin[-ic-1] + self.boundaryConstraints['right']
+                        #      [degree-1-ic+loffset])
+                        # print('Right: ', Brhs[-ic-1], Pin[-ic-1])
+                        if oddDegree and oddDegreeImpose: Brhs[-ic-1] = initSol[-ic-1]
                         Aoper[-ic-1, :] = 0.0
                         Aoper[-ic-1, -ic-1] = 1.0
 
@@ -2049,27 +2018,41 @@ class InputControlBlock:
             # initSol = constraints[1][:] if constraints is not None else np.ones_like(
             #     W)
             # initSol = np.ones_like(W)*0
+            oddDegree = (degree % 2)
+            nconstraints = augmentSpanSpace + \
+                (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
 
-            if False:
-                [Aoper, Brhs] = residual_operator_1D(
-                    self.controlPointData, False, False)
+            lbound = 0
+            ubound = len(Pin)
+            if not self.isClamped['left']:
+                lbound = nconstraints+1 if oddDegree else nconstraints
+            if not self.isClamped['right']:
+                ubound -= nconstraints+1 if oddDegree else nconstraints
+
+            if True:
+                [Aoper, Brhs] = residual_operator_1D(Pin)
                 # if type(Pin) is np.numpy_boxes.ArrayBox:
                 #     [Aoper, Brhs] = residual_operator_1D(Pin._value[:], False, False)
                 # else:
                 #     [Aoper, Brhs] = residual_operator_1D(Pin, False, False)
 
-                lu, piv = scipy.linalg.lu_factor(Aoper)
-                # print(lu, piv)
-                initSol = scipy.linalg.lu_solve((lu, piv), Brhs)
+                # lu, piv = scipy.linalg.lu_factor(Aoper)
+                # # print(lu, piv)
+                # initSol2 = scipy.linalg.lu_solve((lu, piv), Brhs)
 
-                # residual_nrm_vec = Brhs - Aoper @ Pin
-                # residual_nrm = np.linalg.norm(residual_nrm_vec, ord=2)
-                residual_nrm = np.linalg.norm(initSol-Pin, ord=2)
+                residual_nrm_vec = (Brhs - Aoper @ Pin)[lbound:ubound]
+                residual_nrm = np.sqrt(np.sum(residual_nrm_vec**2)/len(residual_nrm_vec))
+                # solerror = (initSol2-Pin)[lbound:ubound] #Brhs-Aoper@Pin
+                # residual_nrm = np.sqrt(np.sum(solerror**2)/len(solerror))
+
+                if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
+                    print('Residual 1D: ', residual_nrm)
+
             else:
 
                 # New scheme like 2-D
                 # print('Corebounds: ', self.corebounds)
-                decoded = decode(Pin, self.decodeOpXYZ)
+                decoded = self.decode(Pin, self.decodeOpXYZ)
                 residual_decoded = (
                     self.refSolutionLocal - decoded)/solutionRange
                 residual_decoded2 = residual_decoded[self.corebounds[0]
@@ -2077,29 +2060,18 @@ class InputControlBlock:
                 decoded_residual_norm = np.sqrt(
                     np.sum(residual_decoded2**2)/len(residual_decoded2))
 
+                # if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
+                #     print('Residual decoded 1D: ', decoded_residual_norm)
+
+                # residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, residual_decoded)
+                # bc_penalty = 0
+                # decoded_residual_norm = np.sqrt(
+                #     np.sum(residual_encoded[lbound:ubound]**2)/len(residual_encoded[lbound:ubound])) + bc_penalty * np.sqrt(np.sum(residual_encoded[:lbound]**2)+np.sum(residual_encoded[ubound:]**2))
+
+                residual_nrm = (decoded_residual_norm-initialDecodedError)
+
                 if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
-                    print('Residual decoded 1D: ', decoded_residual_norm)
-
-                oddDegree = (degree % 2)
-                nconstraints = augmentSpanSpace + \
-                    (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-
-                residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, residual_decoded)
-                lbound = 0
-                ubound = len(residual_encoded)
-                if not self.isClamped['left']:
-                    lbound = nconstraints+1 if oddDegree else nconstraints
-                if not self.isClamped['right']:
-                    ubound -= nconstraints+1 if oddDegree else nconstraints
-
-                bc_penalty = 0
-                decoded_residual_norm = np.sqrt(
-                    np.sum(residual_encoded[lbound:ubound]**2)/len(residual_encoded[lbound:ubound])) + bc_penalty * np.sqrt(np.sum(residual_encoded[:lbound]**2)+np.sum(residual_encoded[ubound:]**2))
-
-                residual_nrm = (decoded_residual_norm-initialDecodedError*0)
-
-            if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
-                print('Residual 1D: ', decoded_residual_norm, residual_nrm)
+                    print('Residual 1D: ', decoded_residual_norm, residual_nrm)
 
             return residual_nrm
 
@@ -2253,13 +2225,13 @@ class InputControlBlock:
 
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
-            solution = lsqFit(self.decodeOpXYZ, self.refSolutionLocal)
+            solution = self.lsqFit()
             print('LSQFIT solution: min = ', np.min(
                 solution), 'max = ', np.max(solution))
         else:
 
             if constraints is None and alwaysSolveConstrained:
-                initSol = lsqFit(self.decodeOpXYZ, self.refSolutionLocal)
+                initSol = self.lsqFit()
 
             oddDegree = (degree % 2)
             # alpha = 0.5 if dimension == 2 or oddDegree else 0.0
@@ -2688,7 +2660,7 @@ class InputControlBlock:
             # Compute the basis functions now that we are ready to solve the problem
             self.compute_basis()
 
-            self.decodeOpXYZ = compute_decode_operators(self.NUVW)
+            self.decodeOpXYZ = self.compute_decode_operators()
 
         print("Subdomain -- ", cp.gid()+1)
 
@@ -2719,7 +2691,7 @@ class InputControlBlock:
                 [np.min(self.controlPointData), np.max(self.controlPointData)])
 
         # Update the local decoded data
-        self.solutionDecoded = decode(self.controlPointData, self.decodeOpXYZ)
+        self.solutionDecoded = self.decode(self.controlPointData, self.decodeOpXYZ)
         # decodedError = np.abs(np.array(self.refSolutionLocal - self.solutionDecoded)) / solutionRange
 
         if len(self.solutionLocalHistory) == 0 and extrapolate:
@@ -2831,6 +2803,8 @@ def send_receive_all():
 
     return
 
+commWorld.Barrier()
+start_time = timeit.default_timer()
 
 # Before starting the solve, let us exchange the initial conditions
 # including the knot vector locations that need to be used for creating
@@ -2884,7 +2858,7 @@ for iterIdx in range(nASMIterations):
 
     isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
 
-    # commW.Barrier()
+    # comm.Barrier()
     sys.stdout.flush()
 
     if useVTKOutput or showplot:
