@@ -51,7 +51,7 @@ directions = ['x', 'y', 'z']
 problem = 1
 dimension = 3
 degree = 3
-nSubDomains = np.array([3] * dimension, dtype=np.uint32)
+nSubDomains = np.array([1] * dimension, dtype=np.uint32)
 # nSubDomains = [2, 1]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
@@ -61,10 +61,10 @@ nControlPointsInputIn = 10
 debugProblem = False
 verbose = False
 showplot = True
-useVTKOutput = False
+useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 1
+augmentSpanSpace = 0
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -542,9 +542,11 @@ elif dimension == 3:
         # noise = np.random.uniform(0, 0.005, X.shape)
         # solution = solution * (1 + noise)
 
+        # solution = (X)
+
         # solution = scale * X * Y * Z
         solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
-                            np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2))).T
+                            np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
@@ -628,8 +630,122 @@ if rank == 0:
     print('\n=================\n')
 
 # ------------------------------------
-
 sys.stdout.flush()
+
+
+def WritePVTKFile(iteration):
+    # print(globalExtentDict)
+    pvtkfile = open("pstructured-mfa-%d.pvtr" % (iteration), "w")
+
+    pvtkfile.write('<?xml version="1.0"?>\n')
+    pvtkfile.write(
+        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+    pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
+                (0, solutionShape[0]-1, 0, solutionShape[1]-1))
+    pvtkfile.write('\n')
+    pvtkfile.write('    <PPointData>\n')
+    pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
+    pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
+    pvtkfile.write('    </PPointData>\n')
+    pvtkfile.write('    <PCellData></PCellData>\n')
+    pvtkfile.write('    <PCoordinates>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write('    </PCoordinates>\n\n')
+
+    isubd = 0
+    # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
+    # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
+    # dxyz = [solutionShape[0]/nSubDomains[0], solutionShape[1]/nSubDomains[1]]
+    # print("Dxyz = ", dxyz)
+    # yoff = 0
+    # ncy = 0
+    for iy in range(nSubDomainsY):
+        # xoff = 0
+        # ncx = 0
+        for ix in range(nSubDomainsX):
+            # pvtkfile.write(
+            #     '    <Piece Extent="0.0 0.0 %f %f %f %f" Source="structured-%d-%d.vts"/>\n' %
+            #     (max(xoff-dxyz[0], xyzMin[0]), min(xyzMax[0], xoff+dxyz[0]), max(yoff-dxyz[1], xyzMin[1]), min(xyzMax[1], yoff+dxyz[1]), isubd, iteration))
+
+            pvtkfile.write(
+                '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n' %
+                (0,
+                globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
+                0,
+                globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
+                isubd, iteration))
+            isubd += 1
+            # xoff += globalExtentDict[isubd][0]
+            # ncx += nControlPointsInput[0]
+        # yoff += globalExtentDict[isubd][1]
+        # ncy += nControlPointsInput[1]
+    pvtkfile.write('\n')
+    pvtkfile.write('</PRectilinearGrid>\n')
+    pvtkfile.write('</VTKFile>\n')
+
+    pvtkfile.close()
+
+# Write control point data
+
+
+def WritePVTKControlFile(iteration):
+    nconstraints = (int(degree/2.0) if not degree %
+                    2 else int((degree+1)/2.0))
+    # nconstraints=1
+    print('Nconstraints = ', nconstraints)
+    pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
+
+    pvtkfile.write('<?xml version="1.0"?>\n')
+    pvtkfile.write(
+        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+    pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' %
+                (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
+                    0, nSubDomainsY *
+                    nControlPointsInput[1] - (nSubDomainsY - 1),
+                    0 * (nconstraints + augmentSpanSpace)))
+    pvtkfile.write('\n')
+    pvtkfile.write('    <PPointData>\n')
+    pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
+    pvtkfile.write('    </PPointData>\n')
+    pvtkfile.write('    <PCellData></PCellData>\n')
+    pvtkfile.write('    <PCoordinates>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write(
+        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
+    pvtkfile.write('    </PCoordinates>\n\n')
+
+    isubd = 0
+    # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
+    # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
+    dxyz = (xyzMax-xyzMin)/nSubDomains
+    yoff = xyzMin[1]
+    ncy = 0
+    for iy in range(nSubDomainsY):
+        xoff = xyzMin[0]
+        ncx = 0
+        for ix in range(nSubDomainsX):
+            pvtkfile.write(
+                '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n' %
+                (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, isubd, iteration))
+            isubd += 1
+            xoff += dxyz[0]
+            ncx += nControlPointsInput[0]
+        yoff += dxyz[1]
+        ncy += nControlPointsInput[1]
+    pvtkfile.write('\n')
+    pvtkfile.write('</PRectilinearGrid>\n')
+    pvtkfile.write('</VTKFile>\n')
+
+    pvtkfile.close()
+
 
 def flattenList(t):
     return [item for sublist in t for item in sublist]
@@ -787,8 +903,19 @@ class InputControlBlock:
                  self.xbounds[1],
                  self.xbounds[2],
                  self.xbounds[3]))
+        elif dimension == 3:
+            print(
+                "Rank: %d, Subdomain %d: Bounds = [%d - %d, %d - %d, %d - %d]" %
+                (commWorld.rank, cp.gid(),
+                 self.xbounds[0],
+                 self.xbounds[1],
+                 self.xbounds[2],
+                 self.xbounds[3],
+                 self.xbounds[4],
+                 self.xbounds[5]))
         else:
-            error("No implementation")
+            print("No implementation for dimension = ", dimension)
+            error('Not implemented')
 
     def update_bounds(self, cp):
 
@@ -843,6 +970,30 @@ class InputControlBlock:
                 self.NUVW['y'][entry, :] = 0.0
                 self.NUVW['y'][entry, entry] = 1.0
 
+    def compute_basis_3D(self, constraints=None):
+        # self.basisFunction['x'].reparam()
+        # self.basisFunction['y'].reparam()
+        # print("TU = ", self.knotsAdaptive['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
+        # print("TV = ", self.knotsAdaptive['y'], self.UVW['y'][0], self.UVW['y'][-1], self.basisFunction['y'].greville())
+        for dir in ['x', 'y', 'z']:
+            self.basisFunction[dir] = sp.BSplineBasis(
+                order=degree+1, knots=self.knotsAdaptive[dir])
+            self.NUVW[dir] = np.array(
+                self.basisFunction[dir].evaluate(self.UVW[dir]))
+
+        print("Number of basis functions = ",
+              self.basisFunction['x'].num_functions())
+        if constraints is not None:
+            for entry in constraints[0]:
+                self.NUVW['x'][entry, :] = 0.0
+                self.NUVW['x'][entry, entry] = 1.0
+            for entry in constraints[1]:
+                self.NUVW['y'][entry, :] = 0.0
+                self.NUVW['y'][entry, entry] = 1.0
+            for entry in constraints[2]:
+                self.NUVW['z'][entry, :] = 0.0
+                self.NUVW['z'][entry, entry] = 1.0
+
     def compute_basis(self, constraints=None):
         coords = []
         verts = []
@@ -878,125 +1029,31 @@ class InputControlBlock:
                         HomCoord([len(xc) - 1, len(yc) - 1, 0, 0]),
                         coords)
 
+        elif dimension == 3:
+            self.compute_basis_3D(constraints)
+
+            if useMOABMesh:
+                verts = self.mbInterface.get_entities_by_type(
+                    0, types.MBVERTEX)
+                if len(verts) == 0:
+                    # Now let us generate a MOAB SCD box
+                    xc = self.basisFunction['x'].greville()
+                    yc = self.basisFunction['y'].greville()
+                    zc = self.basisFunction['y'].greville()
+                    for zi in zc:
+                        for yi in yc:
+                            for xi in xc:
+                                coords += [xi, yi, zi]
+                    scdbox = self.scdGrid.construct_box(
+                        HomCoord([0, 0, 0, 0]),
+                        HomCoord([len(xc) - 1, len(yc) - 1, len(zc) - 1, 0]),
+                        coords)
+
         else:
             error('Invalid dimension')
 
         if useMOABMesh:
             print("MOAB structured mesh now has", len(verts), "vertices")
-
-    def WritePVTKFile(self, iteration):
-        # print(globalExtentDict)
-        pvtkfile = open("pstructured-mfa-%d.pvtr" % (iteration), "w")
-
-        pvtkfile.write('<?xml version="1.0"?>\n')
-        pvtkfile.write(
-            '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="0">\n' %
-                    (0, solutionShape[0]-1, 0, solutionShape[1]-1))
-        pvtkfile.write('\n')
-        pvtkfile.write('    <PPointData>\n')
-        pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
-        pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
-        pvtkfile.write('    </PPointData>\n')
-        pvtkfile.write('    <PCellData></PCellData>\n')
-        pvtkfile.write('    <PCoordinates>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write('    </PCoordinates>\n\n')
-
-        isubd = 0
-        # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
-        # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-        # dxyz = [solutionShape[0]/nSubDomains[0], solutionShape[1]/nSubDomains[1]]
-        # print("Dxyz = ", dxyz)
-        # yoff = 0
-        # ncy = 0
-        for iy in range(nSubDomainsY):
-            # xoff = 0
-            # ncx = 0
-            for ix in range(nSubDomainsX):
-                # pvtkfile.write(
-                #     '    <Piece Extent="0.0 0.0 %f %f %f %f" Source="structured-%d-%d.vts"/>\n' %
-                #     (max(xoff-dxyz[0], xyzMin[0]), min(xyzMax[0], xoff+dxyz[0]), max(yoff-dxyz[1], xyzMin[1]), min(xyzMax[1], yoff+dxyz[1]), isubd, iteration))
-
-                pvtkfile.write(
-                    '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n' %
-                    (0,
-                    globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
-                    0,
-                    globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
-                    isubd, iteration))
-                isubd += 1
-                # xoff += globalExtentDict[isubd][0]
-                # ncx += nControlPointsInput[0]
-            # yoff += globalExtentDict[isubd][1]
-            # ncy += nControlPointsInput[1]
-        pvtkfile.write('\n')
-        pvtkfile.write('</PRectilinearGrid>\n')
-        pvtkfile.write('</VTKFile>\n')
-
-        pvtkfile.close()
-
-    # Write control point data
-
-
-    def WritePVTKControlFile(self, iteration):
-        nconstraints = (int(degree/2.0) if not degree %
-                        2 else int((degree+1)/2.0))
-        # nconstraints=1
-        print('Nconstraints = ', nconstraints)
-        pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
-
-        pvtkfile.write('<?xml version="1.0"?>\n')
-        pvtkfile.write(
-            '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' %
-                    (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
-                        0, nSubDomainsY *
-                        nControlPointsInput[1] - (nSubDomainsY - 1),
-                        0 * (nconstraints + augmentSpanSpace)))
-        pvtkfile.write('\n')
-        pvtkfile.write('    <PPointData>\n')
-        pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
-        pvtkfile.write('    </PPointData>\n')
-        pvtkfile.write('    <PCellData></PCellData>\n')
-        pvtkfile.write('    <PCoordinates>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write(
-            '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-        pvtkfile.write('    </PCoordinates>\n\n')
-
-        isubd = 0
-        # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
-        # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-        dxyz = (xyzMax-xyzMin)/nSubDomains
-        yoff = xyzMin[1]
-        ncy = 0
-        for iy in range(nSubDomainsY):
-            xoff = xyzMin[0]
-            ncx = 0
-            for ix in range(nSubDomainsX):
-                pvtkfile.write(
-                    '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n' %
-                    (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, isubd, iteration))
-                isubd += 1
-                xoff += dxyz[0]
-                ncx += nControlPointsInput[0]
-            yoff += dxyz[1]
-            ncy += nControlPointsInput[1]
-        pvtkfile.write('\n')
-        pvtkfile.write('</PRectilinearGrid>\n')
-        pvtkfile.write('</VTKFile>\n')
-
-        pvtkfile.close()
-
 
     # ------------------------------------
 
@@ -1019,11 +1076,11 @@ class InputControlBlock:
             W = np.ones(
                 (self.NUVW['x'].shape[1], self.NUVW['y'].shape[1], self.NUVW['z'].shape[1]))
 
-            RN['x'] = self.NUVW['x'] * np.sum(W, axis=2)
+            RN['x'] = self.NUVW['x'] #* np.sum(np.sum(W, axis=2), axis=1)
             RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
-            RN['y'] = self.NUVW['y'] * np.sum(W, axis=1)
+            RN['y'] = self.NUVW['y'] #* np.sum(np.sum(W, axis=2), axis=0)
             RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
-            RN['z'] = self.NUVW['z'] * np.sum(W, axis=0)
+            RN['z'] = self.NUVW['z'] #* np.sum(np.sum(W, axis=1), axis=0)
             RN['z'] /= np.sum(RN['z'], axis=1)[:, np.newaxis]
 
         else:
@@ -1033,7 +1090,8 @@ class InputControlBlock:
 
 
     def decode_3D(self, P, RN):
-        return np.matmul(np.matmul(RN['x'], P), np.matmul(RN['y'].T, np.matmul(RN['z'], P)))
+        return np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
+        # return np.matmul(RN['z'], np.matmul(np.matmul(RN['x'], P), RN['y'].T))
 
     def decode_2D(self, P, RN):
         return np.matmul(np.matmul(RN['x'], P), RN['y'].T)
@@ -1070,6 +1128,28 @@ class InputControlBlock:
                 NTNyInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y']))
                 NxTQNy = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['y']))
                 return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
+        elif dimension == 3:
+            NTNxInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x']))
+            NTNyInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y']))
+            NTNzInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['z'].T, self.decodeOpXYZ['z']))
+            # np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
+            # NyTQNz = np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z']))
+            # NxTQNy = np.matmul(NyTQNz.T, self.decodeOpXYZ['x'])
+            # NxTQNy = np.matmul(np.matmul(np.matmul(self.decodeOpXYZ['z'].T, self.refSolutionLocal), self.decodeOpXYZ['y']).T, self.decodeOpXYZ['x'])
+            NxTQNy = np.einsum('ijk,il->ljk', np.einsum('ijk,jl->ilk', np.einsum('ijk,kl->ijl', self.refSolutionLocal, self.decodeOpXYZ['z']), self.decodeOpXYZ['y']), self.decodeOpXYZ['x'])
+            # npo.matmul(np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z'])), self.decodeOpXYZ['x'], axes=0).shape
+            finsol = np.einsum('ijk,il->ljk', np.einsum('ijk,jl->ilk', np.einsum('ijk,kl->ijl', NxTQNy, NTNzInv), NTNyInv), NTNxInv).T
+            return finsol
+            # return np.matmul(NTNxInv, np.matmul(NTNyInv, np.einsum('ijk,kl->ijl', NxTQNy, NTNzInv)))
+
+            # NTNx = np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])
+            # NTNy = np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y'])
+            # NTNz = np.matmul(self.decodeOpXYZ['z'].T, self.decodeOpXYZ['z'])
+            # RHS = np.matmul(np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z'])).T, self.decodeOpXYZ['x'])
+            # Oper = np.einsum('ijk,jk->ijk', np.einsum('ij,jk->ijk', NTNx, NTNy), NTNz)
+            # sol = linalg.lstsq(Oper, RHS)[0]
+
+            return sol
 
     def output_solution(self, cp):
 
@@ -1118,49 +1198,81 @@ class InputControlBlock:
 
         assert(useVTKOutput)
 
-        self.pMK = decode(self.controlPointData,
+        self.pMK = self.decode(self.controlPointData,
                           self.decodeOpXYZ)
         errorDecoded = (self.refSolutionLocal -
                         self.pMK) / solutionRange
 
         locX = []
         locY = []
+        locZ = []
         if augmentSpanSpace > 0:
             locX = self.xyzCoordLocal['x'][self.corebounds[0]
                                            [0]: self.corebounds[0][1]]
             locY = self.xyzCoordLocal['y'][self.corebounds[1]
                                            [0]: self.corebounds[1][1]]
+            if dimension > 2: locZ = self.xyzCoordLocal['y'][self.corebounds[2][0]: self.corebounds[2][1]]
 
-            coreData = np.ascontiguousarray(
-                self.pMK
-                [self.corebounds[0][0]: self.corebounds[0][1],
-                    self.corebounds[1][0]: self.corebounds[1][1]])
-            errorDecoded = np.ascontiguousarray(
-                errorDecoded
-                [self.corebounds[0][0]: self.corebounds[0][1],
-                    self.corebounds[1][0]: self.corebounds[1][1]])
+            if dimension == 2:
+                coreData = np.ascontiguousarray(
+                    self.pMK
+                    [self.corebounds[0][0]: self.corebounds[0][1],
+                        self.corebounds[1][0]: self.corebounds[1][1]])
+                errorDecoded = np.ascontiguousarray(
+                    errorDecoded
+                    [self.corebounds[0][0]: self.corebounds[0][1],
+                        self.corebounds[1][0]: self.corebounds[1][1]])
+            else:
+                coreData = np.ascontiguousarray(
+                    self.pMK
+                    [self.corebounds[0][0]: self.corebounds[0][1],
+                        self.corebounds[1][0]: self.corebounds[1][1],
+                        self.corebounds[2][0]: self.corebounds[2][1]])
+                errorDecoded = np.ascontiguousarray(
+                    errorDecoded
+                    [self.corebounds[0][0]: self.corebounds[0][1],
+                        self.corebounds[1][0]: self.corebounds[1][1],
+                        self.corebounds[2][0]: self.corebounds[2][1]])
 
         else:
 
             locX = self.xyzCoordLocal['x']
             locY = self.xyzCoordLocal['y']
+            if dimension > 2: locZ = self.xyzCoordLocal['z']
             coreData = self.pMK
 
         # Indicating rank info with a cell array
-        proc = np.ones((locX.size-1, locY.size-1)) * commWorld.Get_rank()
-        # print("Writing using uvw VTK writer to uwv-structured-%s.pvtr" % (self.figSuffix))
-        # with PRectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY), [self.xbounds.min[0], self.xbounds.min[1]]) as rect:
-        with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY)) as rect:
-            rect.addPointData(DataArray(coreData, range(2), 'solution'))
-            rect.addPointData(DataArray(errorDecoded, range(2), 'error'))
-            rect.addCellData(DataArray(proc, range(2), 'process'))
+        if dimension == 2:
+            proc = np.ones((locX.size-1, locY.size-1)) * commWorld.Get_rank()
+            # print("Writing using uvw VTK writer to uwv-structured-%s.pvtr" % (self.figSuffix))
+            # with PRectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY), [self.xbounds.min[0], self.xbounds.min[1]]) as rect:
+            with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY)) as rect:
+                rect.addPointData(DataArray(coreData, range(2), 'solution'))
+                rect.addPointData(DataArray(errorDecoded, range(2), 'error'))
+                rect.addCellData(DataArray(proc, range(2), 'process'))
 
-        cpx = np.array(self.basisFunction['x'].greville())
-        cpy = np.array(self.basisFunction['y'].greville())
+            cpx = np.array(self.basisFunction['x'].greville())
+            cpy = np.array(self.basisFunction['y'].greville())
 
-        with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy)) as rect:
-            rect.addPointData(
-                DataArray(self.controlPointData, range(2), 'controlpoints'))
+            with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy)) as rect:
+                rect.addPointData(
+                    DataArray(self.controlPointData, range(2), 'controlpoints'))
+        else:
+            proc = np.ones((locX.size-1, locY.size-1, locZ.size-1)) * commWorld.Get_rank()
+            # print("Writing using uvw VTK writer to uwv-structured-%s.pvtr" % (self.figSuffix))
+            # with PRectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY), [self.xbounds.min[0], self.xbounds.min[1]]) as rect:
+            with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY, locZ)) as rect:
+                rect.addPointData(DataArray(coreData, range(3), 'solution'))
+                rect.addPointData(DataArray(errorDecoded, range(3), 'error'))
+                rect.addCellData(DataArray(proc, range(3), 'process'))
+
+            cpx = np.array(self.basisFunction['x'].greville())
+            cpy = np.array(self.basisFunction['y'].greville())
+            cpz = np.array(self.basisFunction['z'].greville())
+
+            with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz)) as rect:
+                rect.addPointData(
+                    DataArray(self.controlPointData, range(dimension), 'controlpoints'))
 
     def PlotControlPoints(self):
         import pyvista as pv
@@ -1216,6 +1328,362 @@ class InputControlBlock:
         print("Domain: ", cp.gid()+1, "Exact = ", self.refSolutionLocal)
         print("Domain: ", cp.gid()+1, "Exact - Decoded = ",
               np.abs(self.refSolutionLocal - self.pMK))
+
+    def send_diy_3d(self, cp):
+
+        oddDegree = (degree % 2)
+        nconstraints = augmentSpanSpace + \
+            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+        loffset = degree + 2*augmentSpanSpace
+        link = cp.link()
+        for i in range(len(link)):
+            target = link.target(i)
+            if len(self.controlPointData):
+                dir = link.direction(i)
+                if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
+                    continue
+
+                direction = (dir[2]+1)*dimension**2 + (dir[1]+1)*dimension + (dir[0]+1)
+                print(cp.gid(), "to", target, '-- Dir = ', dir, 'Direction = ', direction)
+
+                if dir[2] == 0: # same z-height layer
+                    # ONLY consider coupling through faces and not through verties
+                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
+                    # Hence we only consider 4 neighbor cases, instead of 8.
+                    if dir[0] == 0:  # target is coupled in Y-direction
+                        if dir[1] > 0:  # target block is above current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
+                                    self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
+
+                            cp.enqueue(target, self.controlPointData[:, -loffset:, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+                            cp.enqueue(target, self.knotsAdaptive['z'][:])
+
+                        else:  # target block is below current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
+                                    self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
+
+                            cp.enqueue(target, self.controlPointData[:, :loffset, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
+                            cp.enqueue(target, self.knotsAdaptive['z'][:])
+
+                    # target is coupled in X-direction
+                    elif dir[1] == 0:
+                        if dir[0] > 0:  # target block is to the right of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
+                                    self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
+
+                            cp.enqueue(target, self.controlPointData[-loffset:, :, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(
+                                target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
+                            cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(target, self.knotsAdaptive['z'][:])
+
+                        else:  # target block is to the left of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
+                                    self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
+
+                            cp.enqueue(target, self.controlPointData[:loffset, :, :])
+                            cp.enqueue(target, self.knotsAdaptive['x'][0:(
+                                degree+augmentSpanSpace+1)])
+                            cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(target, self.knotsAdaptive['z'][:])
+
+                    else:
+
+                        if useDiagonalBlocks and dimension > 1:
+                            # target block is diagonally top right to current subdomain
+                            if dir[0] > 0 and dir[1] > 0:
+
+                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+                            # target block is diagonally top left to current subdomain
+                            if dir[0] < 0 and dir[1] > 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+
+                            # target block is diagonally left bottom  current subdomain
+                            if dir[0] < 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
+
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+                            # target block is diagonally right bottom of current subdomain
+                            if dir[0] > 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+                elif dir[2] > 0: # communication to layer above in z-direction
+                    # ONLY consider coupling through faces and not through verties
+                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
+                    # Hence we only consider 4 neighbor cases, instead of 8.
+                    if dir[0] == 0:  # target is coupled in Y-direction
+                        if dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
+                                    self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+
+                        else:  # target block is below current subdomain in y-direction
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
+                                    self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, :loffset])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
+
+                    # target is coupled in X-direction
+                    elif dir[1] == 0:
+                        if dir[0] > 0:  # target block is to the right of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
+                                    self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[-loffset:, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            if dimension > 1:
+                                cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
+
+                        else:  # target block is to the left of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
+                                    self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:loffset, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            if dimension > 1:
+                                cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(target, self.knotsAdaptive['x'][0:(
+                                degree+augmentSpanSpace+1)])
+
+                    else:
+
+                        if useDiagonalBlocks and dimension > 1:
+                            # target block is diagonally top right to current subdomain
+                            if dir[0] > 0 and dir[1] > 0:
+
+                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+                            # target block is diagonally top left to current subdomain
+                            if dir[0] < 0 and dir[1] > 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+
+                            # target block is diagonally left bottom  current subdomain
+                            if dir[0] < 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
+
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+                            # target block is diagonally right bottom of current subdomain
+                            if dir[0] > 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+
+                else: # dir[2] < 0 - sending to layer of blocks below in z-direction
+                    # ONLY consider coupling through faces and not through verties
+                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
+                    # Hence we only consider 4 neighbor cases, instead of 8.
+                    if dir[0] == 0:  # target is coupled in Y-direction
+                        if dir[1] == 0:  # target block is directly below in z-direction (but same x-y)
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+
+                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
+                                    self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+
+                        else:  # target block is below current subdomain in y-direction
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
+                                    self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:, :loffset])
+                            # cp.enqueue(target, self.controlPointData)
+                            cp.enqueue(target, self.knotsAdaptive['x'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
+
+                    # target is coupled in X-direction
+                    elif dir[1] == 0:
+                        if dir[0] > 0:  # target block is to the right of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
+                                    self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[-loffset:, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            if dimension > 1:
+                                cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(
+                                target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
+
+                        else:  # target block is to the left of current subdomain
+                            if verbose:
+                                print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
+                                    self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
+
+                            if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+                            elif dimension == 2: cp.enqueue(target, self.controlPointData[:loffset, :])
+                            # cp.enqueue(target, self.controlPointData)
+                            if dimension > 1:
+                                cp.enqueue(target, self.knotsAdaptive['y'][:])
+                            cp.enqueue(target, self.knotsAdaptive['x'][0:(
+                                degree+augmentSpanSpace+1)])
+
+                    else:
+
+                        if useDiagonalBlocks and dimension > 1:
+                            # target block is diagonally top right to current subdomain
+                            if dir[0] > 0 and dir[1] > 0:
+
+                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+                            # target block is diagonally top left to current subdomain
+                            if dir[0] < 0 and dir[1] > 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
+                                # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-top: ', self.controlPointData
+                                        [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+                                        augmentSpanSpace])
+
+                            # target block is diagonally left bottom  current subdomain
+                            if dir[0] < 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
+
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = left-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+                            # target block is diagonally right bottom of current subdomain
+                            if dir[0] > 0 and dir[1] < 0:
+                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
+                                # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
+                                if verbose:
+                                    print(
+                                        "%d sending to %d" % (cp.gid(),
+                                                            target.gid),
+                                        ' Diagonal = right-bottom: ', self.controlPointData
+                                        [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+
+
+
+                if self.basisFunction['x'] is not None:
+                    cp.enqueue(target, self.basisFunction['x'].greville())
+                    cp.enqueue(target, self.basisFunction['y'].greville())
+                    cp.enqueue(target, self.basisFunction['z'].greville())
+
+        return
+
 
     def send_diy(self, cp):
 
@@ -1595,6 +2063,9 @@ class InputControlBlock:
         if dimension > 1:
             tv = np.linspace(
                 self.Dmini[1] + inc[1], self.Dmaxi[1] - inc[1], self.nControlPoints[1] - degree - 1)
+            if dimension > 2:
+                tw = np.linspace(
+                    self.Dmini[2] + inc[2], self.Dmaxi[2] - inc[2], self.nControlPoints[2] - degree - 1)
 
         if nTotalSubDomains > 1 and not fullyPinned:
 
@@ -1667,6 +2138,43 @@ class InputControlBlock:
 
                             self.isClamped['top'] = self.isClamped['bottom'] = False
 
+            if dimension > 2:
+                if verbose:
+                    print("Subdomain: ", cp.gid(), " Z: ",
+                        self.Dmini[2], self.Dmaxi[2])
+                if abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12 and abs(self.Dmini[2] - xyzMin[2]) < 1e-12:
+                    print("Subdomain: ", cp.gid(), " checking top and bottom Y: ",
+                        self.Dmaxi[2], xyzMax[2], abs(self.Dmaxi[2] - xyzMax[2]))
+                    self.knotsAdaptive['z'] = np.concatenate(
+                        ([self.Dmini[2]] * (degree + 1),
+                        tw, [self.Dmaxi[2]] * (degree + 1)))
+                    self.isClamped['up'] = self.isClamped['down'] = True
+                else:
+
+                    if abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12:
+                        print("Subdomain: ", cp.gid(), " checking top Z: ",
+                            self.Dmaxi[2], xyzMax[2], abs(self.Dmaxi[2] - xyzMax[2]))
+                        self.knotsAdaptive['z'] = np.concatenate(
+                            ([self.Dmini[2]] * (1), tw, [self.Dmaxi[2]] * (degree+1)))
+                        self.isClamped['up'] = True
+
+                    else:
+
+                        if verbose:
+                            print("Subdomain: ", cp.gid(), " checking bottom Z: ",
+                                self.Dmini[2], xyzMin[2], abs(self.Dmini[2] - xyzMin[2]))
+                        if abs(self.Dmini[2] - xyzMin[2]) < 1e-12:
+                            self.knotsAdaptive['y'] = np.concatenate(
+                                ([self.Dmini[2]] * (degree+1), tv, [self.Dmaxi[2]] * (1)))
+                            self.isClamped['down'] = True
+
+                        else:
+                            self.knotsAdaptive['z'] = np.concatenate(
+                                ([self.Dmini[2]] * (1),
+                                    tw, [self.Dmaxi[2]] * (1)))
+
+                            self.isClamped['up'] = self.isClamped['down'] = False
+
                 if verbose:
                     print(
                         "Subdomain: ", cp.gid(),
@@ -1674,6 +2182,8 @@ class InputControlBlock:
                         self.isClamped['right'],
                         self.isClamped['top'],
                         self.isClamped['bottom'])
+                    if dimension == 3:
+                        print("Subdomain: ", cp.gid(), self.isClamped['up'], self.isClamped['down'])
 
         else:
             self.knotsAdaptive['x'] = np.concatenate(
@@ -1686,6 +2196,12 @@ class InputControlBlock:
                      tv, [self.Dmaxi[1]] * (degree + 1)))
                 self.isClamped['top'] = self.isClamped['bottom'] = True
 
+            if dimension > 2:
+                self.knotsAdaptive['z'] = np.concatenate(
+                    ([self.Dmini[2]] * (degree + 1),
+                     tw, [self.Dmaxi[2]] * (degree + 1)))
+                self.isClamped['up'] = self.isClamped['down'] = True
+
         # self.UVW['x'] = np.linspace(
         #     self.xyzCoordLocal['x'][0], self.xyzCoordLocal['x'][-1], self.nPointsPerSubD[0])
         self.UVW['x'] = self.xyzCoordLocal['x']
@@ -1693,6 +2209,10 @@ class InputControlBlock:
             # self.UVW['y'] = np.linspace(
             #     self.xyzCoordLocal['y'][0], self.xyzCoordLocal['y'][-1], self.nPointsPerSubD[1])
             self.UVW['y'] = self.xyzCoordLocal['y']
+        if dimension > 2:
+            # self.UVW['y'] = np.linspace(
+            #     self.xyzCoordLocal['y'][0], self.xyzCoordLocal['y'][-1], self.nPointsPerSubD[1])
+            self.UVW['z'] = self.xyzCoordLocal['z']
 
         if debugProblem:
             if not self.isClamped['left']:
@@ -1749,6 +2269,23 @@ class InputControlBlock:
                           ": bottom ghost: ", self.ghostKnots['bottom'])
                 self.knotsAdaptive['y'] = np.concatenate(
                     (self.ghostKnots['bottom'][-1:0:-1], self.knotsAdaptive['y']))
+
+        if dimension > 2:
+            # Pad knot spans from the left of subdomain
+            if not self.isClamped['up']:
+                if verbose:
+                    print("\tSubdomain -- ", cp.gid()+1,
+                          ": up ghost: ", self.ghostKnots['up'])
+                self.knotsAdaptive['z'] = np.concatenate(
+                    (self.knotsAdaptive['z'], self.ghostKnots['up'][1:]))
+
+            # Pad knot spans from the right of subdomain
+            if not self.isClamped['down']:
+                if verbose:
+                    print("\tSubdomain -- ", cp.gid()+1,
+                          ": down ghost: ", self.ghostKnots['down'])
+                self.knotsAdaptive['z'] = np.concatenate(
+                    (self.ghostKnots['down'][-1:0:-1], self.knotsAdaptive['z']))
 
         if verbose:
             if dimension == 1:
@@ -2090,7 +2627,7 @@ class InputControlBlock:
                 (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
-            decoded = decode(P, self.decodeOpXYZ)
+            decoded = self.decode(P, self.decodeOpXYZ)
             residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
 
             residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(
@@ -2117,6 +2654,7 @@ class InputControlBlock:
 
             return net_residual_norm
 
+
         def residual2D(Pin):
 
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
@@ -2125,7 +2663,7 @@ class InputControlBlock:
             bc_penalty = 0
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
-            decoded = decode(P, self.decodeOpXYZ)
+            decoded = self.decode(P, self.decodeOpXYZ)
             residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
 
             if augmentSpanSpace > 0:
@@ -2200,12 +2738,30 @@ class InputControlBlock:
 
             return net_residual_norm
 
+        def residual3D(Pin, printVerbose=False):
+
+            P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
+
+            # Residuals are in the decoded space - so direct way to constrain the boundary data
+            decoded = self.decode(P, self.decodeOpXYZ)
+            residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
+
+            # residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(
+            #     self.decodeOpXYZ['x'].T, np.matmul(residual_decoded, self.decodeOpXYZ['z'])))
+
+            if type(Pin) is not np.numpy_boxes.ArrayBox:
+                print('Residual = ', residual_decoded)
+
+            return residual_decoded
+
         # Set a function handle to the appropriate residual evaluator
         residualFunction = None
         if dimension == 1:
             residualFunction = residual1D
-        else:
+        elif dimension == 2:
             residualFunction = residual2DRev  # residual2DRev
+        else:
+            residualFunction = residual3D
 
         def print_iterate(P):
             res = residualFunction(P, printVerbose=True)
@@ -2612,9 +3168,9 @@ class InputControlBlock:
             iterateChangeVec = (self.solutionDecoded -
                                 self.solutionDecodedOld).flatten()
             errorMetricsSubDomL2 = np.linalg.norm(
-                iterateChangeVec, ord=2) / np.linalg.norm(self.refSolutionLocal, ord=2)
+                iterateChangeVec, ord=2) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=2)
             errorMetricsSubDomLinf = np.linalg.norm(
-                iterateChangeVec, ord=np.inf) / np.linalg.norm(self.refSolutionLocal, ord=np.inf)
+                iterateChangeVec, ord=np.inf) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=np.inf)
 
             self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
             self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
@@ -2713,6 +3269,12 @@ class InputControlBlock:
                              self.solutionDecoded) / solutionRange
             decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
                                           self.corebounds[1][0]: self.corebounds[1][1]].reshape(-1))
+        elif dimension == 3:
+            decodedErrorT = (self.refSolutionLocal -
+                             self.solutionDecoded) / solutionRange
+            decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
+                                          self.corebounds[1][0]: self.corebounds[1][1],
+                                          self.corebounds[2][0]: self.corebounds[2][1]].reshape(-1))
         LinfErr = np.linalg.norm(decodedError, ord=np.inf)
         L2Err = np.sqrt(np.sum(decodedError**2)/len(decodedError))
 
@@ -2797,7 +3359,10 @@ start_time = timeit.default_timer()
 
 def send_receive_all():
 
-    masterControl.foreach(InputControlBlock.send_diy)
+    if dimension < 3:
+        masterControl.foreach(InputControlBlock.send_diy)
+    else:
+        masterControl.foreach(InputControlBlock.send_diy_3d)
     masterControl.exchange(False)
     masterControl.foreach(InputControlBlock.recv_diy)
 
@@ -2880,14 +3445,15 @@ for iterIdx in range(nASMIterations):
 
         else:
 
-            masterControl.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(
-                icb, cp, None, None, "%d-%d" % (cp.gid(), iterIdx)))
-            # masterControl.foreach(InputControlBlock.output_solution)
-            masterControl.foreach(InputControlBlock.output_vtk)
+            if useVTKOutput:
+                masterControl.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(
+                    icb, cp, None, None, "%d-%d" % (cp.gid(), iterIdx)))
+                # masterControl.foreach(InputControlBlock.output_solution)
+                masterControl.foreach(InputControlBlock.output_vtk)
 
-            if rank == 0:
-                WritePVTKFile(iterIdx)
-                WritePVTKControlFile(iterIdx)
+                if rank == 0:
+                    WritePVTKFile(iterIdx)
+                    WritePVTKControlFile(iterIdx)
 
     if isASMConverged == nTotalSubDomains:
         if rank == 0:
