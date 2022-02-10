@@ -6,12 +6,10 @@ import math
 import argparse
 import timeit
 
-import autograd
 # import numpy as np
 from functools import reduce
-from numpy import dtype
+#from numpy import dtype
 
-import splipy as sp
 import pandas as pd
 
 # Autograd AD impots
@@ -39,6 +37,10 @@ from matplotlib import pyplot as plt
 from matplotlib import cm
 # from pyevtk.hl import gridToVTK
 
+from ProblemSolver1D import ProblemSolver1D
+from ProblemSolver2D import ProblemSolver2D
+from ProblemSolver3D import ProblemSolver3D
+
 plt.style.use(['seaborn-whitegrid'])
 params = {"ytick.color": "b",
           "xtick.color": "b",
@@ -57,14 +59,14 @@ nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
 
-nControlPointsInputIn = 10
+nControlPointsInputIn = 50
 debugProblem = False
 verbose = False
 showplot = True
 useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 0
+augmentSpanSpace = 1
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -72,6 +74,8 @@ fullyPinned = False
 useAdditiveSchwartz = True
 enforceBounds = False
 alwaysSolveConstrained = False
+
+if fullyPinned: useDiagonalBlocks = False
 
 # ------------------------------------------
 # Solver parameters
@@ -132,7 +136,7 @@ parser.add_argument(
     "--problem", help="specify problem identifier", type=int, default=problem)
 parser.add_argument(
     "-n", "--nsubdomains", help="specify number of subdomains in all directions", type=int,
-    default=0)
+    default=1)
 parser.add_argument(
     "-x", "--nx", help="specify number of subdomains in X-direction", type=int,
     default=nSubDomainsX)
@@ -524,7 +528,7 @@ elif dimension == 3:
         nPoints[1] = 101
         nPoints[2] = 101
         scale = 100
-        Dmin = [-4., -4., -4.0]
+        Dmin = [-4.0, -4.0, -4.0]
         Dmax = [4., 4., 4.]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
@@ -542,11 +546,14 @@ elif dimension == 3:
         # noise = np.random.uniform(0, 0.005, X.shape)
         # solution = solution * (1 + noise)
 
-        # solution = (X)
+        # solution = (Z)
 
         # solution = scale * X * Y * Z
+        # solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
+        #                     np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
+
         solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
-                            np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
+                            np.sinc(2*(X-2)**2 + (Y+2)**2 + (Z-2)**2))
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
@@ -807,76 +814,12 @@ class InputControlBlock:
             self.scdGrid = ScdInterface(self.mbInterface)
 
         if dimension == 1:
-            self.xbounds = [xb.min[0], xb.max[0]]
-            self.corebounds = [[coreb.min[0] -
-                               xb.min[0], len(xl)]]
-            self.xyzCoordLocal = {'x': np.copy(xl[:])}
-            self.Dmini = np.array([min(xl)])
-            self.Dmaxi = np.array([max(xl)])
-            self.basisFunction = {'x': None}  # Basis function object in x-dir
-            self.decodeOpXYZ = {'x': None}
-            self.knotsAdaptive = {'x': []}
-            self.isClamped = {'left': False, 'right': False}
-
+            self.problemInterface = ProblemSolver1D(self, coreb, xb, xl, degree, augmentSpanSpace, useDiagonalBlocks)
         elif dimension == 2:
-            self.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1]]
-            self.corebounds = [[coreb.min[0]-xb.min[0], len(xl)],
-                               [coreb.min[1]-xb.min[1], len(yl)]]
-            # int(nPointsX / nSubDomainsX)
-            self.xyzCoordLocal = {'x': np.copy(xl[:]),
-                                  'y': np.copy(yl[:])}
-            self.Dmini = np.array([min(xl), min(yl)])
-            self.Dmaxi = np.array([max(xl), max(yl)])
-            # Basis function object in x-dir and y-dir
-            self.basisFunction = {'x': None, 'y': None}
-            self.decodeOpXYZ = {'x': None, 'y': None}
-            self.knotsAdaptive = {
-                'x': [],
-                'y': []}
-            self.isClamped = {'left': False, 'right': False,
-                              'top': False, 'bottom': False}
-            self.greville = {'leftx': [], 'lefty': [],
-                             'rightx': [], 'righty': [],
-                             'bottomx': [], 'bottomy': [],
-                             'topx': [], 'topy': [],
-                             'topleftx': [], 'toplefty': [],
-                             'toprightx': [], 'toprighty': [],
-                             'bottomleftx': [], 'bottomlefty': [],
-                             'bottomrightx': [], 'bottomrighty': []}
-
+            self.problemInterface = ProblemSolver2D(self, coreb, xb, xl, yl, degree, augmentSpanSpace, useDiagonalBlocks)
         elif dimension == 3:
-            self.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1], xb.min[2], xb.max[2]]
-            self.corebounds = [[coreb.min[0]-xb.min[0], len(xl)],
-                               [coreb.min[1]-xb.min[1], len(yl)],
-                               [coreb.min[2]-xb.min[2], len(zl)]]
-            # int(nPointsX / nSubDomainsX)
-            self.xyzCoordLocal = {'x': np.copy(xl[:]),
-                                  'y': np.copy(yl[:]),
-                                  'z': np.copy(zl[:])}
-            self.Dmini = np.array([min(xl), min(yl), min(zl)])
-            self.Dmaxi = np.array([max(xl), max(yl), max(zl)])
-            # Basis function object in x-dir and y-dir
-            self.basisFunction = {'x': None, 'y': None, 'z': None}
-            self.decodeOpXYZ = {'x': None, 'y': None, 'z': None}
-            self.knotsAdaptive = {
-                'x': [],
-                'y': [],
-                'z': [] }
-            self.isClamped = {'left': False, 'right': False,
-                              'top': False, 'bottom': False,
-                              'up': False, 'down': False}
-            self.greville = {'leftx': [], 'lefty': [], 'leftz': [],
-                             'rightx': [], 'righty': [], 'rightz': [],
-                             'bottomx': [], 'bottomy': [], 'bottomz': [],
-                             'topx': [], 'topy': [], 'topz': [],
-                             'topleftx': [], 'toplefty': [], 'topleftz': [],
-                             'toprightx': [], 'toprighty': [], 'toprightz': [],
-                             'bottomleftx': [], 'bottomlefty': [], 'bottomleftz': [],
-                             'bottomrightx': [], 'bottomrighty': [], 'bottomrightz': []
-                             }
-
+            self.problemInterface = ProblemSolver3D(self, coreb, xb, xl, yl, zl, degree, augmentSpanSpace, useDiagonalBlocks)
         else:
-
             error('Not implemented')
 
         self.refSolutionLocal = np.copy(pl)
@@ -944,89 +887,18 @@ class InputControlBlock:
             error('Not implemented')
 
     def update_bounds(self, cp):
-
-        if dimension == 1:
-            extents = [self.corebounds[0][0], self.corebounds[0][1]]
-        elif dimension == 2:
-            extents = [
-                self.corebounds[0][0],
-                self.corebounds[0][1],
-                self.corebounds[1][0],
-                self.corebounds[1][1]]
-        else:
-            extents = [
-                self.corebounds[0][0],
-                self.corebounds[0][1],
-                self.corebounds[1][0],
-                self.corebounds[1][1], self.corebounds[2][0], self.corebounds[2][1]]
-
-        localExtents[cp.gid()] = extents
-
-    def compute_basis_1D(self, constraints=None):
-        self.basisFunction['x'] = sp.BSplineBasis(
-            order=degree+1, knots=self.knotsAdaptive['x'])
-        print("Number of basis functions = ",
-              self.basisFunction['x'].num_functions())
-        # print("TU = ", self.knotsAdaptive['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
-        self.NUVW['x'] = np.array(
-            self.basisFunction['x'].evaluate(self.UVW['x']))
-        if constraints is not None:
-            for entry in constraints:
-                self.NUVW['x'][entry, :] = 0.0
-                self.NUVW['x'][entry, entry] = 0.0
-
-    def compute_basis_2D(self, constraints=None):
-        # self.basisFunction['x'].reparam()
-        # self.basisFunction['y'].reparam()
-        # print("TU = ", self.knotsAdaptive['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
-        # print("TV = ", self.knotsAdaptive['y'], self.UVW['y'][0], self.UVW['y'][-1], self.basisFunction['y'].greville())
-        for dir in ['x', 'y']:
-            self.basisFunction[dir] = sp.BSplineBasis(
-                order=degree+1, knots=self.knotsAdaptive[dir])
-            self.NUVW[dir] = np.array(
-                self.basisFunction[dir].evaluate(self.UVW[dir]))
-
-        print("Number of basis functions = ",
-              self.basisFunction['x'].num_functions())
-        if constraints is not None:
-            for entry in constraints[0]:
-                self.NUVW['x'][entry, :] = 0.0
-                self.NUVW['x'][entry, entry] = 1.0
-            for entry in constraints[1]:
-                self.NUVW['y'][entry, :] = 0.0
-                self.NUVW['y'][entry, entry] = 1.0
-
-    def compute_basis_3D(self, constraints=None):
-        # self.basisFunction['x'].reparam()
-        # self.basisFunction['y'].reparam()
-        # print("TU = ", self.knotsAdaptive['x'], self.UVW['x'][0], self.UVW['x'][-1], self.basisFunction['x'].greville())
-        # print("TV = ", self.knotsAdaptive['y'], self.UVW['y'][0], self.UVW['y'][-1], self.basisFunction['y'].greville())
-        for dir in ['x', 'y', 'z']:
-            self.basisFunction[dir] = sp.BSplineBasis(
-                order=degree+1, knots=self.knotsAdaptive[dir])
-            self.NUVW[dir] = np.array(
-                self.basisFunction[dir].evaluate(self.UVW[dir]))
-
-        print("Number of basis functions = ",
-              self.basisFunction['x'].num_functions())
-        if constraints is not None:
-            for entry in constraints[0]:
-                self.NUVW['x'][entry, :] = 0.0
-                self.NUVW['x'][entry, entry] = 1.0
-            for entry in constraints[1]:
-                self.NUVW['y'][entry, :] = 0.0
-                self.NUVW['y'][entry, entry] = 1.0
-            for entry in constraints[2]:
-                self.NUVW['z'][entry, :] = 0.0
-                self.NUVW['z'][entry, entry] = 1.0
+        localExtents[cp.gid()] = self.problemInterface.update_bounds()
 
     def compute_basis(self, constraints=None):
-        coords = []
-        verts = []
-        if dimension == 1:
-            self.compute_basis_1D(constraints)
+        # Call the appropriate basis computation function
+        self.problemInterface.compute_basis(constraints)
 
-            if useMOABMesh:
+        if useMOABMesh:
+            coords = []
+            verts = []
+
+            if dimension == 1:
+
                 verts = self.mbInterface.get_entities_by_type(
                     0, types.MBVERTEX)
                 if len(verts) == 0:
@@ -1037,10 +909,8 @@ class InputControlBlock:
                     scdbox = self.scdGrid.construct_box(
                         HomCoord([0, 0, 0, 0]), HomCoord([len(xc) - 1, 0, 0, 0]), coords)
 
-        elif dimension == 2:
-            self.compute_basis_2D(constraints)
+            elif dimension == 2:
 
-            if useMOABMesh:
                 verts = self.mbInterface.get_entities_by_type(
                     0, types.MBVERTEX)
                 if len(verts) == 0:
@@ -1055,10 +925,8 @@ class InputControlBlock:
                         HomCoord([len(xc) - 1, len(yc) - 1, 0, 0]),
                         coords)
 
-        elif dimension == 3:
-            self.compute_basis_3D(constraints)
+            elif dimension == 3:
 
-            if useMOABMesh:
                 verts = self.mbInterface.get_entities_by_type(
                     0, types.MBVERTEX)
                 if len(verts) == 0:
@@ -1075,107 +943,24 @@ class InputControlBlock:
                         HomCoord([len(xc) - 1, len(yc) - 1, len(zc) - 1, 0]),
                         coords)
 
-        else:
-            error('Invalid dimension')
+            else:
+                error('Invalid dimension')
 
-        if useMOABMesh:
             print("MOAB structured mesh now has", len(verts), "vertices")
 
     # ------------------------------------
 
     def compute_decode_operators(self):
         RN = {'x': [], 'y': [], 'z': []}
-
-        if dimension == 1:
-            W = np.ones(self.NUVW['x'].shape[1])
-            RN['x'] = (self.NUVW['x']*W)/(np.sum(self.NUVW['x']*W, axis=1)[:, np.newaxis])
-
-        elif dimension == 2:
-            W = np.ones((self.NUVW['x'].shape[1], self.NUVW['y'].shape[1]))
-
-            RN['x'] = self.NUVW['x'] * np.sum(W, axis=1)
-            RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
-            RN['y'] = self.NUVW['y'] * np.sum(W, axis=0)
-            RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
-
-        elif dimension == 3:
-            W = np.ones(
-                (self.NUVW['x'].shape[1], self.NUVW['y'].shape[1], self.NUVW['z'].shape[1]))
-
-            RN['x'] = self.NUVW['x'] #* np.sum(np.sum(W, axis=2), axis=1)
-            RN['x'] /= np.sum(RN['x'], axis=1)[:, np.newaxis]
-            RN['y'] = self.NUVW['y'] #* np.sum(np.sum(W, axis=2), axis=0)
-            RN['y'] /= np.sum(RN['y'], axis=1)[:, np.newaxis]
-            RN['z'] = self.NUVW['z'] #* np.sum(np.sum(W, axis=1), axis=0)
-            RN['z'] /= np.sum(RN['z'], axis=1)[:, np.newaxis]
-
-        else:
-            error('No implementation')
-
+        # compute the decoded operators now
+        self.problemInterface.compute_decode_operators(RN)
         return RN
 
-
-    def decode_3D(self, P, RN):
-        return np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
-        # return np.matmul(RN['z'], np.matmul(np.matmul(RN['x'], P), RN['y'].T))
-
-    def decode_2D(self, P, RN):
-        return np.matmul(np.matmul(RN['x'], P), RN['y'].T)
-
-    def decode_1D(self, P, RN):
-        return np.matmul(RN['x'], P)
-
     def decode(self, P, RN):
-        if dimension == 1:
-            return self.decode_1D(P, RN)
-        elif dimension == 2:
-            return self.decode_2D(P, RN)
-        elif dimension == 3:
-            return self.decode_3D(P, RN)
-        else:
-            error('Not implemented and invalid dimension')
-
+        return self.problemInterface.decode(P, RN)
 
     def lsqFit(self):
-        if dimension == 1:
-            self.refSolutionLocal = self.refSolutionLocal.reshape(self.refSolutionLocal.shape[0], 1)
-            return linalg.lstsq(self.decodeOpXYZ['x'], self.refSolutionLocal)[0]
-        elif dimension == 2:
-            use_cho = False
-            if use_cho:
-                X = linalg.cho_solve(linalg.cho_factor(
-                    np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])), self.decodeOpXYZ['x'].T)
-                Y = linalg.cho_solve(linalg.cho_factor(
-                    np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y'])), self.decodeOpXYZ['y'].T)
-                zY = np.matmul(self.refSolutionLocal, Y.T)
-                return np.matmul(X, zY)
-            else:
-                NTNxInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x']))
-                NTNyInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y']))
-                NxTQNy = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['y']))
-                return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
-        elif dimension == 3:
-            NTNxInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x']))
-            NTNyInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y']))
-            NTNzInv = np.linalg.inv(np.matmul(self.decodeOpXYZ['z'].T, self.decodeOpXYZ['z']))
-            # np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
-            # NyTQNz = np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z']))
-            # NxTQNy = np.matmul(NyTQNz.T, self.decodeOpXYZ['x'])
-            # NxTQNy = np.matmul(np.matmul(np.matmul(self.decodeOpXYZ['z'].T, self.refSolutionLocal), self.decodeOpXYZ['y']).T, self.decodeOpXYZ['x'])
-            NxTQNy = np.einsum('ijk,il->ljk', np.einsum('ijk,jl->ilk', np.einsum('ijk,kl->ijl', self.refSolutionLocal, self.decodeOpXYZ['z']), self.decodeOpXYZ['y']), self.decodeOpXYZ['x'])
-            # npo.matmul(np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z'])), self.decodeOpXYZ['x'], axes=0).shape
-            finsol = np.einsum('ijk,il->ljk', np.einsum('ijk,jl->ilk', np.einsum('ijk,kl->ijl', NxTQNy, NTNzInv), NTNyInv), NTNxInv).T
-            return finsol
-            # return np.matmul(NTNxInv, np.matmul(NTNyInv, np.einsum('ijk,kl->ijl', NxTQNy, NTNzInv)))
-
-            # NTNx = np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])
-            # NTNy = np.matmul(self.decodeOpXYZ['y'].T, self.decodeOpXYZ['y'])
-            # NTNz = np.matmul(self.decodeOpXYZ['z'].T, self.decodeOpXYZ['z'])
-            # RHS = np.matmul(np.matmul(self.decodeOpXYZ['y'].T, np.matmul(self.refSolutionLocal, self.decodeOpXYZ['z'])).T, self.decodeOpXYZ['x'])
-            # Oper = np.einsum('ijk,jk->ijk', np.einsum('ij,jk->ijk', NTNx, NTNy), NTNz)
-            # sol = linalg.lstsq(Oper, RHS)[0]
-
-            return sol
+        return self.problemInterface.lsqFit()
 
     def output_solution(self, cp):
 
@@ -1349,682 +1134,267 @@ class InputControlBlock:
         print("Domain: ", cp.gid()+1, "Exact - Decoded = ",
               np.abs(self.refSolutionLocal - self.pMK))
 
-    def send_diy_3d(self, cp):
-
-        oddDegree = (degree % 2)
-        nconstraints = augmentSpanSpace + \
-            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-        loffset = degree + 2*augmentSpanSpace
-        link = cp.link()
-        for i in range(len(link)):
-            target = link.target(i) # can access gid and proc
-            if len(self.controlPointData):
-                dir = link.direction(i)
-                if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
-                    continue
-
-                direction = (dir[2]+1)*dimension**2 + (dir[1]+1)*dimension + (dir[0]+1)
-                print("sending: ", cp.gid(), "to", target, '-- Dir = ', dir, 'Direction = ', direction)
-
-                if dir[2] == 0: # same z-height layer
-                    # ONLY consider coupling through faces and not through verties
-                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                    # Hence we only consider 4 neighbor cases, instead of 8.
-                    if dir[0] == 0:  # target is coupled in Y-direction
-                        if dir[1] > 0:  # target block is above current subdomain
-                            cp.enqueue(target, self.controlPointData[:, -loffset:, :])
-                            # cp.enqueue(target, self.controlPointData)
-                            cp.enqueue(
-                                target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is below current subdomain
-                            cp.enqueue(target, self.controlPointData[:, :loffset, :])
-                            # cp.enqueue(target, self.controlPointData)
-                            cp.enqueue(
-                                target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                    # target is coupled in X-direction
-                    elif dir[1] == 0:
-                        if dir[0] > 0:  # target block is to the right of current subdomain
-                            cp.enqueue(target, self.controlPointData[-loffset:, :, :])
-                            # cp.enqueue(target, self.controlPointData)
-                            cp.enqueue(
-                                target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is to the left of current subdomain
-                            cp.enqueue(target, self.controlPointData[:loffset, :, :])
-                            cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                                degree+augmentSpanSpace+1)])
-
-                    else:
-
-                        if useDiagonalBlocks and dimension > 1:
-                            # target block is diagonally top right to current subdomain
-                            if dir[0] > 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:, :])
-
-                            # target block is diagonally top left to current subdomain
-                            if dir[0] < 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:, :])
-
-                            # target block is diagonally left bottom  current subdomain
-                            if dir[0] < 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset, :])
-
-                            # target block is diagonally right bottom of current subdomain
-                            if dir[0] > 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset, :])
-
-                elif dir[2] > 0: # communication to layer above in z-direction
-                    # ONLY consider coupling through faces and not through verties
-                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                    # Hence we only consider 4 neighbor cases, instead of 8.
-                    if dir[0] == 0:  # target is coupled in Y-direction
-                        if dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
-                            cp.enqueue(target, self.controlPointData[:, -loffset:, -loffset:])
-                            # cp.enqueue(target, self.controlPointData)
-                            cp.enqueue(target, self.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(
-                            #     target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
-                            cp.enqueue(target, self.controlPointData[:, -loffset:, -loffset:])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(
-                            #     target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is below current subdomain in y-direction
-                            cp.enqueue(target, self.controlPointData[:, :loffset, -loffset:])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(
-                            #     target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                    # target is coupled in X-direction
-                    elif dir[1] == 0:
-                        if dir[0] > 0:  # target block is to the right of current subdomain
-                            cp.enqueue(target, self.controlPointData[-loffset:, :, -loffset:])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(
-                            #     target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is to the left of current subdomain
-                            cp.enqueue(target, self.controlPointData[:loffset, :, -loffset:])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                            #     degree+augmentSpanSpace+1)])
-
-                    else:
-
-                        if useDiagonalBlocks:
-                            # target block is diagonally top right to current subdomain
-                            if dir[0] > 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:, -loffset:])
-
-                            # target block is diagonally top left to current subdomain
-                            if dir[0] < 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:, -loffset:])
-
-                            # target block is diagonally left bottom  current subdomain
-                            if dir[0] < 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset, -loffset:])
-
-                            # target block is diagonally right bottom of current subdomain
-                            if dir[0] > 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset, -loffset:])
-
-                else: # dir[2] < 0 - sending to layer of blocks below in z-direction
-                    # ONLY consider coupling through faces and not through verties
-                    # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                    # Hence we only consider 4 neighbor cases, instead of 8.
-                    if dir[0] == 0:  # target is coupled in Y-direction
-                        if dir[1] == 0:  # target block is directly below in z-direction (but same x-y)
-                            cp.enqueue(target, self.controlPointData[:, -loffset:, :loffset])
-                            # cp.enqueue(target, self.controlPointData)
-                            cp.enqueue(target, self.knotsAdaptive['z'][0:1+degree+augmentSpanSpace])
-                            # cp.enqueue(
-                            #     target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
-                            cp.enqueue(target, self.controlPointData[:, -loffset:, :loffset])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][:loffset])
-                            # cp.enqueue(target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is below current subdomain in y-direction
-                            cp.enqueue(target, self.controlPointData[:, :loffset, :loffset])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][:loffset])
-                            # cp.enqueue(target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                    # target is coupled in X-direction
-                    elif dir[1] == 0:
-                        if dir[0] > 0:  # target block is to the right of current subdomain
-                            cp.enqueue(target, self.controlPointData[-loffset:, :, :loffset])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][:loffset])
-                            # cp.enqueue(target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                        else:  # target block is to the left of current subdomain
-                            cp.enqueue(target, self.controlPointData[:loffset, :, :loffset])
-                            # cp.enqueue(target, self.controlPointData)
-                            # cp.enqueue(target, self.knotsAdaptive['z'][:loffset])
-                            # cp.enqueue(target, self.knotsAdaptive['x'][0:(degree+augmentSpanSpace+1)])
-
-                    else:
-
-                        if useDiagonalBlocks:
-                            # target block is diagonally top right to current subdomain
-                            if dir[0] > 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,-loffset:, :loffset])
-
-                            # target block is diagonally top left to current subdomain
-                            if dir[0] < 0 and dir[1] > 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,-loffset:, :loffset])
-
-                            # target block is diagonally left bottom  current subdomain
-                            if dir[0] < 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[:loffset:,:loffset, :loffset])
-
-                            # target block is diagonally right bottom of current subdomain
-                            if dir[0] > 0 and dir[1] < 0:
-                                cp.enqueue(target, self.controlPointData[-loffset:,:loffset, :loffset])
-
-
-                if self.basisFunction['x'] is not None:
-                    cp.enqueue(target, self.basisFunction['x'].greville())
-                    cp.enqueue(target, self.basisFunction['y'].greville())
-                    cp.enqueue(target, self.basisFunction['z'].greville())
-
-        return
-
-
-    def recv_diy_3d(self, cp):
-
-        link = cp.link()
-        for i in range(len(link)):
-            target = link.target(i).gid
-            dir = link.direction(i)
-            # print("%d received from %d: %s from direction %s, with sizes %d+%d" % (cp.gid(), tgid, o, dir, pl, tl))
-
-            # ONLY consider coupling through faces and not through verties
-            # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-            # Hence we only consider 4 neighbor cases, instead of 8.
-            if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
-                continue
-
-            direction = (dir[2]+1)*dimension**2 + (dir[1]+1)*dimension + (dir[0]+1)
-            print("receiving: ", cp.gid(), "from", target, '-- Dir = ', dir, 'Direction = ', direction)
-
-            if dir[2] == 0: # same z-height layer
-                # ONLY consider coupling through faces and not through verties
-                # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                # Hence we only consider 4 neighbor cases, instead of 8.
-                if dir[0] == 0:  # target is coupled in Y-direction
-                    if dir[1] > 0:  # target block is above current subdomain
-                        self.boundaryConstraints['top'] = cp.dequeue(target)
-                        self.ghostKnots['top'] = cp.dequeue(target)
-
-                        if self.basisFunction['x'] is not None:
-                            self.greville['topx'] = cp.dequeue(target)
-                            self.greville['topy'] = cp.dequeue(target)
-                            self.greville['topz'] = cp.dequeue(target)
-
-                    else:  # target block is below current subdomain
-                        self.boundaryConstraints['bottom'] = cp.dequeue(target)
-                        self.ghostKnots['bottom'] = cp.dequeue(target)
-
-                        if self.basisFunction['x'] is not None:
-                            self.greville['bottomx'] = cp.dequeue(target)
-                            self.greville['bottomy'] = cp.dequeue(target)
-                            self.greville['bottomz'] = cp.dequeue(target)
-
-                # target is coupled in X-direction
-                elif dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
-                        self.boundaryConstraints['right'] = cp.dequeue(target)
-                        self.ghostKnots['right'] = cp.dequeue(target)
-
-                        if self.basisFunction['x'] is not None:
-                            self.greville['rightx'] = cp.dequeue(target)
-                            self.greville['righty'] = cp.dequeue(target)
-                            self.greville['rightz'] = cp.dequeue(target)
-
-                    else:  # target block is to the left of current subdomain
-                        self.boundaryConstraints['left'] = cp.dequeue(target)
-                        self.ghostKnots['left'] = cp.dequeue(target)
-
-                        if self.basisFunction['x'] is not None:
-                            self.greville['leftx'] = cp.dequeue(target)
-                            self.greville['lefty'] = cp.dequeue(target)
-                            self.greville['leftz'] = cp.dequeue(target)
-
-                else:
-
-                    if useDiagonalBlocks:
-
-                        # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
-                        # sender block is diagonally right top to  current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-                            self.boundaryConstraints['top-right'] = cp.dequeue(target)
-                            if self.basisFunction['x'] is not None:
-                                self.greville['toprightx'] = cp.dequeue(target)
-                                self.greville['toprighty'] = cp.dequeue(target)
-                                self.greville['toprightz'] = cp.dequeue(target)
-                        # sender block is diagonally left top to current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            self.boundaryConstraints['bottom-right'] = cp.dequeue(target)
-                            if self.basisFunction['x'] is not None:
-                                self.greville['bottomrightx'] = cp.dequeue(target)
-                                self.greville['bottomrighty'] = cp.dequeue(target)
-                                self.greville['bottomrightz'] = cp.dequeue(target)
-                        # sender block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            self.boundaryConstraints['bottom-left'] = cp.dequeue(target)
-                            if self.basisFunction['x'] is not None:
-                                self.greville['bottomleftx'] = cp.dequeue(target)
-                                self.greville['bottomlefty'] = cp.dequeue(target)
-                                self.greville['bottomleftz'] = cp.dequeue(target)
-                        # sender block is diagonally left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            self.boundaryConstraints['top-left'] = cp.dequeue(target)
-                            if self.basisFunction['x'] is not None:
-                                self.greville['topleftx'] = cp.dequeue(target)
-                                self.greville['toplefty'] = cp.dequeue(target)
-                                self.greville['topleftz'] = cp.dequeue(target)
-
-            elif dir[2] > 0: # communication to layer above in z-direction
-                # ONLY consider coupling through faces and not through verties
-                # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                # Hence we only consider 4 neighbor cases, instead of 8.
-                if dir[0] == 0 and dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
-                    self.boundaryConstraints['up'] = cp.dequeue(target)
-                    self.ghostKnots['up'] = cp.dequeue(target)
-
-                    if self.basisFunction['x'] is not None:
-                        self.greville['upx'] = cp.dequeue(target)
-                        self.greville['upy'] = cp.dequeue(target)
-                        self.greville['upz'] = cp.dequeue(target)
-                if False and dir[0] == 0:  # target is coupled in Y-direction
-                    if dir[1] > 0:  # target block is above current subdomain in y-direction
-                        cp.enqueue(target, self.controlPointData[:, -loffset:, -1:-2-degree-augmentSpanSpace:-1])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['x'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is below current subdomain in y-direction
-                        cp.enqueue(target, self.controlPointData[:, :loffset, -1:-2-degree-augmentSpanSpace:-1])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['x'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                # target is coupled in X-direction
-                elif False and dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
-                        cp.enqueue(target, self.controlPointData[-loffset:, :, -1:-2-degree-augmentSpanSpace:-1])
-                        # cp.enqueue(target, self.controlPointData)
-                        if dimension > 1:
-                            cp.enqueue(target, self.knotsAdaptive['y'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is to the left of current subdomain
-                        cp.enqueue(target, self.controlPointData[:loffset, :, -1:-2-degree-augmentSpanSpace:-1])
-                        # cp.enqueue(target, self.controlPointData)
-                        if dimension > 1:
-                            cp.enqueue(target, self.knotsAdaptive['y'][:])
-                        cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                            degree+augmentSpanSpace+1)])
-
-                else:
-
-                    if False and useDiagonalBlocks:
-                        # target block is diagonally top right to current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData[-loffset:,-loffset:, -1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
-
-                        # target block is diagonally top left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,-loffset:, -1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
-
-                        # target block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,:loffset, -1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
-
-                        # target block is diagonally right bottom of current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[-loffset:,:loffset, -1:-2-degree-augmentSpanSpace:-1])
-                            # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
-
-            else: # dir[2] < 0 - sending to layer of blocks below in z-direction
-                # ONLY consider coupling through faces and not through verties
-                # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                # Hence we only consider 4 neighbor cases, instead of 8.
-                if dir[0] == 0 and dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
-                    self.boundaryConstraints['down'] = cp.dequeue(target)
-                    self.ghostKnots['down'] = cp.dequeue(target)
-
-                    if self.basisFunction['x'] is not None:
-                        self.greville['downx'] = cp.dequeue(target)
-                        self.greville['downy'] = cp.dequeue(target)
-                        self.greville['downz'] = cp.dequeue(target)
-                if False and dir[0] == 0:  # target is coupled in Y-direction
-
-                    if dir[1] > 0:  # target block is above current subdomain in y-direction
-                        cp.enqueue(target, self.controlPointData[:, -loffset:, :loffset])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['x'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is below current subdomain in y-direction
-                        cp.enqueue(target, self.controlPointData[:, :loffset, :loffset])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['x'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                # target is coupled in X-direction
-                elif False and dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
-                        cp.enqueue(target, self.controlPointData[-loffset:, :, :loffset])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['y'][:])
-                        cp.enqueue(
-                            target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is to the left of current subdomain
-                        cp.enqueue(target, self.controlPointData[:loffset, :, :loffset])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['y'][:])
-                        cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                            degree+augmentSpanSpace+1)])
-
-                else:
-
-                    if False and useDiagonalBlocks:
-                        # target block is diagonally top right to current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData[-loffset:,-loffset:, :loffset])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
-
-                        # target block is diagonally top left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,-loffset:, :loffset])
-                            # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
-
-                        # target block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,:loffset, :loffset])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
-
-                        # target block is diagonally right bottom of current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[-loffset:,:loffset, :loffset])
-                            # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
-
-        return
-
     def send_diy(self, cp):
-
-        oddDegree = (degree % 2)
-        nconstraints = augmentSpanSpace + \
-            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-        loffset = degree + 2*augmentSpanSpace
-        link = cp.link()
-        for i in range(len(link)):
-            target = link.target(i)
-            if len(self.controlPointData):
-                dir = link.direction(i)
-                if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
-                    continue
-
-                # ONLY consider coupling through faces and not through verties
-                # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-                # Hence we only consider 4 neighbor cases, instead of 8.
-                if dir[0] == 0:  # target is coupled in Y-direction
-                    if dir[1] > 0:  # target block is above current subdomain
-                        if verbose:
-                            print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
-                                  self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
-
-                        if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
-                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is below current subdomain
-                        if verbose:
-                            print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
-                                  self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
-
-                        if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
-                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:, :loffset])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(
-                            target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
-
-                # target is coupled in X-direction
-                elif dimension == 1 or dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
-                        if verbose:
-                            print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
-                                  self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
-
-                        if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
-                        elif dimension == 2: cp.enqueue(target, self.controlPointData[-loffset:, :])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(
-                            target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
-
-                    else:  # target block is to the left of current subdomain
-                        if verbose:
-                            print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
-                                  self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
-
-                        if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
-                        elif dimension == 2: cp.enqueue(target, self.controlPointData[:loffset, :])
-                        # cp.enqueue(target, self.controlPointData)
-                        cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                            degree+augmentSpanSpace+1)])
-
-                else:
-
-                    if useDiagonalBlocks and dimension > 1:
-                        # target block is diagonally top right to current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-
-                            cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
-                            if verbose:
-                                print(
-                                    "%d sending to %d" % (cp.gid(),
-                                                          target.gid),
-                                    ' Diagonal = right-top: ', self.controlPointData
-                                    [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
-                                     augmentSpanSpace])
-                        # target block is diagonally top left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
-                            # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
-                            if verbose:
-                                print(
-                                    "%d sending to %d" % (cp.gid(),
-                                                          target.gid),
-                                    ' Diagonal = left-top: ', self.controlPointData
-                                    [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
-                                     augmentSpanSpace])
-
-                        # target block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
-                            # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
-
-                            if verbose:
-                                print(
-                                    "%d sending to %d" % (cp.gid(),
-                                                          target.gid),
-                                    ' Diagonal = left-bottom: ', self.controlPointData
-                                    [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
-                        # target block is diagonally right bottom of current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
-                            # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
-                            if verbose:
-                                print(
-                                    "%d sending to %d" % (cp.gid(),
-                                                          target.gid),
-                                    ' Diagonal = right-bottom: ', self.controlPointData
-                                    [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
-
-                if dimension == 2 and self.basisFunction['x'] is not None:
-                    cp.enqueue(target, self.basisFunction['x'].greville())
-                    cp.enqueue(target, self.basisFunction['y'].greville())
-
+        self.problemInterface.send_diy(self, cp)
         return
 
     def recv_diy(self, cp):
-
-        # oddDegree = (degree % 2)
-        # nconstraints = augmentSpanSpace + \
-        #     (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-
-        link = cp.link()
-        for i in range(len(link)):
-            tgid = link.target(i).gid
-            dir = link.direction(i)
-            # print("%d received from %d: %s from direction %s, with sizes %d+%d" % (cp.gid(), tgid, o, dir, pl, tl))
-
-            # ONLY consider coupling through faces and not through verties
-            # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
-            # Hence we only consider 4 neighbor cases, instead of 8.
-            if dir[0] == 0 and dir[1] == 0:
-                continue
-
-            if dir[0] == 0:  # target is coupled in Y-direction
-                if dir[1] > 0:  # target block is above current subdomain
-                    self.boundaryConstraints['top'] = cp.dequeue(tgid)
-                    self.ghostKnots['top'] = cp.dequeue(tgid)
-                    if verbose:
-                        print("Top: %d received from %d: from direction %s" % (cp.gid(), tgid,
-                              dir), self.topconstraint.shape, self.topconstraintKnots.shape)
-
-                    # if oddDegree:
-                    #     self.controlPointData[:,-(degree-nconstraints):] = self.boundaryConstraints['top'][:, :degree-nconstraints]
-                    # else:
-                    #     self.controlPointData[:,-(degree-nconstraints)+1:] = self.boundaryConstraints['top'][:, :degree-nconstraints]
-                    if dimension == 2 and self.basisFunction['x'] is not None:
-                        self.greville['topx'] = cp.dequeue(tgid)
-                        self.greville['topy'] = cp.dequeue(tgid)
-
-                else:  # target block is below current subdomain
-                    self.boundaryConstraints['bottom'] = cp.dequeue(tgid)
-                    self.ghostKnots['bottom'] = cp.dequeue(tgid)
-                    if verbose:
-                        print("Bottom: %d received from %d: from direction %s" % (
-                            cp.gid(), tgid, dir), self.bottomconstraint.shape, self.bottomconstraintKnots.shape)
-
-                    if dimension == 2 and self.basisFunction['x'] is not None:
-                        self.greville['bottomx'] = cp.dequeue(tgid)
-                        self.greville['bottomy'] = cp.dequeue(tgid)
-
-                    # if oddDegree:
-                    #     self.controlPointData[:,:(degree-nconstraints)] = self.boundaryConstraints['bottom'][:, -(degree-nconstraints):]
-                    # else:
-                    #     self.controlPointData[:,:(degree-nconstraints)] = self.boundaryConstraints['bottom'][:, -(degree-nconstraints)+1:]
-
-            # target is coupled in X-direction
-            elif dimension == 1 or dir[1] == 0:
-                if dir[0] < 0:  # target block is to the left of current subdomain
-                    # print('Right: ', np.array(o[2:pl+2]).reshape(useDerivativeConstraints+1,pll).T)
-
-                    self.boundaryConstraints['left'] = cp.dequeue(tgid)
-                    self.ghostKnots['left'] = cp.dequeue(tgid)
-                    if verbose:
-                        print("Left: %d received from %d: from direction %s" % (cp.gid(), tgid,
-                              dir), self.leftconstraint.shape, self.leftconstraintKnots.shape)
-
-                    if dimension == 2 and self.basisFunction['x'] is not None:
-                        self.greville['leftx'] = cp.dequeue(tgid)
-                        self.greville['lefty'] = cp.dequeue(tgid)
-                    # if oddDegree:
-                    #     self.controlPointData[:(degree-nconstraints),:] = self.boundaryConstraints['left'][-(degree-nconstraints):,:]
-                    # else:
-                    #     self.controlPointData[:(degree-nconstraints),] = self.boundaryConstraints['left'][-(degree-nconstraints)+1:,:]
-
-                else:  # target block is to right of current subdomain
-
-                    self.boundaryConstraints['right'] = cp.dequeue(tgid)
-                    self.ghostKnots['right'] = cp.dequeue(tgid)
-                    if verbose:
-                        print("Right: %d received from %d: from direction %s" % (cp.gid(), tgid,
-                              dir), self.rightconstraint.shape, self.rightconstraintKnots.shape)
-
-                    if dimension == 2 and self.basisFunction['x'] is not None:
-                        self.greville['rightx'] = cp.dequeue(tgid)
-                        self.greville['righty'] = cp.dequeue(tgid)
-                    # if oddDegree:
-                    #     self.controlPointData[-(degree-nconstraints):,:] = self.boundaryConstraints['right'][:(degree-nconstraints):,:]
-                    # else:
-                    #     self.controlPointData[-(degree-nconstraints):,:] = self.boundaryConstraints['right'][:(degree-nconstraints):,:]
-
-            else:
-
-                if useDiagonalBlocks:
-                    # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
-                    # sender block is diagonally right top to  current subdomain
-                    if dir[0] > 0 and dir[1] > 0:
-                        self.boundaryConstraints['top-right'] = cp.dequeue(
-                            tgid)
-                        if verbose:
-                            print("Top-right: %d received from %d: from direction %s" %
-                                  (cp.gid(), tgid, dir), self.boundaryConstraints['top-right'].shape)
-
-                        if dimension == 2 and self.basisFunction['x'] is not None:
-                            self.greville['toprightx'] = cp.dequeue(tgid)
-                            self.greville['toprighty'] = cp.dequeue(tgid)
-                    # sender block is diagonally left top to current subdomain
-                    if dir[0] > 0 and dir[1] < 0:
-                        self.boundaryConstraints['bottom-right'] = cp.dequeue(
-                            tgid)
-                        if verbose:
-                            print("Bottom-right: %d received from %d: from direction %s" %
-                                  (cp.gid(), tgid, dir), self.boundaryConstraints['bottom-right'].shape)
-
-                        if dimension == 2 and self.basisFunction['x'] is not None:
-                            self.greville['bottomrightx'] = cp.dequeue(tgid)
-                            self.greville['bottomrighty'] = cp.dequeue(tgid)
-                    # sender block is diagonally left bottom  current subdomain
-                    if dir[0] < 0 and dir[1] < 0:
-                        self.boundaryConstraints['bottom-left'] = cp.dequeue(
-                            tgid)
-                        if verbose:
-                            print("Bottom-left: %d received from %d: from direction %s" %
-                                  (cp.gid(), tgid, dir), self.boundaryConstraints['bottom-left'].shape)
-
-                        if dimension == 2 and self.basisFunction['x'] is not None:
-                            self.greville['bottomleftx'] = cp.dequeue(tgid)
-                            self.greville['bottomlefty'] = cp.dequeue(tgid)
-                    # sender block is diagonally left to current subdomain
-                    if dir[0] < 0 and dir[1] > 0:
-
-                        self.boundaryConstraints['top-left'] = cp.dequeue(tgid)
-                        if verbose:
-                            print("Top-left: %d received from %d: from direction %s" %
-                                  (cp.gid(), tgid, dir), self.boundaryConstraints['top-left'].shape)
-
-                        if dimension == 2 and self.basisFunction['x'] is not None:
-                            self.greville['topleftx'] = cp.dequeue(tgid)
-                            self.greville['toplefty'] = cp.dequeue(tgid)
+        self.problemInterface.recv_diy(self, cp)
         return
+
+    # def send_diy_12d(self, cp):
+
+    #     oddDegree = (degree % 2)
+    #     nconstraints = augmentSpanSpace + \
+    #         (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+    #     loffset = degree + 2*augmentSpanSpace
+    #     link = cp.link()
+    #     for i in range(len(link)):
+    #         target = link.target(i)
+    #         if len(self.controlPointData):
+    #             dir = link.direction(i)
+    #             if dir[0] == 0 and dir[1] == 0 and dir[2] == 0:
+    #                 continue
+
+    #             # ONLY consider coupling through faces and not through verties
+    #             # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
+    #             # Hence we only consider 4 neighbor cases, instead of 8.
+    #             if dir[0] == 0:  # target is coupled in Y-direction
+    #                 if dir[1] > 0:  # target block is above current subdomain
+    #                     if verbose:
+    #                         print("%d sending to %d" % (cp.gid(), target.gid), ' Top: ',
+    #                               self.controlPointData[:, -1:-2-degree-augmentSpanSpace:-1].shape)
+
+    #                     if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+    #                     elif dimension == 2: cp.enqueue(target, self.controlPointData[:, -loffset:])
+    #                     # cp.enqueue(target, self.controlPointData)
+    #                     cp.enqueue(
+    #                         target, self.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
+
+    #                 else:  # target block is below current subdomain
+    #                     if verbose:
+    #                         print("%d sending to %d" % (cp.gid(), target.gid), ' Bottom: ',
+    #                               self.controlPointData[:, 0:1+degree+augmentSpanSpace].shape)
+
+    #                     if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+    #                     elif dimension == 2: cp.enqueue(target, self.controlPointData[:, :loffset])
+    #                     # cp.enqueue(target, self.controlPointData)
+    #                     cp.enqueue(
+    #                         target, self.knotsAdaptive['y'][0:1+degree+augmentSpanSpace])
+
+    #             # target is coupled in X-direction
+    #             elif dimension == 1 or dir[1] == 0:
+    #                 if dir[0] > 0:  # target block is to the right of current subdomain
+    #                     if verbose:
+    #                         print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
+    #                               self.controlPointData[-1:-2-degree-augmentSpanSpace:-1, :].shape)
+
+    #                     if dimension == 1: cp.enqueue(target, self.controlPointData[-loffset:])
+    #                     elif dimension == 2: cp.enqueue(target, self.controlPointData[-loffset:, :])
+    #                     # cp.enqueue(target, self.controlPointData)
+    #                     cp.enqueue(
+    #                         target, self.knotsAdaptive['x'][-1:-2-degree-augmentSpanSpace:-1])
+
+    #                 else:  # target block is to the left of current subdomain
+    #                     if verbose:
+    #                         print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
+    #                               self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
+
+    #                     if dimension == 1: cp.enqueue(target, self.controlPointData[:loffset])
+    #                     elif dimension == 2: cp.enqueue(target, self.controlPointData[:loffset, :])
+    #                     # cp.enqueue(target, self.controlPointData)
+    #                     cp.enqueue(target, self.knotsAdaptive['x'][0:(
+    #                         degree+augmentSpanSpace+1)])
+
+    #             else:
+
+    #                 if useDiagonalBlocks and dimension > 1:
+    #                     # target block is diagonally top right to current subdomain
+    #                     if dir[0] > 0 and dir[1] > 0:
+
+    #                         cp.enqueue(target, self.controlPointData[-loffset:,-loffset:])
+    #                         # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, -1-degree-augmentSpanSpace:])
+    #                         if verbose:
+    #                             print(
+    #                                 "%d sending to %d" % (cp.gid(),
+    #                                                       target.gid),
+    #                                 ' Diagonal = right-top: ', self.controlPointData
+    #                                 [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+    #                                  augmentSpanSpace])
+    #                     # target block is diagonally top left to current subdomain
+    #                     if dir[0] < 0 and dir[1] > 0:
+    #                         cp.enqueue(target, self.controlPointData[:loffset:,-loffset:])
+    #                         # cp.enqueue(target, self.controlPointData[: 1 + degree + augmentSpanSpace, -1:-2-degree-augmentSpanSpace:-1])
+    #                         if verbose:
+    #                             print(
+    #                                 "%d sending to %d" % (cp.gid(),
+    #                                                       target.gid),
+    #                                 ' Diagonal = left-top: ', self.controlPointData
+    #                                 [-1: -2 - degree - augmentSpanSpace: -1, : 1 + degree +
+    #                                  augmentSpanSpace])
+
+    #                     # target block is diagonally left bottom  current subdomain
+    #                     if dir[0] < 0 and dir[1] < 0:
+    #                         cp.enqueue(target, self.controlPointData[:loffset:,:loffset])
+    #                         # cp.enqueue(target, self.controlPointData[-1-degree-augmentSpanSpace:, :1+degree+augmentSpanSpace])
+
+    #                         if verbose:
+    #                             print(
+    #                                 "%d sending to %d" % (cp.gid(),
+    #                                                       target.gid),
+    #                                 ' Diagonal = left-bottom: ', self.controlPointData
+    #                                 [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+    #                     # target block is diagonally right bottom of current subdomain
+    #                     if dir[0] > 0 and dir[1] < 0:
+    #                         cp.enqueue(target, self.controlPointData[-loffset:,:loffset])
+    #                         # cp.enqueue(target, self.controlPointData[:1+degree+augmentSpanSpace, :1+degree+augmentSpanSpace])
+    #                         if verbose:
+    #                             print(
+    #                                 "%d sending to %d" % (cp.gid(),
+    #                                                       target.gid),
+    #                                 ' Diagonal = right-bottom: ', self.controlPointData
+    #                                 [: 1 + degree + augmentSpanSpace, -1 - degree - augmentSpanSpace:])
+
+    #             if dimension == 2 and self.basisFunction['x'] is not None:
+    #                 cp.enqueue(target, self.basisFunction['x'].greville())
+    #                 cp.enqueue(target, self.basisFunction['y'].greville())
+
+    #     return
+
+    # def recv_diy_12d(self, cp):
+
+    #     # oddDegree = (degree % 2)
+    #     # nconstraints = augmentSpanSpace + \
+    #     #     (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+
+    #     link = cp.link()
+    #     for i in range(len(link)):
+    #         tgid = link.target(i).gid
+    #         dir = link.direction(i)
+    #         # print("%d received from %d: %s from direction %s, with sizes %d+%d" % (cp.gid(), tgid, o, dir, pl, tl))
+
+    #         # ONLY consider coupling through faces and not through verties
+    #         # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
+    #         # Hence we only consider 4 neighbor cases, instead of 8.
+    #         if dir[0] == 0 and dir[1] == 0:
+    #             continue
+
+    #         if dir[0] == 0:  # target is coupled in Y-direction
+    #             if dir[1] > 0:  # target block is above current subdomain
+    #                 self.boundaryConstraints['top'] = cp.dequeue(tgid)
+    #                 self.ghostKnots['top'] = cp.dequeue(tgid)
+    #                 if verbose:
+    #                     print("Top: %d received from %d: from direction %s" % (cp.gid(), tgid,
+    #                           dir), self.topconstraint.shape, self.topconstraintKnots.shape)
+
+    #                 # if oddDegree:
+    #                 #     self.controlPointData[:,-(degree-nconstraints):] = self.boundaryConstraints['top'][:, :degree-nconstraints]
+    #                 # else:
+    #                 #     self.controlPointData[:,-(degree-nconstraints)+1:] = self.boundaryConstraints['top'][:, :degree-nconstraints]
+    #                 if dimension == 2 and self.basisFunction['x'] is not None:
+    #                     self.greville['topx'] = cp.dequeue(tgid)
+    #                     self.greville['topy'] = cp.dequeue(tgid)
+
+    #             else:  # target block is below current subdomain
+    #                 self.boundaryConstraints['bottom'] = cp.dequeue(tgid)
+    #                 self.ghostKnots['bottom'] = cp.dequeue(tgid)
+    #                 if verbose:
+    #                     print("Bottom: %d received from %d: from direction %s" % (
+    #                         cp.gid(), tgid, dir), self.bottomconstraint.shape, self.bottomconstraintKnots.shape)
+
+    #                 if dimension == 2 and self.basisFunction['x'] is not None:
+    #                     self.greville['bottomx'] = cp.dequeue(tgid)
+    #                     self.greville['bottomy'] = cp.dequeue(tgid)
+
+    #                 # if oddDegree:
+    #                 #     self.controlPointData[:,:(degree-nconstraints)] = self.boundaryConstraints['bottom'][:, -(degree-nconstraints):]
+    #                 # else:
+    #                 #     self.controlPointData[:,:(degree-nconstraints)] = self.boundaryConstraints['bottom'][:, -(degree-nconstraints)+1:]
+
+    #         # target is coupled in X-direction
+    #         elif dimension == 1 or dir[1] == 0:
+    #             if dir[0] < 0:  # target block is to the left of current subdomain
+    #                 # print('Right: ', np.array(o[2:pl+2]).reshape(useDerivativeConstraints+1,pll).T)
+
+    #                 self.boundaryConstraints['left'] = cp.dequeue(tgid)
+    #                 self.ghostKnots['left'] = cp.dequeue(tgid)
+    #                 if verbose:
+    #                     print("Left: %d received from %d: from direction %s" % (cp.gid(), tgid,
+    #                           dir), self.leftconstraint.shape, self.leftconstraintKnots.shape)
+
+    #                 if dimension == 2 and self.basisFunction['x'] is not None:
+    #                     self.greville['leftx'] = cp.dequeue(tgid)
+    #                     self.greville['lefty'] = cp.dequeue(tgid)
+    #                 # if oddDegree:
+    #                 #     self.controlPointData[:(degree-nconstraints),:] = self.boundaryConstraints['left'][-(degree-nconstraints):,:]
+    #                 # else:
+    #                 #     self.controlPointData[:(degree-nconstraints),] = self.boundaryConstraints['left'][-(degree-nconstraints)+1:,:]
+
+    #             else:  # target block is to right of current subdomain
+
+    #                 self.boundaryConstraints['right'] = cp.dequeue(tgid)
+    #                 self.ghostKnots['right'] = cp.dequeue(tgid)
+    #                 if verbose:
+    #                     print("Right: %d received from %d: from direction %s" % (cp.gid(), tgid,
+    #                           dir), self.rightconstraint.shape, self.rightconstraintKnots.shape)
+
+    #                 if dimension == 2 and self.basisFunction['x'] is not None:
+    #                     self.greville['rightx'] = cp.dequeue(tgid)
+    #                     self.greville['righty'] = cp.dequeue(tgid)
+    #                 # if oddDegree:
+    #                 #     self.controlPointData[-(degree-nconstraints):,:] = self.boundaryConstraints['right'][:(degree-nconstraints):,:]
+    #                 # else:
+    #                 #     self.controlPointData[-(degree-nconstraints):,:] = self.boundaryConstraints['right'][:(degree-nconstraints):,:]
+
+    #         else:
+
+    #             if useDiagonalBlocks:
+    #                 # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
+    #                 # sender block is diagonally right top to  current subdomain
+    #                 if dir[0] > 0 and dir[1] > 0:
+    #                     self.boundaryConstraints['top-right'] = cp.dequeue(
+    #                         tgid)
+    #                     if verbose:
+    #                         print("Top-right: %d received from %d: from direction %s" %
+    #                               (cp.gid(), tgid, dir), self.boundaryConstraints['top-right'].shape)
+
+    #                     if dimension == 2 and self.basisFunction['x'] is not None:
+    #                         self.greville['toprightx'] = cp.dequeue(tgid)
+    #                         self.greville['toprighty'] = cp.dequeue(tgid)
+    #                 # sender block is diagonally left top to current subdomain
+    #                 if dir[0] > 0 and dir[1] < 0:
+    #                     self.boundaryConstraints['bottom-right'] = cp.dequeue(
+    #                         tgid)
+    #                     if verbose:
+    #                         print("Bottom-right: %d received from %d: from direction %s" %
+    #                               (cp.gid(), tgid, dir), self.boundaryConstraints['bottom-right'].shape)
+
+    #                     if dimension == 2 and self.basisFunction['x'] is not None:
+    #                         self.greville['bottomrightx'] = cp.dequeue(tgid)
+    #                         self.greville['bottomrighty'] = cp.dequeue(tgid)
+    #                 # sender block is diagonally left bottom  current subdomain
+    #                 if dir[0] < 0 and dir[1] < 0:
+    #                     self.boundaryConstraints['bottom-left'] = cp.dequeue(
+    #                         tgid)
+    #                     if verbose:
+    #                         print("Bottom-left: %d received from %d: from direction %s" %
+    #                               (cp.gid(), tgid, dir), self.boundaryConstraints['bottom-left'].shape)
+
+    #                     if dimension == 2 and self.basisFunction['x'] is not None:
+    #                         self.greville['bottomleftx'] = cp.dequeue(tgid)
+    #                         self.greville['bottomlefty'] = cp.dequeue(tgid)
+    #                 # sender block is diagonally left to current subdomain
+    #                 if dir[0] < 0 and dir[1] > 0:
+
+    #                     self.boundaryConstraints['top-left'] = cp.dequeue(tgid)
+    #                     if verbose:
+    #                         print("Top-left: %d received from %d: from direction %s" %
+    #                               (cp.gid(), tgid, dir), self.boundaryConstraints['top-left'].shape)
+
+    #                     if dimension == 2 and self.basisFunction['x'] is not None:
+    #                         self.greville['topleftx'] = cp.dequeue(tgid)
+    #                         self.greville['toplefty'] = cp.dequeue(tgid)
+    #     return
 
     def VectorWynnEpsilon(self, sn, r):
         """Perform Wynn Epsilon Convergence Algorithm"""
@@ -2436,70 +1806,6 @@ class InputControlBlock:
             print("%s bounds: "%(cDirection), self.xyzCoordLocal[cDirection]
                 [0], self.xyzCoordLocal[cDirection][-1], xyzCP)
 
-        # xCP = [self.knotsAdaptive['x'][degree],
-        #        self.knotsAdaptive['x'][-degree-1]]
-        # indicesX = np.where(np.logical_and(
-        #     coordinates["x"] >= xCP[0]-postol, coordinates["x"] <= xCP[1]+postol))
-        # # print(indicesX)
-        # lboundX = indicesX[0][0]
-        # # indicesX[0][-1] < len(coordinates["x"])
-        # uboundX = min(indicesX[0][-1]+1, len(coordinates["x"]))
-        # if self.isClamped['left'] and self.isClamped['right']:
-        #     self.xyzCoordLocal['x'] = coordinates["x"][:]
-        # elif self.isClamped['left']:
-        #     self.xyzCoordLocal['x'] = coordinates["x"][:uboundX]
-        # elif self.isClamped['right']:
-        #     self.xyzCoordLocal['x'] = coordinates["x"][lboundX:]
-        # else:
-        #     self.xyzCoordLocal['x'] = coordinates["x"][lboundX:uboundX]
-        # print("X bounds: ", self.xyzCoordLocal['x']
-        #       [0], self.xyzCoordLocal['x'][-1], xCP)
-
-        # if dimension > 1:
-        #     # locY = sp.BSplineBasis(order=degree+1, knots=self.knotsAdaptive['y']).greville()
-        #     # yCP = [locY[0], locY[-1]]
-        #     yCP = [self.knotsAdaptive['y'][degree],
-        #            self.knotsAdaptive['y'][-degree-1]]
-        #     indicesY = np.where(np.logical_and(
-        #         coordinates["y"] >= yCP[0]-postol, coordinates["y"] <= yCP[1]+postol))
-        #     # print(indicesY)
-        #     lboundY = indicesY[0][0]
-        #     uboundY = min(indicesY[0][-1]+1, len(coordinates["y"]))
-        #     if self.isClamped['top'] and self.isClamped['bottom']:
-        #         self.xyzCoordLocal['y'] = coordinates["y"][:]
-        #     elif self.isClamped['bottom']:
-        #         self.xyzCoordLocal['y'] = coordinates["y"][:uboundY]
-        #     elif self.isClamped['top']:
-        #         self.xyzCoordLocal['y'] = coordinates["y"][lboundY:]
-        #     else:
-        #         self.xyzCoordLocal['y'] = coordinates["y"][lboundY:uboundY]
-
-        #     print("Y bounds: ",
-        #           self.xyzCoordLocal['y'][0], self.xyzCoordLocal['y'][-1], yCP)
-
-        #     if dimension > 2:
-        #         # locY = sp.BSplineBasis(order=degree+1, knots=self.knotsAdaptive['y']).greville()
-        #         # yCP = [locY[0], locY[-1]]
-        #         zCP = [self.knotsAdaptive['z'][degree],
-        #             self.knotsAdaptive['z'][-degree-1]]
-        #         indicesZ = np.where(np.logical_and(
-        #             coordinates["z"] >= zCP[0]-postol, coordinates["z"] <= zCP[1]+postol))
-        #         # print(indicesY)
-        #         lboundZ = indicesZ[0][0]
-        #         uboundZ = min(indicesZ[0][-1]+1, len(coordinates["z"]))
-        #         if self.isClamped['up'] and self.isClamped['down']:
-        #             self.xyzCoordLocal['z'] = coordinates["z"][:]
-        #         elif self.isClamped['down']:
-        #             self.xyzCoordLocal['z'] = coordinates["z"][:uboundZ]
-        #         elif self.isClamped['up']:
-        #             self.xyzCoordLocal['z'] = coordinates["z"][lboundZ:]
-        #         else:
-        #             self.xyzCoordLocal['z'] = coordinates["z"][lboundZ:uboundZ]
-
-        #         print("Z bounds: ",
-        #             self.xyzCoordLocal['z'][0], self.xyzCoordLocal['z'][-1], zCP)
-
-        # int(nPoints / nSubDomains) + overlapData
         if dimension == 1:
             self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0]]
             self.refSolutionLocal = self.refSolutionLocal.reshape(
@@ -2508,7 +1814,6 @@ class InputControlBlock:
             self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0], lboundXYZ[1]:uboundXYZ[1]]
         else:
             self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0], lboundXYZ[1]:uboundXYZ[1], lboundXYZ[2]:uboundXYZ[2]]
-            # int(nPoints / nSubDomains) + overlapData
 
         # Store the core indices before augment
         cindicesX = np.array(
@@ -2551,13 +1856,9 @@ class InputControlBlock:
         # if dimension > 1:
         #     self.UVW['y'] = self.xyzCoordLocal['y'][self.corebounds[1][0]:self.corebounds[1][1]] / (self.xyzCoordLocal['y'][self.corebounds[1][1]] - self.xyzCoordLocal['y'][self.corebounds[1][0]])
 
-        # / (self.xyzCoordLocal['x'][-1] - self.xyzCoordLocal['x'][0])
-        self.UVW['x'] = self.xyzCoordLocal['x']
-        if dimension > 1:
-            # / (self.xyzCoordLocal['y'][-1] - self.xyzCoordLocal['y'][0])
-            self.UVW['y'] = self.xyzCoordLocal['y']
-            if dimension > 2:
-                self.UVW['z'] = self.xyzCoordLocal['z']
+        for idir in range(dimension):
+            cDirection = directions[idir]
+            self.UVW[cDirection] = self.xyzCoordLocal[cDirection]
 
         if verbose:
             if dimension == 1:
@@ -2617,138 +1918,6 @@ class InputControlBlock:
         # self.decodeOpXYZ = compute_decode_operators(self.NUVW)
 
         initialDecodedError = 0.0
-
-        def residual_operator_1D(Pin):  # checkpoint3
-
-            # RN = (self.NUVW['x'] * self.weightsData) / \
-            #     (np.sum(self.NUVW['x']*self.weightsData,
-            #      axis=1)[:, np.newaxis])
-            Aoper = np.matmul(self.decodeOpXYZ['x'].T, self.decodeOpXYZ['x'])
-            Brhs = self.decodeOpXYZ['x'].T @ self.refSolutionLocal
-            Brhs = Brhs.reshape(Pin.shape)
-            # print('Input P = ', Pin.shape, Aoper.shape, Brhs.shape)
-
-            oddDegree = (degree % 2)
-            oddDegreeImpose = True
-
-            # num_constraints = (degree)/2 if degree is even
-            # num_constraints = (degree+1)/2 if degree is odd
-            nconstraints = augmentSpanSpace + \
-                (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-            # if oddDegree and not oddDegreeImpose:
-            #     nconstraints -= 1
-            # nconstraints = degree-1
-            # print('nconstraints: ', nconstraints)
-
-            residual_constrained_nrm = 0
-            nBndOverlap = 0
-            if constraints is not None and len(constraints) > 0:
-
-                if idom > 1:  # left constraint
-
-                    loffset = -2*augmentSpanSpace if oddDegree else -2*augmentSpanSpace
-
-                    if oddDegree and not oddDegreeImpose:
-                        # print('left: ', nconstraints, -degree+nconstraints+loffset,
-                        #       Pin[nconstraints], self.boundaryConstraints['left'][-degree+nconstraints+loffset])
-                        constraintVal = initSol[nconstraints-1, 0]
-                        print((constraintVal * Aoper[:, nconstraints]).shape, Aoper[:, nconstraints].shape, Brhs.shape)
-                        Brhs -= (constraintVal * Aoper[:, nconstraints]).reshape(Brhs.shape)
-
-                    for ic in range(nconstraints):
-                        # Brhs[ic] = 0.5 * \
-                        #     (Pin[ic] + self.boundaryConstraints['left']
-                        #      [-degree+ic+loffset])
-                        # print('Left: ', Brhs[ic], Pin[ic])
-                        if oddDegree and oddDegreeImpose: Brhs[ic] = initSol[ic,0]
-                        Aoper[ic, :] = 0.0
-                        Aoper[ic, ic] = 1.0
-
-                if idom < nSubDomains[0]:  # right constraint
-
-                    loffset = 2*augmentSpanSpace if oddDegree else 2*augmentSpanSpace
-
-                    if oddDegree and not oddDegreeImpose:
-                        # print('right: ', -nconstraints-1, degree-1-nconstraints+loffset,
-                        #       Pin[-nconstraints-1], self.boundaryConstraints['right']
-                        #       [degree-1-nconstraints+loffset])
-                        constraintVal = initSol[-nconstraints, 0]
-                        Brhs -= (constraintVal * Aoper[:, -nconstraints]).reshape(Brhs.shape)
-
-                    for ic in range(nconstraints):
-                        # Brhs[-ic-1] = 0.5 * \
-                        #     (Pin[-ic-1] + self.boundaryConstraints['right']
-                        #      [degree-1-ic+loffset])
-                        # print('Right: ', Brhs[-ic-1], Pin[-ic-1])
-                        if oddDegree and oddDegreeImpose: Brhs[-ic-1] = initSol[-ic-1]
-                        Aoper[-ic-1, :] = 0.0
-                        Aoper[-ic-1, -ic-1] = 1.0
-
-            # print(Aoper, Brhs)
-            return [Aoper, Brhs]
-
-        def residual1D(Pin, printVerbose=False):
-
-            # Use previous iterate as initial solution
-            # initSol = constraints[1][:] if constraints is not None else np.ones_like(
-            #     W)
-            # initSol = np.ones_like(W)*0
-            oddDegree = (degree % 2)
-            nconstraints = augmentSpanSpace + \
-                (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-
-            lbound = 0
-            ubound = len(Pin)
-            if not self.isClamped['left']:
-                lbound = nconstraints+1 if oddDegree else nconstraints
-            if not self.isClamped['right']:
-                ubound -= nconstraints+1 if oddDegree else nconstraints
-
-            if True:
-                [Aoper, Brhs] = residual_operator_1D(Pin)
-                # if type(Pin) is np.numpy_boxes.ArrayBox:
-                #     [Aoper, Brhs] = residual_operator_1D(Pin._value[:], False, False)
-                # else:
-                #     [Aoper, Brhs] = residual_operator_1D(Pin, False, False)
-
-                # lu, piv = scipy.linalg.lu_factor(Aoper)
-                # # print(lu, piv)
-                # initSol2 = scipy.linalg.lu_solve((lu, piv), Brhs)
-
-                residual_nrm_vec = (Brhs - Aoper @ Pin)[lbound:ubound]
-                residual_nrm = np.sqrt(np.sum(residual_nrm_vec**2)/len(residual_nrm_vec))
-                # solerror = (initSol2-Pin)[lbound:ubound] #Brhs-Aoper@Pin
-                # residual_nrm = np.sqrt(np.sum(solerror**2)/len(solerror))
-
-                if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
-                    print('Residual 1D: ', residual_nrm)
-
-            else:
-
-                # New scheme like 2-D
-                # print('Corebounds: ', self.corebounds)
-                decoded = self.decode(Pin, self.decodeOpXYZ)
-                residual_decoded = (
-                    self.refSolutionLocal - decoded)/solutionRange
-                residual_decoded2 = residual_decoded[self.corebounds[0]
-                                                    [0]: self.corebounds[0][1]]
-                decoded_residual_norm = np.sqrt(
-                    np.sum(residual_decoded2**2)/len(residual_decoded2))
-
-                # if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
-                #     print('Residual decoded 1D: ', decoded_residual_norm)
-
-                # residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, residual_decoded)
-                # bc_penalty = 0
-                # decoded_residual_norm = np.sqrt(
-                #     np.sum(residual_encoded[lbound:ubound]**2)/len(residual_encoded[lbound:ubound])) + bc_penalty * np.sqrt(np.sum(residual_encoded[:lbound]**2)+np.sum(residual_encoded[ubound:]**2))
-
-                residual_nrm = (decoded_residual_norm-initialDecodedError)
-
-                if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
-                    print('Residual 1D: ', decoded_residual_norm, residual_nrm)
-
-            return residual_nrm
 
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
@@ -2876,7 +2045,7 @@ class InputControlBlock:
 
             return net_residual_norm
 
-        def residual3D(Pin, printVerbose=False):
+        def residual_general(Pin, printVerbose=False):
 
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
 
@@ -2897,13 +2066,15 @@ class InputControlBlock:
             return net_residual_norm
 
         # Set a function handle to the appropriate residual evaluator
-        residualFunction = None
-        if dimension == 1:
-            residualFunction = residual1D
-        elif dimension == 2:
-            residualFunction = residual2DRev  # residual2DRev
-        else:
-            residualFunction = residual3D
+        # residualFunction = None
+        # if dimension == 1:
+        #     residualFunction = residual1D
+        # elif dimension == 2:
+        #     residualFunction = residual2DRev  # residual2DRev
+        # else:
+        #     residualFunction = residual3D
+
+        residualFunction = residual_general
 
         def print_iterate(P):
             res = residualFunction(P, printVerbose=True)
@@ -2950,283 +2121,434 @@ class InputControlBlock:
             # Lets update our initial solution with constraints
             if constraints is not None and len(constraints) > 0:
 
-                if fullyPinned:
-                    # First update hte control point vector with constraints for supporting points
-                    if 'left' in self.boundaryConstraints:
-                        if dimension == 1:
-                            initSol[0] = alpha * initSol[0] + (
-                                1-alpha) * self.boundaryConstraints['left'][-1]
-                        else:
-                            initSol[0, :] += self.boundaryConstraints['left'][-1, :]
-                            localAssemblyWeights[0, :] += 1.0
-                    if 'right' in self.boundaryConstraints:
-                        if dimension == 1:
-                            initSol[-1] = alpha * initSol[-1] + (
-                                1-alpha) * self.boundaryConstraints['right'][0]
-                        else:
-                            initSol[-1, :] += self.boundaryConstraints['right'][0, :]
-                            localAssemblyWeights[-1, :] += 1.0
-                    if 'top' in self.boundaryConstraints:
-                        initSol[:, -1] += self.boundaryConstraints['top'][:, 0]
-                        localAssemblyWeights[:, -1] += 1.0
-                    if 'bottom' in self.boundaryConstraints:
-                        initSol[:, 0] += self.boundaryConstraints['bottom'][:, -1]
-                        localAssemblyWeights[:, 0] += 1.0
-                    if 'top-left' in self.boundaryConstraints:
-                        initSol[0, -1] += self.boundaryConstraints['top-left'][-1, 0]
-                        localAssemblyWeights[0, -1] += 1.0
-                    if 'bottom-right' in self.boundaryConstraints:
-                        initSol[-1, 0] = self.boundaryConstraints['bottom-right'][0, -1]
-                        localAssemblyWeights[-1, 0] += 1.0
-                    if 'bottom-left' in self.boundaryConstraints:
-                        initSol[0, 0] = self.boundaryConstraints['bottom-left'][-1, -1]
-                        localAssemblyWeights[0, 0] += 1.0
-                    if 'top-right' in self.boundaryConstraints:
-                        initSol[-1, -1] = self.boundaryConstraints['top-right'][0, 0]
-                        localAssemblyWeights[-1, -1] += 1.0
-                    if 'down' in self.boundaryConstraints:
-                        initSol[:, :, 0] += self.boundaryConstraints['top'][:, :, -1]
-                        localAssemblyWeights[:, :, 0] += 1.0
-                    if 'up' in self.boundaryConstraints:
-                        initSol[:, :, -1] += self.boundaryConstraints['bottom'][:, :, 0]
-                        localAssemblyWeights[:, :, -1] += 1.0
-                else:
-                    nconstraints = augmentSpanSpace + \
-                        (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
-                    loffset = 2*augmentSpanSpace
-                    print('Nconstraints = ', nconstraints,
-                          'loffset = ', loffset)
+                initSol = self.problemInterface.initialize_solution(self, initSol, degree, augmentSpanSpace, fullyPinned)
 
-                    if dimension > 1:
+                # if dimension < 3:
+                #     initSol = self.problemInterface.initialize_solution(self, initSol, degree, augmentSpanSpace, fullyPinned)
+                # else: #dimension == 3:
+                #     if fullyPinned:
+                #         # First update hte control point vector with constraints for supporting points
+                #         if 'left' in self.boundaryConstraints:
+                #             initSol[:, :, 0] += self.boundaryConstraints['left'][:, :, -1]
+                #             localAssemblyWeights[0, :, :] += 1.0
+                #         if 'right' in self.boundaryConstraints:
+                #             initSol[:, :, -1] += self.boundaryConstraints['right'][:, :, 0]
+                #             localAssemblyWeights[-1, :, :] += 1.0
+                #         if 'top' in self.boundaryConstraints:
+                #             initSol[:, -1, :] += self.boundaryConstraints['top'][:, 0, :]
+                #             localAssemblyWeights[:, -1, :] += 1.0
+                #         if 'bottom' in self.boundaryConstraints:
+                #             initSol[:, 0, :] += self.boundaryConstraints['bottom'][:, -1, :]
+                #             localAssemblyWeights[:, 0, :] += 1.0
+                #         if 'up' in self.boundaryConstraints:
+                #             initSol[:, :, -1] += self.boundaryConstraints['up'][:, :, 0]
+                #             localAssemblyWeights[:, :, -1] += 1.0
+                #         if 'down' in self.boundaryConstraints:
+                #             initSol[:, :, 0] += self.boundaryConstraints['down'][:, :, -1]
+                #             localAssemblyWeights[:, :, 0] += 1.0
 
-                        freeBounds[0] = 0 if self.isClamped['left'] else (
-                            nconstraints-1 if oddDegree else nconstraints)
-                        freeBounds[1] = len(localBCAssembly[:, 0]) if self.isClamped['right'] else len(
-                            localBCAssembly[:, 0]) - (nconstraints - 1 if oddDegree else nconstraints)
-                        freeBounds[2] = 0 if self.isClamped['bottom'] else(
-                            nconstraints - 1 if oddDegree else nconstraints)
-                        freeBounds[3] = len(localBCAssembly[0, :]) if self.isClamped['top'] else len(
-                            localBCAssembly[0, :])-(nconstraints-1 if oddDegree else nconstraints)
+                #         if 'top-left' in self.boundaryConstraints:
+                #             initSol[0, -1, :] += self.boundaryConstraints['top-left'][-1, 0, :]
+                #             localAssemblyWeights[0, -1, :] += 1.0
+                #         if 'bottom-right' in self.boundaryConstraints:
+                #             initSol[-1, 0, :] = self.boundaryConstraints['bottom-right'][0, -1, :]
+                #             localAssemblyWeights[-1, 0, :] += 1.0
+                #         if 'bottom-left' in self.boundaryConstraints:
+                #             initSol[0, 0, :] = self.boundaryConstraints['bottom-left'][-1, -1, :]
+                #             localAssemblyWeights[0, 0, :] += 1.0
+                #         if 'top-right' in self.boundaryConstraints:
+                #             initSol[-1, -1, :] = self.boundaryConstraints['top-right'][0, 0, :]
+                #             localAssemblyWeights[-1, -1, :] += 1.0
 
-                        if dimension == 3:
-                            freeBounds[4] = 0 if self.isClamped['up'] else(
-                                nconstraints - 1 if oddDegree else nconstraints)
-                            freeBounds[5] = len(localBCAssembly[:, :, 0]) if self.isClamped['down'] else len(
-                                localBCAssembly[:, :, 0])-(nconstraints-1 if oddDegree else nconstraints)
+                #     else:
+                #         nconstraints = augmentSpanSpace + \
+                #             (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+                #         loffset = 2*augmentSpanSpace
+                #         print('Nconstraints = ', nconstraints,
+                #             'loffset = ', loffset)
 
-                    # First update hte control point vector with constraints for supporting points
-                    if 'left' in self.boundaryConstraints:
-                        if dimension == 1:
-                            if oddDegree:
-                                if nconstraints > 1:
-                                    initSol[: nconstraints -
-                                            1] = beta * initSol[: nconstraints -1] + (1-beta) * self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
-                                initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
-                                    1-alpha) * self.boundaryConstraints['left'][-nconstraints]
-                            else:
-                                initSol[: nconstraints] = beta * initSol[: nconstraints] + (1-beta) * self.boundaryConstraints['left'][-degree -
-                                                                                           loffset: -nconstraints]
+                #         if dimension == 3:
+                #             initSol = np.moveaxis(initSol, 0, -1)
+                #             initSol = np.moveaxis(initSol, 0, 1)
 
-                        else:
-                            if oddDegree:
-                                localBCAssembly[nconstraints-1, freeBounds[2]:freeBounds[3]
-                                                ] += self.boundaryConstraints['left'][-nconstraints, freeBounds[2]:freeBounds[3]]
-                                localAssemblyWeights[nconstraints-1,
-                                                     freeBounds[2]:freeBounds[3]] += 1.0
+                #         freeBounds[0] = 0 if self.isClamped['left'] else (
+                #             nconstraints-1 if oddDegree else nconstraints)
+                #         freeBounds[1] = len(localBCAssembly[:, 0]) if self.isClamped['right'] else len(
+                #             localBCAssembly[:, 0]) - (nconstraints - 1 if oddDegree else nconstraints)
+                #         if dimension > 1:
 
-                                if nconstraints > 1:
-                                    initSol[:nconstraints-1, freeBounds[2]:freeBounds[3]
-                                            ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
-                                    localAssemblyWeights[:nconstraints-1,
-                                                         freeBounds[2]:freeBounds[3]] += 1.0
-                            else:
-                                localAssemblyWeights[:nconstraints,
-                                                     freeBounds[2]:freeBounds[3]] += 1.0
-                                initSol[:nconstraints, freeBounds[2]:freeBounds[3]
-                                        ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
+                #             freeBounds[2] = 0 if self.isClamped['bottom'] else(
+                #                 nconstraints - 1 if oddDegree else nconstraints)
+                #             freeBounds[3] = len(localBCAssembly[0, :]) if self.isClamped['top'] else len(
+                #                 localBCAssembly[0, :])-(nconstraints-1 if oddDegree else nconstraints)
 
-                    if 'right' in self.boundaryConstraints:
-                        if dimension == 1:
-                            if oddDegree:
-                                if nconstraints > 1:
-                                    initSol[-nconstraints +
-                                            1:] = beta * initSol[-nconstraints +
-                                            1:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
-                                initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
-                                    1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
-                            else:
-                                initSol[-nconstraints:] = beta * initSol[-nconstraints:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
+                #             if dimension > 2:
+                #                 freeBounds[4] = 0 if self.isClamped['down'] else(
+                #                     nconstraints - 1 if oddDegree else nconstraints)
+                #                 freeBounds[5] = len(localBCAssembly[:, :, 0]) if self.isClamped['up'] else len(
+                #                     localBCAssembly[:, :, 0])-(nconstraints-1 if oddDegree else nconstraints)
 
-                        else:
-                            if oddDegree:
-                                localBCAssembly[-nconstraints, freeBounds[2]:freeBounds[3]
-                                                ] += self.boundaryConstraints['right'][nconstraints-1, freeBounds[2]:freeBounds[3]]
-                                localAssemblyWeights[-nconstraints,
-                                                     freeBounds[2]:freeBounds[3]] += 1.0
+                #         # First update hte control point vector with constraints for supporting points
+                #         if dimension == 1:
 
-                                if nconstraints > 1:
-                                    initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3]
-                                            ] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
-                                    localAssemblyWeights[-nconstraints + 1:,
-                                                         freeBounds[2]:freeBounds[3]] += 1.0
-                            else:
-                                localAssemblyWeights[-nconstraints:,
-                                                     freeBounds[2]:freeBounds[3]] += 1.0
-                                initSol[-nconstraints:, freeBounds[2]: freeBounds[3]] = self.boundaryConstraints['right'][
-                                    nconstraints: degree + loffset, freeBounds[2]: freeBounds[3]]
+                #             if 'left' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     if nconstraints > 1:
+                #                         initSol[: nconstraints -
+                #                                 1] = beta * initSol[: nconstraints -1] + (1-beta) * self.boundaryConstraints['left'][-degree-loffset: -nconstraints]
+                #                     initSol[nconstraints-1] = alpha * initSol[nconstraints-1] + (
+                #                         1-alpha) * self.boundaryConstraints['left'][-nconstraints]
+                #                 else:
+                #                     initSol[: nconstraints] = beta * initSol[: nconstraints] + (1-beta) * self.boundaryConstraints['left'][-degree -
+                #                                                                             loffset: -nconstraints]
 
-                    if 'top' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[freeBounds[0]: freeBounds[1],
-                                            -nconstraints] += self.boundaryConstraints['top'][
-                                freeBounds[0]: freeBounds[1],
-                                nconstraints - 1]
-                            localAssemblyWeights[freeBounds[0]
-                                :freeBounds[1], -nconstraints] += 1.0
+                #             if 'right' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     if nconstraints > 1:
+                #                         initSol[-nconstraints +
+                #                                 1:] = beta * initSol[-nconstraints +
+                #                                 1:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
+                #                     initSol[-nconstraints] = alpha * initSol[-nconstraints] + (
+                #                         1-alpha) * self.boundaryConstraints['right'][nconstraints-1]
+                #                 else:
+                #                     initSol[-nconstraints:] = beta * initSol[-nconstraints:] + (1-beta) * self.boundaryConstraints['right'][nconstraints: degree+loffset]
 
-                            if nconstraints > 1:
-                                initSol[freeBounds[0]: freeBounds[1],
-                                        -nconstraints + 1:] = self.boundaryConstraints['top'][
-                                    freeBounds[0]: freeBounds[1],
-                                    nconstraints: loffset + degree]
-                                localAssemblyWeights[freeBounds[0]
-                                    :freeBounds[1], -nconstraints+1:] += 1.0
-                        else:
-                            initSol[freeBounds[0]:freeBounds[1], -nconstraints:] = self.boundaryConstraints['top'][freeBounds[0]                                                                                                                   :freeBounds[1], nconstraints:loffset+degree]
-                            localAssemblyWeights[freeBounds[0]
-                                :freeBounds[1], -nconstraints:] += 1.0
+                #         # END: if dimension == 1
+                #         elif dimension == 2:
 
-                    if 'bottom' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[freeBounds[0]:freeBounds[1],
-                                            nconstraints-1] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -nconstraints]
-                            localAssemblyWeights[freeBounds[0]
-                                :freeBounds[1], nconstraints-1] += 1.0
+                #             if 'left' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[nconstraints-1, freeBounds[2]:freeBounds[3]
+                #                                     ] += self.boundaryConstraints['left'][-nconstraints, freeBounds[2]:freeBounds[3]]
+                #                     localAssemblyWeights[nconstraints-1,
+                #                                         freeBounds[2]:freeBounds[3]] += 1.0
 
-                            if nconstraints > 1:
-                                initSol[freeBounds[0]: freeBounds[1],
-                                        : nconstraints - 1] = self.boundaryConstraints['bottom'][
-                                    freeBounds[0]: freeBounds[1],
-                                    -degree - loffset: -nconstraints]
-                                localAssemblyWeights[freeBounds[0]: freeBounds[1],
-                                                     : nconstraints - 1] += 1.0
-                        else:
-                            initSol[freeBounds[0]: freeBounds[1],
-                                    : nconstraints] = self.boundaryConstraints['bottom'][
-                                freeBounds[0]: freeBounds[1],
-                                -degree - loffset: -nconstraints]
-                            localAssemblyWeights[freeBounds[0]
-                                :freeBounds[1], : nconstraints] += 1.0
+                #                     if nconstraints > 1:
+                #                         initSol[:nconstraints-1, freeBounds[2]:freeBounds[3]
+                #                                 ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
+                #                         localAssemblyWeights[:nconstraints-1,
+                #                                             freeBounds[2]:freeBounds[3]] += 1.0
+                #                 else:
+                #                     localAssemblyWeights[:nconstraints,
+                #                                         freeBounds[2]:freeBounds[3]] += 1.0
+                #                     initSol[:nconstraints, freeBounds[2]:freeBounds[3]
+                #                             ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3]]
 
-                    if 'top-left' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[nconstraints-1, -
-                                            nconstraints] += self.boundaryConstraints['top-left'][-nconstraints, nconstraints-1]
-                            localAssemblyWeights[nconstraints -
-                                                 1, -nconstraints] += 1.0
+                #             if 'right' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[-nconstraints, freeBounds[2]:freeBounds[3]
+                #                                     ] += self.boundaryConstraints['right'][nconstraints-1, freeBounds[2]:freeBounds[3]]
+                #                     localAssemblyWeights[-nconstraints,
+                #                                         freeBounds[2]:freeBounds[3]] += 1.0
 
-                            if nconstraints > 1:
-                                assert(freeBounds[0] == nconstraints - 1)
-                                initSol[: nconstraints -
-                                        1, -nconstraints + 1:] = 0
-                                localAssemblyWeights[: nconstraints -
-                                                     1, -nconstraints + 1:] += 1.0
-                                localBCAssembly[: nconstraints - 1, -nconstraints + 1:] += self.boundaryConstraints['top-left'][-degree -
-                                                                                                                                loffset: -nconstraints, nconstraints: degree + loffset]
-                        else:
-                            initSol[: nconstraints, -nconstraints:] = self.boundaryConstraints['top-left'][-degree -
-                                                                                                           loffset: -nconstraints, nconstraints: degree + loffset]
-                            localAssemblyWeights[: nconstraints, -
-                                                 nconstraints:] += 1.0
+                #                     if nconstraints > 1:
+                #                         initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3]
+                #                                 ] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3]]
+                #                         localAssemblyWeights[-nconstraints + 1:,
+                #                                             freeBounds[2]:freeBounds[3]] += 1.0
+                #                 else:
+                #                     localAssemblyWeights[-nconstraints:,
+                #                                         freeBounds[2]:freeBounds[3]] += 1.0
+                #                     initSol[-nconstraints:, freeBounds[2]: freeBounds[3]] = self.boundaryConstraints['right'][
+                #                         nconstraints: degree + loffset, freeBounds[2]: freeBounds[3]]
 
-                    if 'bottom-right' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[-nconstraints,
-                                            nconstraints-1] += self.boundaryConstraints['bottom-right'][nconstraints-1, -nconstraints]
-                            localAssemblyWeights[-nconstraints,
-                                                 nconstraints-1] += 1.0
+                #             if 'top' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]: freeBounds[1],
+                #                                     -nconstraints] += self.boundaryConstraints['top'][
+                #                         freeBounds[0]: freeBounds[1],
+                #                         nconstraints - 1]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], -nconstraints] += 1.0
 
-                            if nconstraints > 1:
-                                assert(freeBounds[2] == nconstraints - 1)
-                                initSol[-nconstraints + 1:, : nconstraints - 1] = self.boundaryConstraints['bottom-right'][
-                                    nconstraints: degree + loffset, -degree - loffset: -nconstraints]
-                                localAssemblyWeights[-nconstraints +
-                                                     1:, : nconstraints - 1] += 1.0
-                        else:
-                            initSol[-nconstraints:, : nconstraints] = self.boundaryConstraints['bottom-right'][
-                                nconstraints: degree + loffset, -degree - loffset: -nconstraints]
-                            localAssemblyWeights[-nconstraints:,
-                                                 : nconstraints] += 1.0
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1],
+                #                                 -nconstraints + 1:] = self.boundaryConstraints['top'][
+                #                             freeBounds[0]: freeBounds[1],
+                #                             nconstraints: loffset + degree]
+                #                         localAssemblyWeights[freeBounds[0]
+                #                             :freeBounds[1], -nconstraints+1:] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]:freeBounds[1], -nconstraints:] = self.boundaryConstraints['top'][freeBounds[0]                                                                                                                   :freeBounds[1], nconstraints:loffset+degree]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], -nconstraints:] += 1.0
 
-                    if 'bottom-left' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[nconstraints-1,
-                                            nconstraints-1] += self.boundaryConstraints['bottom-left'][-nconstraints, -nconstraints]
-                            localAssemblyWeights[nconstraints -
-                                                 1, nconstraints-1] += 1.0
+                #             if 'bottom' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]:freeBounds[1],
+                #                                     nconstraints-1] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -nconstraints]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], nconstraints-1] += 1.0
 
-                            if nconstraints > 1:
-                                assert(freeBounds[0] == nconstraints - 1)
-                                initSol[: nconstraints - 1, : nconstraints - 1] = self.boundaryConstraints['bottom-left'][-degree -
-                                                                                                                          loffset: -nconstraints, -degree - loffset: -nconstraints]
-                                localAssemblyWeights[: nconstraints -
-                                                     1, : nconstraints - 1] += 1.0
-                        else:
-                            initSol[: nconstraints, : nconstraints] = self.boundaryConstraints['bottom-left'][-degree -
-                                                                                                              loffset: -nconstraints, -degree - loffset: -nconstraints]
-                            localAssemblyWeights[: nconstraints,
-                                                 : nconstraints] += 1.0
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1],
+                #                                 : nconstraints - 1] = self.boundaryConstraints['bottom'][
+                #                             freeBounds[0]: freeBounds[1],
+                #                             -degree - loffset: -nconstraints]
+                #                         localAssemblyWeights[freeBounds[0]: freeBounds[1],
+                #                                             : nconstraints - 1] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]: freeBounds[1],
+                #                             : nconstraints] = self.boundaryConstraints['bottom'][
+                #                         freeBounds[0]: freeBounds[1],
+                #                         -degree - loffset: -nconstraints]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], : nconstraints] += 1.0
 
-                    if 'top-right' in self.boundaryConstraints:
-                        if oddDegree:
-                            localBCAssembly[-nconstraints, -nconstraints] += self.boundaryConstraints['top-right'][
-                                nconstraints - 1, nconstraints - 1]
-                            localAssemblyWeights[-nconstraints, -
-                                                 nconstraints] += 1.0
+                #             # if 'top-left' in self.boundaryConstraints:
+                #             #     localAssemblyWeights[: nconstraints -1, -nconstraints + 1:] += 1.0
+                #             # if 'bottom-right' in self.boundaryConstraints:
+                #             #     localAssemblyWeights[-nconstraints +1:, : nconstraints - 1] += 1.0
+                #             # if 'bottom-left' in self.boundaryConstraints:
+                #             #     localAssemblyWeights[: nconstraints - 1, : nconstraints - 1] += 1.0
+                #             # if 'top-right' in self.boundaryConstraints:
+                #             #     localAssemblyWeights[-nconstraints +1:, -nconstraints + 1:] += 1.0
 
-                            if nconstraints > 1:
-                                initSol[-nconstraints + 1:, -nconstraints + 1:] = self.boundaryConstraints['top-right'][
-                                    nconstraints: degree + loffset, nconstraints: degree + loffset]
-                                localAssemblyWeights[-nconstraints +
-                                                     1:, -nconstraints + 1:] += 1.0
-                        else:
-                            initSol[-nconstraints:, -nconstraints:] = self.boundaryConstraints['top-right'][
-                                nconstraints: degree + loffset, nconstraints: degree + loffset]
-                            localAssemblyWeights[-nconstraints:, -
-                                                 nconstraints:] += 1.0
+                #             if 'top-left' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[nconstraints-1, -
+                #                                     nconstraints] += self.boundaryConstraints['top-left'][-nconstraints, nconstraints-1]
+                #                     localAssemblyWeights[nconstraints -
+                #                                         1, -nconstraints] += 1.0
 
-                # All internal DoFs should get a weight = 1.0
-                localAssemblyWeights[freeBounds[0]: freeBounds[1],
-                                     freeBounds[2]: freeBounds[3]] += 1.0
+                #                     if nconstraints > 1:
+                #                         assert(freeBounds[0] == nconstraints - 1)
+                #                         initSol[: nconstraints -
+                #                                 1, -nconstraints + 1:] = 0
+                #                         localAssemblyWeights[: nconstraints -
+                #                                             1, -nconstraints + 1:] += 1.0
+                #                         localBCAssembly[: nconstraints - 1, -nconstraints + 1:] += self.boundaryConstraints['top-left'][-degree -
+                #                                                                                                                         loffset: -nconstraints, nconstraints: degree + loffset]
+                #                 else:
+                #                     initSol[: nconstraints, -nconstraints:] = self.boundaryConstraints['top-left'][-degree -
+                #                                                                                                 loffset: -nconstraints, nconstraints: degree + loffset]
+                #                     localAssemblyWeights[: nconstraints, -
+                #                                         nconstraints:] += 1.0
 
-                if verbose:
-                    if 'left' in self.boundaryConstraints:
-                        print(
-                            'Error left: ', np.abs(
-                                self.boundaryConstraints['left']
-                                [-degree - loffset: -nconstraints, :] -
-                                initSol[: nconstraints - 1, :]).T)
-                    if 'right' in self.boundaryConstraints:
-                        print(
-                            'Error right: ', np.abs(
-                                self.boundaryConstraints['right']
-                                [nconstraints: degree + loffset, :] -
-                                initSol[-nconstraints + 1:, :]).T)
-                    if 'top' in self.boundaryConstraints:
-                        print(
-                            'Error top: ', np.abs(
-                                self.boundaryConstraints['top'][:, nconstraints:loffset+degree] -
-                                initSol[:, -nconstraints+1:]))
-                    if 'bottom' in self.boundaryConstraints:
-                        print(
-                            'Error bottom: ', np.abs(
-                                self.boundaryConstraints['bottom']
-                                [:, -degree - loffset: -nconstraints] -
-                                initSol[:, : nconstraints - 1]))
+                #             if 'bottom-right' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[-nconstraints,
+                #                                     nconstraints-1] += self.boundaryConstraints['bottom-right'][nconstraints-1, -nconstraints]
+                #                     localAssemblyWeights[-nconstraints,
+                #                                         nconstraints-1] += 1.0
 
-                if dimension > 1:
-                    initSol = np.divide(
-                        initSol + localBCAssembly, localAssemblyWeights)
+                #                     if nconstraints > 1:
+                #                         assert(freeBounds[2] == nconstraints - 1)
+                #                         initSol[-nconstraints + 1:, : nconstraints - 1] = self.boundaryConstraints['bottom-right'][
+                #                             nconstraints: degree + loffset, -degree - loffset: -nconstraints]
+                #                         localAssemblyWeights[-nconstraints +
+                #                                             1:, : nconstraints - 1] += 1.0
+                #                 else:
+                #                     initSol[-nconstraints:, : nconstraints] = self.boundaryConstraints['bottom-right'][
+                #                         nconstraints: degree + loffset, -degree - loffset: -nconstraints]
+                #                     localAssemblyWeights[-nconstraints:,
+                #                                         : nconstraints] += 1.0
+
+                #             if 'bottom-left' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[nconstraints-1,
+                #                                     nconstraints-1] += self.boundaryConstraints['bottom-left'][-nconstraints, -nconstraints]
+                #                     localAssemblyWeights[nconstraints -
+                #                                         1, nconstraints-1] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         assert(freeBounds[0] == nconstraints - 1)
+                #                         initSol[: nconstraints - 1, : nconstraints - 1] = self.boundaryConstraints['bottom-left'][-degree -
+                #                                                                                                                 loffset: -nconstraints, -degree - loffset: -nconstraints]
+                #                         localAssemblyWeights[: nconstraints -
+                #                                             1, : nconstraints - 1] += 1.0
+                #                 else:
+                #                     initSol[: nconstraints, : nconstraints] = self.boundaryConstraints['bottom-left'][-degree -
+                #                                                                                                     loffset: -nconstraints, -degree - loffset: -nconstraints]
+                #                     localAssemblyWeights[: nconstraints,
+                #                                         : nconstraints] += 1.0
+
+                #             if 'top-right' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[-nconstraints, -nconstraints] += self.boundaryConstraints['top-right'][
+                #                         nconstraints - 1, nconstraints - 1]
+                #                     localAssemblyWeights[-nconstraints, -
+                #                                         nconstraints] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[-nconstraints + 1:, -nconstraints + 1:] = self.boundaryConstraints['top-right'][
+                #                             nconstraints: degree + loffset, nconstraints: degree + loffset]
+                #                         localAssemblyWeights[-nconstraints +
+                #                                             1:, -nconstraints + 1:] += 1.0
+                #                 else:
+                #                     initSol[-nconstraints:, -nconstraints:] = self.boundaryConstraints['top-right'][
+                #                         nconstraints: degree + loffset, nconstraints: degree + loffset]
+                #                     localAssemblyWeights[-nconstraints:, -
+                #                                         nconstraints:] += 1.0
+
+                #         # END: if dimension == 2
+                #         else:
+
+                #             if 'left' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[nconstraints-1, freeBounds[2]:freeBounds[3],
+                #                                     freeBounds[4]:freeBounds[5]] += self.boundaryConstraints['left'][-nconstraints, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[nconstraints-1,
+                #                                         freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[:nconstraints-1, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]
+                #                                 ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]]
+                #                         localAssemblyWeights[:nconstraints-1,
+                #                                             freeBounds[2]:freeBounds[3],freeBounds[4]:freeBounds[5]] += 1.0
+                #                 else:
+                #                     localAssemblyWeights[:nconstraints,
+                #                                         freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]] += 1.0
+                #                     initSol[:nconstraints, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]
+                #                             ] = self.boundaryConstraints['left'][-degree - loffset:-nconstraints, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]]
+
+                #             if 'right' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[-nconstraints, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]
+                #                                     ] += self.boundaryConstraints['right'][nconstraints-1, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[-nconstraints,
+                #                                         freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[-nconstraints + 1:, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]
+                #                                 ] = self.boundaryConstraints['right'][nconstraints: degree + loffset, freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]]
+                #                         localAssemblyWeights[-nconstraints + 1:,
+                #                                             freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]] += 1.0
+                #                 else:
+                #                     localAssemblyWeights[-nconstraints:,
+                #                                         freeBounds[2]:freeBounds[3], freeBounds[4]:freeBounds[5]] += 1.0
+                #                     initSol[-nconstraints:, freeBounds[2]: freeBounds[3], freeBounds[4]:freeBounds[5]] = self.boundaryConstraints['right'][
+                #                         nconstraints: degree + loffset, freeBounds[2]: freeBounds[3], freeBounds[4]:freeBounds[5]]
+
+                #             if 'top' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]: freeBounds[1],
+                #                                     -nconstraints, freeBounds[4]:freeBounds[5]] += self.boundaryConstraints['top'][
+                #                         freeBounds[0]: freeBounds[1],
+                #                         nconstraints - 1, freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], -nconstraints, freeBounds[4]:freeBounds[5]] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1],
+                #                                 -nconstraints + 1:, freeBounds[4]:freeBounds[5]] = self.boundaryConstraints['top'][
+                #                             freeBounds[0]: freeBounds[1],
+                #                             nconstraints: loffset + degree, freeBounds[4]:freeBounds[5]]
+                #                         localAssemblyWeights[freeBounds[0]
+                #                             :freeBounds[1], -nconstraints+1:, freeBounds[4]:freeBounds[5]] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]:freeBounds[1], -nconstraints:, freeBounds[4]:freeBounds[5]] = self.boundaryConstraints['top'][freeBounds[0]                                                                                                                   :freeBounds[1], nconstraints:loffset+degree, freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], -nconstraints:, freeBounds[4]:freeBounds[5]] += 1.0
+
+                #             if 'bottom' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]:freeBounds[1],
+                #                                     nconstraints-1, freeBounds[4]:freeBounds[5]] += self.boundaryConstraints['bottom'][freeBounds[0]:freeBounds[1], -nconstraints, freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], nconstraints-1, freeBounds[4]:freeBounds[5]] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1],
+                #                                 : nconstraints - 1, freeBounds[4]:freeBounds[5]] = self.boundaryConstraints['bottom'][
+                #                             freeBounds[0]: freeBounds[1],
+                #                             -degree - loffset: -nconstraints, freeBounds[4]:freeBounds[5]]
+                #                         localAssemblyWeights[freeBounds[0]: freeBounds[1],
+                #                                             : nconstraints - 1, freeBounds[4]:freeBounds[5]] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]: freeBounds[1],
+                #                             : nconstraints, freeBounds[4]:freeBounds[5]] = self.boundaryConstraints['bottom'][
+                #                         freeBounds[0]: freeBounds[1],
+                #                         -degree - loffset: -nconstraints, freeBounds[4]:freeBounds[5]]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], : nconstraints, freeBounds[4]:freeBounds[5]] += 1.0
+
+                #             if 'down' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                                     nconstraints - 1] += self.boundaryConstraints['down'][
+                #                         freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                         -nconstraints]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], freeBounds[2]: freeBounds[3], nconstraints - 1] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                                 : nconstraints - 1] = self.boundaryConstraints['down'][
+                #                             freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                             -degree - loffset: -nconstraints]
+                #                         localAssemblyWeights[freeBounds[0]
+                #                             :freeBounds[1], freeBounds[2]: freeBounds[3], : nconstraints - 1] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]:freeBounds[1], freeBounds[2]: freeBounds[3], : nconstraints] = self.boundaryConstraints['down'][freeBounds[0]                                                                                                                   :freeBounds[1], freeBounds[2]: freeBounds[3], -degree - loffset: -nconstraints]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], freeBounds[2]: freeBounds[3], : nconstraints] += 1.0
+
+                #             if 'up' in self.boundaryConstraints:
+                #                 if oddDegree:
+                #                     localBCAssembly[freeBounds[0]:freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                                     -nconstraints] += self.boundaryConstraints['up'][freeBounds[0]:freeBounds[1], freeBounds[2]: freeBounds[3], nconstraints-1]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], freeBounds[2]: freeBounds[3], -nconstraints] += 1.0
+
+                #                     if nconstraints > 1:
+                #                         initSol[freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],-nconstraints + 1:
+                #                                 ] = self.boundaryConstraints['up'][
+                #                             freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                             nconstraints: loffset + degree]
+                #                         localAssemblyWeights[freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                                             -nconstraints + 1:] += 1.0
+                #                 else:
+                #                     initSol[freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                         -nconstraints:] = self.boundaryConstraints['up'][
+                #                         freeBounds[0]: freeBounds[1], freeBounds[2]: freeBounds[3],
+                #                         nconstraints:loffset+degree]
+                #                     localAssemblyWeights[freeBounds[0]
+                #                         :freeBounds[1], freeBounds[2]: freeBounds[3], -nconstraints:] += 1.0
+
+                #     # All internal DoFs should get a weight = 1.0
+                #     if dimension == 1:
+                #         localAssemblyWeights[freeBounds[0]: freeBounds[1]] += 1.0
+                #     elif dimension == 2:
+                #         localAssemblyWeights[freeBounds[0]: freeBounds[1],
+                #                             freeBounds[2]: freeBounds[3]] += 1.0
+                #     else:
+                #         localAssemblyWeights[freeBounds[0]: freeBounds[1],
+                #                             freeBounds[2]: freeBounds[3],
+                #                             freeBounds[4]: freeBounds[5]] += 1.0
+
+                #     if verbose:
+                #         if 'left' in self.boundaryConstraints:
+                #             print(
+                #                 'Error left: ', np.abs(
+                #                     self.boundaryConstraints['left']
+                #                     [-degree - loffset: -nconstraints, :] -
+                #                     initSol[: nconstraints - 1, :]).T)
+                #         if 'right' in self.boundaryConstraints:
+                #             print(
+                #                 'Error right: ', np.abs(
+                #                     self.boundaryConstraints['right']
+                #                     [nconstraints: degree + loffset, :] -
+                #                     initSol[-nconstraints + 1:, :]).T)
+                #         if 'top' in self.boundaryConstraints:
+                #             print(
+                #                 'Error top: ', np.abs(
+                #                     self.boundaryConstraints['top'][:, nconstraints:loffset+degree] -
+                #                     initSol[:, -nconstraints+1:]))
+                #         if 'bottom' in self.boundaryConstraints:
+                #             print(
+                #                 'Error bottom: ', np.abs(
+                #                     self.boundaryConstraints['bottom']
+                #                     [:, -degree - loffset: -nconstraints] -
+                #                     initSol[:, : nconstraints - 1]))
+
+                #     if dimension > 1:
+                #         initSol = np.divide(
+                #             initSol + localBCAssembly, localAssemblyWeights)
+                #         if dimension == 3:
+                #             initSol = np.moveaxis(initSol, -1, 0)
+                #             initSol = np.moveaxis(initSol, 1, 2)
+            ########################### END ########################
 
             initialDecodedError = residualFunction(initSol, printVerbose=True)
 
@@ -3431,6 +2753,7 @@ class InputControlBlock:
             decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
                                           self.corebounds[1][0]: self.corebounds[1][1]].reshape(-1))
         elif dimension == 3:
+            print("Shapes: ", self.refSolutionLocal.shape, self.solutionDecoded.shape)
             decodedErrorT = (self.refSolutionLocal -
                              self.solutionDecoded) / solutionRange
             decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
@@ -3504,15 +2827,21 @@ if verbose: masterControl.foreach(InputControlBlock.show)
 
 def send_receive_all():
 
-    if dimension < 3:
-        masterControl.foreach(InputControlBlock.send_diy)
-    else:
-        masterControl.foreach(InputControlBlock.send_diy_3d)
+    masterControl.foreach(InputControlBlock.send_diy)
+
+    # if dimension < 3:
+    #     masterControl.foreach(InputControlBlock.send_diy)
+    # else:
+    #     masterControl.foreach(InputControlBlock.send_diy_3d)
+
     masterControl.exchange(False)
-    if dimension < 3:
-        masterControl.foreach(InputControlBlock.recv_diy)
-    else:
-        masterControl.foreach(InputControlBlock.recv_diy_3d)
+
+    masterControl.foreach(InputControlBlock.recv_diy)
+
+    # if dimension < 3:
+    #     masterControl.foreach(InputControlBlock.recv_diy)
+    # else:
+    #     masterControl.foreach(InputControlBlock.recv_diy_3d)
 
     return
 
