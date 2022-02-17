@@ -191,7 +191,7 @@ class ProblemSolver1D:
         return residual_nrm
 
 
-    def send_diy(self, cp):
+    def send_diy(self, inputCB, cp):
 
         verbose = False
         oddDegree = (self.degree % 2)
@@ -201,7 +201,7 @@ class ProblemSolver1D:
         link = cp.link()
         for i in range(len(link)):
             target = link.target(i)
-            if len(self.controlPointData):
+            if len(inputCB.controlPointData):
                 dir = link.direction(i)
                 if dir[0] == 0:
                     continue
@@ -210,26 +210,26 @@ class ProblemSolver1D:
                 if dir[0] > 0:  # target block is to the right of current subdomain
                     if verbose:
                         print("%d sending to %d" % (cp.gid(), target.gid), 'Left: ',
-                                self.controlPointData[-1:-2-self.degree-self.augmentSpanSpace:-1, :].shape)
+                                inputCB.controlPointData[-1:-2-self.degree-self.augmentSpanSpace:-1, :].shape)
 
-                    cp.enqueue(target, self.controlPointData[-loffset:])
-                    # cp.enqueue(target, self.controlPointData)
+                    cp.enqueue(target, inputCB.controlPointData[-loffset:])
+                    # cp.enqueue(target, inputCB.controlPointData)
                     cp.enqueue(
-                        target, self.knotsAdaptive['x'][-1:-2-self.degree-augmentSpanSpace:-1])
+                        target, inputCB.knotsAdaptive['x'][-1:-2-self.degree-self.augmentSpanSpace:-1])
 
                 else:  # target block is to the left of current subdomain
                     if verbose:
                         print("%d sending to %d" % (cp.gid(), target.gid), 'Right: ',
-                                self.controlPointData[degree+augmentSpanSpace::-1, :].shape)
+                                inputCB.controlPointData[self.degree+self.augmentSpanSpace::-1, :].shape)
 
-                    cp.enqueue(target, self.controlPointData[:loffset])
-                    # cp.enqueue(target, self.controlPointData)
-                    cp.enqueue(target, self.knotsAdaptive['x'][0:(
-                        degree+augmentSpanSpace+1)])
+                    cp.enqueue(target, inputCB.controlPointData[:loffset])
+                    # cp.enqueue(target, inputCB.controlPointData)
+                    cp.enqueue(target, inputCB.knotsAdaptive['x'][0:(
+                        self.degree+self.augmentSpanSpace+1)])
 
         return
 
-    def recv_diy(self, cp):
+    def recv_diy(self, inputCB, cp):
 
         verbose = False
         link = cp.link()
@@ -247,19 +247,19 @@ class ProblemSolver1D:
             if dir[0] < 0:  # target block is to the left of current subdomain
                 # print('Right: ', np.array(o[2:pl+2]).reshape(useDerivativeConstraints+1,pll).T)
 
-                self.boundaryConstraints['left'] = cp.dequeue(tgid)
-                self.ghostKnots['left'] = cp.dequeue(tgid)
+                inputCB.boundaryConstraints['left'] = cp.dequeue(tgid)
+                inputCB.ghostKnots['left'] = cp.dequeue(tgid)
                 if verbose:
                     print("Left: %d received from %d: from direction %s" % (cp.gid(), tgid,
-                            dir), self.leftconstraint.shape, self.leftconstraintKnots.shape)
+                            dir), inputCB.leftconstraint.shape, inputCB.leftconstraintKnots.shape)
 
             else:  # target block is to right of current subdomain
 
-                self.boundaryConstraints['right'] = cp.dequeue(tgid)
-                self.ghostKnots['right'] = cp.dequeue(tgid)
+                inputCB.boundaryConstraints['right'] = cp.dequeue(tgid)
+                inputCB.ghostKnots['right'] = cp.dequeue(tgid)
                 if verbose:
                     print("Right: %d received from %d: from direction %s" % (cp.gid(), tgid,
-                            dir), self.rightconstraint.shape, self.rightconstraintKnots.shape)
+                            dir), inputCB.rightconstraint.shape, inputCB.rightconstraintKnots.shape)
 
         return
 
