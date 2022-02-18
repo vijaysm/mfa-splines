@@ -8,7 +8,8 @@ import timeit
 
 # import numpy as np
 from functools import reduce
-#from numpy import dtype
+
+# from numpy import dtype
 
 import pandas as pd
 
@@ -17,9 +18,9 @@ from autograd import elementwise_grad as egrad
 import autograd.numpy as np
 import numpy as npo
 
-#from pymoab import core, types
-#from pymoab.scd import ScdInterface
-#from pymoab.hcoord import HomCoord
+# from pymoab import core, types
+# from pymoab.scd import ScdInterface
+# from pymoab.hcoord import HomCoord
 
 # SciPY imports
 import scipy
@@ -35,26 +36,29 @@ from numba import jit
 # Plotting imports
 from matplotlib import pyplot as plt
 from matplotlib import cm
+
 # from pyevtk.hl import gridToVTK
 
 from ProblemSolver1D import ProblemSolver1D
 from ProblemSolver2D import ProblemSolver2D
 from ProblemSolver3D import ProblemSolver3D
 
-plt.style.use(['seaborn-whitegrid'])
-params = {"ytick.color": "b",
-          "xtick.color": "b",
-          "axes.labelcolor": "b",
-          "axes.edgecolor": "b"}
+plt.style.use(["seaborn-whitegrid"])
+params = {
+    "ytick.color": "b",
+    "xtick.color": "b",
+    "axes.labelcolor": "b",
+    "axes.edgecolor": "b",
+}
 plt.rcParams.update(params)
 
-directions = ['x', 'y', 'z']
+directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
 problem = 1
 dimension = 3
 degree = 3
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
-nSubDomains = [1,1,2]
+nSubDomains = [1, 1, 2]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -75,13 +79,14 @@ useAdditiveSchwartz = True
 enforceBounds = False
 alwaysSolveConstrained = False
 
-if fullyPinned: useDiagonalBlocks = False
+if fullyPinned:
+    useDiagonalBlocks = False
 
 # ------------------------------------------
 # Solver parameters
 
 #                      0      1       2         3          4         5
-solverMethods = ['L-BFGS-B', 'CG', 'SLSQP', 'COBYLA', 'Newton-CG', 'TNC']
+solverMethods = ["L-BFGS-B", "CG", "SLSQP", "COBYLA", "Newton-CG", "TNC"]
 solverScheme = solverMethods[0]
 solverMaxIter = 0
 nASMIterations = 5
@@ -101,12 +106,12 @@ Dmin = Dmax = 0
 # Initialize DIY
 # commWorld = diy.mpi.MPIComm()           # world
 commWorld = MPI.COMM_WORLD
-masterControl = diy.Master(commWorld)         # master
+masterControl = diy.Master(commWorld)  # master
 nprocs = commWorld.size
 rank = commWorld.rank
 
 if rank == 0:
-    print('Argument List:', str(sys.argv))
+    print("Argument List:", str(sys.argv))
 
 ##########################
 # Parse command line overrides if any
@@ -117,7 +122,8 @@ argv = sys.argv[1:]
 def usage():
     print(
         sys.argv[0],
-        '-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations> -g <augmentSpanSpace>')
+        "-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations> -g <augmentSpanSpace>",
+    )
     sys.exit(2)
 
 
@@ -127,42 +133,87 @@ Dmax = np.array(dimension, dtype=np.float32)
 
 ######################################################################
 # Get the argumnts from command-line to override options
-parser = argparse.ArgumentParser(prog='UnclampedSolver')
-parser.add_argument("-v", "--verbose", help="increase output verbosity", default=False,
-                    action="store_true")
-parser.add_argument("--dimension", help="specify problem spatial dimension",
-                    type=int, default=dimension)
+parser = argparse.ArgumentParser(prog="UnclampedSolver")
 parser.add_argument(
-    "--problem", help="specify problem identifier", type=int, default=problem)
+    "-v",
+    "--verbose",
+    help="increase output verbosity",
+    default=False,
+    action="store_true",
+)
 parser.add_argument(
-    "-n", "--nsubdomains", help="specify number of subdomains in all directions", type=int,
-    default=1)
+    "--dimension", help="specify problem spatial dimension", type=int, default=dimension
+)
 parser.add_argument(
-    "-x", "--nx", help="specify number of subdomains in X-direction", type=int,
-    default=nSubDomainsX)
+    "--problem", help="specify problem identifier", type=int, default=problem
+)
 parser.add_argument(
-    "-y", "--ny", help="specify number of subdomains in Y-direction", type=int,
-    default=nSubDomainsY)
+    "-n",
+    "--nsubdomains",
+    help="specify number of subdomains in all directions",
+    type=int,
+    default=1,
+)
 parser.add_argument(
-    "-z", "--nz", help="specify number of subdomains in Z-direction", type=int,
-    default=nSubDomainsZ)
+    "-x",
+    "--nx",
+    help="specify number of subdomains in X-direction",
+    type=int,
+    default=nSubDomainsX,
+)
 parser.add_argument(
-    "--degree", help="specify BSpline basis degree", type=int, default=degree)
+    "-y",
+    "--ny",
+    help="specify number of subdomains in Y-direction",
+    type=int,
+    default=nSubDomainsY,
+)
 parser.add_argument(
-    "--controlpoints", help="specify number of control points/subdomain in each direction",
-    type=int, default=nControlPointsInputIn)
+    "-z",
+    "--nz",
+    help="specify number of subdomains in Z-direction",
+    type=int,
+    default=nSubDomainsZ,
+)
 parser.add_argument(
-    "-g", "--aug", help="specify number of overlap regions to exchange between subdomains",
-    type=int, default=augmentSpanSpace)
-parser.add_argument("-a", "--nasm", help="specify number of outer iterations",
-                    type=int, default=nASMIterations)
-parser.add_argument("--solverIter", help="specify maximum number of subdomain solver iterations",
-                    type=int, default=solverMaxIter)
-parser.add_argument("--accel", help="specify whether to accelerate the outer iteration convergence",
-                    action="store_true")
+    "--degree", help="specify BSpline basis degree", type=int, default=degree
+)
 parser.add_argument(
-    "--wynn", help="specify whether Wynn-Epsilon algorithm (vs Aitken acceleration) should be used",
-    action="store_true")
+    "--controlpoints",
+    help="specify number of control points/subdomain in each direction",
+    type=int,
+    default=nControlPointsInputIn,
+)
+parser.add_argument(
+    "-g",
+    "--aug",
+    help="specify number of overlap regions to exchange between subdomains",
+    type=int,
+    default=augmentSpanSpace,
+)
+parser.add_argument(
+    "-a",
+    "--nasm",
+    help="specify number of outer iterations",
+    type=int,
+    default=nASMIterations,
+)
+parser.add_argument(
+    "--solverIter",
+    help="specify maximum number of subdomain solver iterations",
+    type=int,
+    default=solverMaxIter,
+)
+parser.add_argument(
+    "--accel",
+    help="specify whether to accelerate the outer iteration convergence",
+    action="store_true",
+)
+parser.add_argument(
+    "--wynn",
+    help="specify whether Wynn-Epsilon algorithm (vs Aitken acceleration) should be used",
+    action="store_true",
+)
 
 # Process the arguments
 args = parser.parse_args()
@@ -208,12 +259,13 @@ nSubDomains = [nSubDomainsX, nSubDomainsY, nSubDomainsZ]
 
 nPoints = np.array([1] * dimension, dtype=np.uint32)
 nTotalSubDomains = nSubDomainsX * nSubDomainsY * nSubDomainsZ
-isConverged = np.zeros(nTotalSubDomains, dtype='int32')
+isConverged = np.zeros(nTotalSubDomains, dtype="int32")
 L2err = np.zeros(nTotalSubDomains)
 
 # globalExtentDict = np.zeros(nTotalSubDomains*2*dimension, dtype='int32')
 # globalExtentDict[cp.gid()*4:cp.gid()*4+4] = extents
 localExtents = {}
+
 
 def interpolate_inputdata(solprofile, Xi, newX, Yi=None, newY=None, Zi=None, newZ=None):
 
@@ -223,7 +275,7 @@ def interpolate_inputdata(solprofile, Xi, newX, Yi=None, newY=None, Zi=None, new
 
     # InterpCp = interp1d(coeffs_x, self.pAdaptive, kind=interpOrder)
     if dimension == 1:
-        interp_oneD = interp1d(Xi, solprofile, kind='cubic')
+        interp_oneD = interp1d(Xi, solprofile, kind="cubic")
 
         return interp_oneD(newX)
 
@@ -243,37 +295,43 @@ coordinates = {"x": None, "y": None, "z": None}
 solution = None
 
 if dimension == 1:
-    if rank == 0: print('Setting up problem for 1-D')
+    if rank == 0:
+        print("Setting up problem for 1-D")
 
     if problem == 1:
-        Dmin = [-4.]
-        Dmax = [4.]
+        Dmin = [-4.0]
+        Dmax = [4.0]
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], 10001)
         scale = 100
-        solution = scale * (np.sinc(coordinates["x"]-1)+np.sinc(coordinates["x"]+1))
+        solution = scale * (
+            np.sinc(coordinates["x"] - 1) + np.sinc(coordinates["x"] + 1)
+        )
         # solution = scale * (np.sinc(coordinates["x"]+1) + np.sinc(2*coordinates["x"]) + np.sinc(coordinates["x"]-1))
-        solution = scale * (np.sinc(coordinates["x"]) + np.sinc(2 *
-                            coordinates["x"]-1) + np.sinc(3*coordinates["x"]+1.5))
+        solution = scale * (
+            np.sinc(coordinates["x"])
+            + np.sinc(2 * coordinates["x"] - 1)
+            + np.sinc(3 * coordinates["x"] + 1.5)
+        )
         # solution = np.zeros(coordinates["x"].shape)
         # solution[coordinates["x"] <= 0] = 1
         # solution[coordinates["x"] > 0] = -1
         # solution = scale * np.sin(math.pi * coordinates["x"]/4)
     elif problem == 2:
         solution = np.fromfile("data/s3d.raw", dtype=np.float64)
-        print('Real data shape: ', solution.shape)
-        Dmin = [0.]
-        Dmax = [1.]
+        print("Real data shape: ", solution.shape)
+        Dmin = [0.0]
+        Dmax = [1.0]
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], solution.shape[0])
         relEPS = 5e-8
     elif problem == 3:
         Y = np.fromfile("data/nek5000.raw", dtype=np.float64)
         Y = Y.reshape(200, 200)
         solution = Y[100, :]  # Y[:,150] # Y[110,:]
-        Dmin = [0.]
-        Dmax = [1.]
+        Dmin = [0.0]
+        Dmax = [1.0]
         coordinates["x"] = np.linspace(Dmin, Dmax, nPoints)
     else:
-        '''
+        """
         Y = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
 
         def plot3D(fig, Z, x=None, y=None):
@@ -295,29 +353,29 @@ if dimension == 1:
 
         print (Y.shape)
         sys.exit(2)
-        '''
+        """
 
         DJI = pd.read_csv("data/DJI.csv")
-        solution = np.array(DJI['Close'])
+        solution = np.array(DJI["Close"])
         Dmin = [0]
-        Dmax = [100.]
+        Dmax = [100.0]
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], solution.shape[0])
 
     nPoints[0] = solution.shape[0]
 
 elif dimension == 2:
-    print('Setting up problem for 2-D')
+    print("Setting up problem for 2-D")
 
     if problem == 0:
         nPoints[0] = 1025
         nPoints[1] = 2049
         scale = 1
-        Dmin = [0., 0.]
-        Dmax = [1., 1.]
+        Dmin = [0.0, 0.0]
+        Dmax = [1.0, 1.0]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
-        solution = 10*np.ones((nPoints[0], nPoints[1]))
+        solution = 10 * np.ones((nPoints[0], nPoints[1]))
         solution[:, 0] = 0
         solution[:, -1] = 0
         solution[0, :] = 0
@@ -326,11 +384,11 @@ elif dimension == 2:
         debugProblem = True
 
     elif problem == 1:
-        nPoints[0] = 1001#9001
-        nPoints[1] = 1001#9001
+        nPoints[0] = 1001  # 9001
+        nPoints[1] = 1001  # 9001
         scale = 100
-        Dmin = [-4., -4.]
-        Dmax = [4., 4.]
+        Dmin = [-4.0, -4.0]
+        Dmax = [4.0, 4.0]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
@@ -347,8 +405,13 @@ elif dimension == 2:
         # solution = solution * (1 + noise)
 
         # solution = scale * X * Y
-        solution = scale * (np.sinc(np.sqrt(X**2 + Y**2)) +
-                            np.sinc(2*((X-2)**2 + (Y+2)**2))).T
+        solution = (
+            scale
+            * (
+                np.sinc(np.sqrt(X**2 + Y**2))
+                + np.sinc(2 * ((X - 2) ** 2 + (Y + 2) ** 2))
+            ).T
+        )
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
@@ -371,18 +434,17 @@ elif dimension == 2:
         nPoints[0] = 501
         nPoints[1] = 501
         scale = 1
-        shiftX = 0.25*0
-        shiftY = -0.25*0
-        Dmin = [0., 0.]
+        shiftX = 0.25 * 0
+        shiftY = -0.25 * 0
+        Dmin = [0.0, 0.0]
         Dmin = [-math.pi, -math.pi]
         Dmax = [math.pi, math.pi]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
-        X, Y = np.meshgrid(coordinates["x"]+shiftX, coordinates["y"]+shiftY)
+        X, Y = np.meshgrid(coordinates["x"] + shiftX, coordinates["y"] + shiftY)
         # solution = scale * np.sinc(X) * np.sinc(Y)
-        solution = scale * np.cos(X+1) * np.cos(Y) + \
-            scale * np.sin(X-1) * np.sin(Y)
+        solution = scale * np.cos(X + 1) * np.cos(Y) + scale * np.sin(X - 1) * np.sin(Y)
         # solution = scale * X * Y
         # (3*degree + 1) #minimum number of control points
         del X, Y
@@ -390,18 +452,21 @@ elif dimension == 2:
     elif problem == 3:
         nPoints[0] = 1000
         nPoints[1] = 1000
-        solution = np.fromfile(
-            "data/nek5000.raw", dtype=np.float64).reshape(200, 200)
+        solution = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200, 200)
 
         Dmin = [0, 0]
-        Dmax = [100., 100.]
+        Dmax = [100.0, 100.0]
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
         if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
-            solution = interpolate_inputdata( solprofile=np.copy(solution),
-                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=coordinates["x"],
-                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=coordinates["y"] )
+            solution = interpolate_inputdata(
+                solprofile=np.copy(solution),
+                Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]),
+                newX=coordinates["x"],
+                Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
+                newY=coordinates["y"],
+            )
         print("Nek5000 shape:", solution.shape)
 
         # (3*degree + 1) #minimum number of control points
@@ -413,8 +478,7 @@ elif dimension == 2:
         nPoints[0] = 5400
         nPoints[1] = 7040
         binFactor = 4.0
-        solution = np.fromfile(
-            "data/s3d_2D.raw", dtype=np.float64).reshape(540, 704)
+        solution = np.fromfile("data/s3d_2D.raw", dtype=np.float64).reshape(540, 704)
 
         Dmin = [0, 0]
         Dmax = nPoints
@@ -422,34 +486,42 @@ elif dimension == 2:
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
         if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
-            solution = interpolate_inputdata( solprofile=np.copy(solution),
-                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=coordinates["x"],
-                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=coordinates["y"] )
+            solution = interpolate_inputdata(
+                solprofile=np.copy(solution),
+                Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]),
+                newX=coordinates["x"],
+                Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
+                newY=coordinates["y"],
+            )
         # z = z[:540,:540]
         # z = zoom(z, 1./binFactor, order=4)
         print("S3D shape:", solution.shape)
 
-
     elif problem == 5:
         nPoints[0] = 1800
         nPoints[1] = 3600
-        solution = np.fromfile("data/FLDSC_1_1800_3600.dat",
-                               dtype=np.float32).reshape(1800, 3600)
+        solution = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(
+            1800, 3600
+        )
         Dmin = [0, 0]
         Dmax = nPoints
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
         if nPoints[0] != solution.shape[0] or nPoints[1] != solution.shape[1]:
-            solution = interpolate_inputdata( solprofile=np.copy(solution),
-                                             Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]), newX=coordinates["x"],
-                                             Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]), newY=coordinates["y"] )
+            solution = interpolate_inputdata(
+                solprofile=np.copy(solution),
+                Xi=np.linspace(Dmin[0], Dmax[0], solution.shape[0]),
+                newX=coordinates["x"],
+                Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
+                newY=coordinates["y"],
+            )
         print("CESM data shape: ", solution.shape)
 
     elif problem == 6:
         # A grid of c-values
-        nPoints[0] = 6001 #2501
-        nPoints[1] = 6001 #2501
+        nPoints[0] = 6001  # 2501
+        nPoints[1] = 6001  # 2501
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
@@ -460,26 +532,28 @@ elif dimension == 2:
         some_threshold = 50.0
 
         @jit
-        def mandelbrot(c,maxiter):
+        def mandelbrot(c, maxiter):
             z = c
             for n in range(maxiter):
                 if abs(z) > 2:
                     return (n % 4 * 64) * 65536 + (n % 8 * 32) * 256 + (n % 16 * 16)
                     # return n
-                z = z*z + c
+                z = z * z + c
             return 0
 
         @jit
-        def mandelbrot_set(xmin,xmax,ymin,ymax,width,height,maxiter):
+        def mandelbrot_set(xmin, xmax, ymin, ymax, width, height, maxiter):
             r1 = npo.linspace(xmin, xmax, width, dtype=npo.float)
             r2 = npo.linspace(ymin, ymax, height, dtype=npo.float)
-            n3 = npo.empty((width,height))
+            n3 = npo.empty((width, height))
             for i in range(width):
                 for j in range(height):
-                    n3[i,j] = mandelbrot(r1[i] + 1j*r2[j],maxiter)
-            return (r1,r2,n3)
+                    n3[i, j] = mandelbrot(r1[i] + 1j * r2[j], maxiter)
+            return (r1, r2, n3)
 
-        coordinates["x"], coordinates["y"], solution = mandelbrot_set(Dmin[0],Dmax[0],Dmin[1],Dmax[1],nPoints[0],nPoints[1],N_max)
+        coordinates["x"], coordinates["y"], solution = mandelbrot_set(
+            Dmin[0], Dmax[0], Dmin[1], Dmax[1], nPoints[0], nPoints[1], N_max
+        )
         solution /= 1e4
 
         # coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
@@ -517,11 +591,11 @@ elif dimension == 2:
             nControlPointsInputIn = 50
 
     else:
-        print('Not a valid problem')
+        print("Not a valid problem")
         exit(1)
 
 elif dimension == 3:
-    print('Setting up problem for 3-D')
+    print("Setting up problem for 3-D")
 
     if problem == 1:
         nPoints[0] = 101
@@ -529,12 +603,14 @@ elif dimension == 3:
         nPoints[2] = 101
         scale = 100
         Dmin = [-4.0, -4.0, -4.0]
-        Dmax = [4., 4., 4.]
+        Dmax = [4.0, 4.0, 4.0]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
         coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
-        X, Y, Z = np.meshgrid(coordinates["x"], coordinates["y"], coordinates["z"], indexing='ij')
+        X, Y, Z = np.meshgrid(
+            coordinates["x"], coordinates["y"], coordinates["z"], indexing="ij"
+        )
 
         # solution = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
         #                                               np.sinc(np.sqrt((X+2)**2 + (Y-2)**2)) -
@@ -552,8 +628,10 @@ elif dimension == 3:
         # solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
         #                     np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
 
-        solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
-                            np.sinc(2*(X-2)**2 + (Y+2)**2 + (Z-2)**2))
+        solution = scale * (
+            np.sinc(np.sqrt(X**2 + Y**2 + Z**2))
+            + np.sinc(2 * (X - 2) ** 2 + (Y + 2) ** 2 + (Z - 2) ** 2)
+        )
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
@@ -572,8 +650,7 @@ elif dimension == 3:
         # (3*degree + 1) #minimum number of control points
         del X, Y, Z
 
-nControlPointsInput = np.array(
-    [nControlPointsInputIn] * dimension, dtype=np.uint32)
+nControlPointsInput = np.array([nControlPointsInputIn] * dimension, dtype=np.uint32)
 # if dimension == 2:
 #     nControlPointsInput = np.array([10, 10], dtype=np.uint32)
 
@@ -594,47 +671,57 @@ solutionBounds = [solution.min(), solution.max()]
 solutionRange = solutionBounds[1] - solutionBounds[0]
 solutionShape = solution.shape
 
+
 def plot_solution(solVector):
     from uvw import RectilinearGrid, DataArray
+
     if dimension == 1:
         mpl_fig = plt.figure()
-        plt.plot(coordinates["x"], solVector, 'r-', ms=2)
+        plt.plot(coordinates["x"], solVector, "r-", ms=2)
         mpl_fig.show()
     elif dimension == 2:
-        with RectilinearGrid("./structured.vtr", (coordinates["x"], coordinates["y"])) as rect:
-            rect.addPointData(DataArray(solVector, range(2), 'solution'))
+        with RectilinearGrid(
+            "./structured.vtr", (coordinates["x"], coordinates["y"])
+        ) as rect:
+            rect.addPointData(DataArray(solVector, range(2), "solution"))
     elif dimension == 3:
-        with RectilinearGrid("./structured.vtr", (coordinates["x"], coordinates["y"], coordinates["z"])) as rect:
-            rect.addPointData(DataArray(solVector, range(3), 'solution'))
+        with RectilinearGrid(
+            "./structured.vtr", (coordinates["x"], coordinates["y"], coordinates["z"])
+        ) as rect:
+            rect.addPointData(DataArray(solVector, range(3), "solution"))
     else:
         print("No visualization output available for dimension > 2")
 
 
 # Store the reference solution
-if useVTKOutput: plot_solution(solution)
+if useVTKOutput:
+    plot_solution(solution)
 
 ### Print parameter details ###
 if rank == 0:
-    print('\n==================')
-    print('Parameter details')
-    print('==================\n')
-    print('dimension = ', dimension)
-    print('problem = ', problem,
-          '[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]')
-    print('Total number of input points: ', np.prod(nPoints))
-    print('nSubDomains = ', nSubDomains, '; Total = ',
-          nSubDomainsX * nSubDomainsY * nSubDomainsZ)
-    print('degree = ', degree)
-    print('nControlPoints = ', nControlPointsInput)
-    print('nASMIterations = ', nASMIterations)
-    print('augmentSpanSpace = ', augmentSpanSpace)
-    print('useAdditiveSchwartz = ', useAdditiveSchwartz)
-    print('enforceBounds = ', enforceBounds)
-    print('maxAbsErr = ', maxAbsErr)
-    print('maxRelErr = ', maxRelErr)
-    print('solverMaxIter = ', solverMaxIter)
-    print('solverscheme = ', solverScheme)
-    print('\n=================\n')
+    print("\n==================")
+    print("Parameter details")
+    print("==================\n")
+    print("dimension = ", dimension)
+    print("problem = ", problem, "[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]")
+    print("Total number of input points: ", np.prod(nPoints))
+    print(
+        "nSubDomains = ",
+        nSubDomains,
+        "; Total = ",
+        nSubDomainsX * nSubDomainsY * nSubDomainsZ,
+    )
+    print("degree = ", degree)
+    print("nControlPoints = ", nControlPointsInput)
+    print("nASMIterations = ", nASMIterations)
+    print("augmentSpanSpace = ", augmentSpanSpace)
+    print("useAdditiveSchwartz = ", useAdditiveSchwartz)
+    print("enforceBounds = ", enforceBounds)
+    print("maxAbsErr = ", maxAbsErr)
+    print("maxRelErr = ", maxRelErr)
+    print("solverMaxIter = ", solverMaxIter)
+    print("solverscheme = ", solverScheme)
+    print("\n=================\n")
 
 # ------------------------------------
 sys.stdout.flush()
@@ -646,27 +733,42 @@ def WritePVTKFile(iteration):
 
     pvtkfile.write('<?xml version="1.0"?>\n')
     pvtkfile.write(
-        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n'
+    )
     if dimension == 2:
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="0">\n' %
-                    (0, solutionShape[0]-1, 0, solutionShape[1]-1, 0, 0))
+        pvtkfile.write(
+            '<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="0">\n'
+            % (0, solutionShape[0] - 1, 0, solutionShape[1] - 1, 0, 0)
+        )
     else:
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="0">\n' %
-                    (0, solutionShape[0]-1, 0, solutionShape[1]-1, 0, solutionShape[2]-1))
-    pvtkfile.write('\n')
-    pvtkfile.write('    <PPointData>\n')
+        pvtkfile.write(
+            '<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="0">\n'
+            % (
+                0,
+                solutionShape[0] - 1,
+                0,
+                solutionShape[1] - 1,
+                0,
+                solutionShape[2] - 1,
+            )
+        )
+    pvtkfile.write("\n")
+    pvtkfile.write("    <PPointData>\n")
     pvtkfile.write('      <PDataArray type="Float64" Name="solution"/>\n')
     pvtkfile.write('      <PDataArray type="Float64" Name="error"/>\n')
-    pvtkfile.write('    </PPointData>\n')
-    pvtkfile.write('    <PCellData></PCellData>\n')
-    pvtkfile.write('    <PCoordinates>\n')
+    pvtkfile.write("    </PPointData>\n")
+    pvtkfile.write("    <PCellData></PCellData>\n")
+    pvtkfile.write("    <PCoordinates>\n")
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n'
+    )
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n'
+    )
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write('    </PCoordinates>\n\n')
+        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n'
+    )
+    pvtkfile.write("    </PCoordinates>\n\n")
 
     isubd = 0
     for iz in range(nSubDomainsZ):
@@ -676,77 +778,100 @@ def WritePVTKFile(iteration):
             for ix in range(nSubDomainsX):
                 if dimension == 2:
                     pvtkfile.write(
-                        '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n' %
-                        (0,
-                        globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
-                        0,
-                        globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
-                        isubd, iteration))
+                        '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n'
+                        % (
+                            0,
+                            globalExtentDict[isubd][1] - globalExtentDict[isubd][0],
+                            0,
+                            globalExtentDict[isubd][3] - globalExtentDict[isubd][2],
+                            isubd,
+                            iteration,
+                        )
+                    )
                 else:
                     pvtkfile.write(
-                        '    <Piece Extent="%d %d %d %d %d %d" Source="structured-%d-%d.vtr"/>\n' %
-                        (0,
-                        globalExtentDict[isubd][1]-globalExtentDict[isubd][0],
-                        0,
-                        globalExtentDict[isubd][3]-globalExtentDict[isubd][2],
-                        0,
-                        globalExtentDict[isubd][5]-globalExtentDict[isubd][4],
-                        isubd, iteration))
+                        '    <Piece Extent="%d %d %d %d %d %d" Source="structured-%d-%d.vtr"/>\n'
+                        % (
+                            0,
+                            globalExtentDict[isubd][1] - globalExtentDict[isubd][0],
+                            0,
+                            globalExtentDict[isubd][3] - globalExtentDict[isubd][2],
+                            0,
+                            globalExtentDict[isubd][5] - globalExtentDict[isubd][4],
+                            isubd,
+                            iteration,
+                        )
+                    )
                 isubd += 1
                 # xoff += globalExtentDict[isubd][0]
                 # ncx += nControlPointsInput[0]
             # yoff += globalExtentDict[isubd][1]
             # ncy += nControlPointsInput[1]
-    pvtkfile.write('\n')
-    pvtkfile.write('</PRectilinearGrid>\n')
-    pvtkfile.write('</VTKFile>\n')
+    pvtkfile.write("\n")
+    pvtkfile.write("</PRectilinearGrid>\n")
+    pvtkfile.write("</VTKFile>\n")
 
     pvtkfile.close()
+
 
 # Write control point data
 
 
 def WritePVTKControlFile(iteration):
-    nconstraints = (int(degree/2.0) if not degree %
-                    2 else int((degree+1)/2.0))
+    nconstraints = int(degree / 2.0) if not degree % 2 else int((degree + 1) / 2.0)
     # nconstraints=1
-    print('Nconstraints = ', nconstraints)
+    print("Nconstraints = ", nconstraints)
     pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
 
     pvtkfile.write('<?xml version="1.0"?>\n')
     pvtkfile.write(
-        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n')
+        '<VTKFile type="PRectilinearGrid" version="1.0" byte_order="LittleEndian" header_type="UInt64">\n'
+    )
     if dimension == 2:
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n' %
-                    (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
-                        0, nSubDomainsY *
-                        nControlPointsInput[1] - (nSubDomainsY - 1),
-                        0 * (nconstraints + augmentSpanSpace)))
+        pvtkfile.write(
+            '<PRectilinearGrid WholeExtent="%d %d %d %d 0 0" GhostLevel="%d">\n'
+            % (
+                0,
+                nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
+                0,
+                nSubDomainsY * nControlPointsInput[1] - (nSubDomainsY - 1),
+                0 * (nconstraints + augmentSpanSpace),
+            )
+        )
     else:
-        pvtkfile.write('<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="%d">\n' %
-                    (0, nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
-                        0, nSubDomainsY *
-                        nControlPointsInput[1] - (nSubDomainsY - 1),
-                        0, nSubDomainsZ * nControlPointsInput[2] - (nSubDomainsZ - 1),
-                        0 * (nconstraints + augmentSpanSpace)))
-    pvtkfile.write('\n')
-    pvtkfile.write('    <PPointData>\n')
+        pvtkfile.write(
+            '<PRectilinearGrid WholeExtent="%d %d %d %d %d %d" GhostLevel="%d">\n'
+            % (
+                0,
+                nSubDomainsX * nControlPointsInput[0] - (nSubDomainsX - 1),
+                0,
+                nSubDomainsY * nControlPointsInput[1] - (nSubDomainsY - 1),
+                0,
+                nSubDomainsZ * nControlPointsInput[2] - (nSubDomainsZ - 1),
+                0 * (nconstraints + augmentSpanSpace),
+            )
+        )
+    pvtkfile.write("\n")
+    pvtkfile.write("    <PPointData>\n")
     pvtkfile.write('      <PDataArray type="Float64" Name="controlpoints"/>\n')
-    pvtkfile.write('    </PPointData>\n')
-    pvtkfile.write('    <PCellData></PCellData>\n')
-    pvtkfile.write('    <PCoordinates>\n')
+    pvtkfile.write("    </PPointData>\n")
+    pvtkfile.write("    <PCellData></PCellData>\n")
+    pvtkfile.write("    <PCoordinates>\n")
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n')
+        '      <PDataArray type="Float64" Name="x_coordinates" NumberOfComponents="1"/>\n'
+    )
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n')
+        '      <PDataArray type="Float64" Name="y_coordinates" NumberOfComponents="1"/>\n'
+    )
     pvtkfile.write(
-        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n')
-    pvtkfile.write('    </PCoordinates>\n\n')
+        '      <PDataArray type="Float64" Name="z_coordinates" NumberOfComponents="1"/>\n'
+    )
+    pvtkfile.write("    </PCoordinates>\n\n")
 
     isubd = 0
     # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
     # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-    dxyz = (xyzMax-xyzMin)/nSubDomains
+    dxyz = (xyzMax - xyzMin) / nSubDomains
 
     zoff = xyzMin[2] if dimension == 3 else 0
     ncz = 0
@@ -759,12 +884,30 @@ def WritePVTKControlFile(iteration):
             for ix in range(nSubDomainsX):
                 if dimension == 3:
                     pvtkfile.write(
-                        '    <Piece Extent="%d %d %d %d %d %d" Source="structuredcp-%d-%d.vtr"/>\n' %
-                        (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, ncz, ncz+nControlPointsInput[2]-1, isubd, iteration))
+                        '    <Piece Extent="%d %d %d %d %d %d" Source="structuredcp-%d-%d.vtr"/>\n'
+                        % (
+                            ncx,
+                            ncx + nControlPointsInput[0] - 1,
+                            ncy,
+                            ncy + nControlPointsInput[1] - 1,
+                            ncz,
+                            ncz + nControlPointsInput[2] - 1,
+                            isubd,
+                            iteration,
+                        )
+                    )
                 else:
                     pvtkfile.write(
-                        '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n' %
-                        (ncx, ncx+nControlPointsInput[0]-1, ncy, ncy+nControlPointsInput[1]-1, isubd, iteration))
+                        '    <Piece Extent="%d %d %d %d 0 0" Source="structuredcp-%d-%d.vtr"/>\n'
+                        % (
+                            ncx,
+                            ncx + nControlPointsInput[0] - 1,
+                            ncy,
+                            ncy + nControlPointsInput[1] - 1,
+                            isubd,
+                            iteration,
+                        )
+                    )
                 isubd += 1
                 xoff += dxyz[0]
                 ncx += nControlPointsInput[0]
@@ -774,9 +917,9 @@ def WritePVTKControlFile(iteration):
         zoff += dxyz[2] if dimension == 3 else 0
         ncz += nControlPointsInput[2] if dimension == 3 else 0
 
-    pvtkfile.write('\n')
-    pvtkfile.write('</PRectilinearGrid>\n')
-    pvtkfile.write('</VTKFile>\n')
+    pvtkfile.write("\n")
+    pvtkfile.write("</PRectilinearGrid>\n")
+    pvtkfile.write("</VTKFile>\n")
 
     pvtkfile.close()
 
@@ -784,15 +927,16 @@ def WritePVTKControlFile(iteration):
 def flattenList(t):
     return [item for sublist in t for item in sublist]
 
+
 def flattenDict(d):
-    return(reduce(
-        lambda new_d, kv:
-        isinstance(kv[1], dict) and
-        {**new_d, **flatten(kv[1], kv[0])} or
-            {**new_d, kv[0]: kv[1]},
+    return reduce(
+        lambda new_d, kv: isinstance(kv[1], dict)
+        and {**new_d, **flatten(kv[1], kv[0])}
+        or {**new_d, kv[0]: kv[1]},
         d.items(),
-        {}
-    ))
+        {},
+    )
+
 
 def flattenListDict(t):
     ndict = {}
@@ -800,12 +944,12 @@ def flattenListDict(t):
         ndict.update(item)
     return ndict
 
+
 # Let do the recursive iterations
 # The variable `additiveSchwartz` controls whether we use
 # Additive vs Multiplicative Schwartz scheme for DD resolution
 ####
 class InputControlBlock:
-
     def __init__(self, bid, nCPi, coreb, xb, pl, xl, yl=None, zl=None):
         self.nControlPoints = np.copy(nCPi)
 
@@ -814,13 +958,19 @@ class InputControlBlock:
             self.scdGrid = ScdInterface(self.mbInterface)
 
         if dimension == 1:
-            self.problemInterface = ProblemSolver1D(self, coreb, xb, xl, degree, augmentSpanSpace, useDiagonalBlocks)
+            self.problemInterface = ProblemSolver1D(
+                self, coreb, xb, xl, degree, augmentSpanSpace, useDiagonalBlocks
+            )
         elif dimension == 2:
-            self.problemInterface = ProblemSolver2D(self, coreb, xb, xl, yl, degree, augmentSpanSpace, useDiagonalBlocks)
+            self.problemInterface = ProblemSolver2D(
+                self, coreb, xb, xl, yl, degree, augmentSpanSpace, useDiagonalBlocks
+            )
         elif dimension == 3:
-            self.problemInterface = ProblemSolver3D(self, coreb, xb, xl, yl, zl, degree, augmentSpanSpace, useDiagonalBlocks)
+            self.problemInterface = ProblemSolver3D(
+                self, coreb, xb, xl, yl, zl, degree, augmentSpanSpace, useDiagonalBlocks
+            )
         else:
-            error('Not implemented')
+            error("Not implemented")
 
         self.refSolutionLocal = np.copy(pl)
         self.controlPointData = np.zeros(self.nControlPoints)
@@ -830,8 +980,8 @@ class InputControlBlock:
         self.solutionDecoded = np.zeros(pl.shape)
         self.solutionDecodedOld = np.zeros(pl.shape)
 
-        self.UVW = {'x': [], 'y': [], 'z': []}
-        self.NUVW = {'x': [], 'y': [], 'z': []}
+        self.UVW = {"x": [], "y": [], "z": []}
+        self.NUVW = {"x": [], "y": [], "z": []}
 
         # The constraints have a pre-determined ordering
         # 1-Dimension = 0: left, 1: right
@@ -851,40 +1001,17 @@ class InputControlBlock:
 
         self.outerIterationConverged = False
         self.decodederrors = np.zeros(2)  # L2 and Linf
-        self.errorMetricsL2 = np.zeros((nASMIterations), dtype='float64')
-        self.errorMetricsLinf = np.zeros((nASMIterations), dtype='float64')
+        self.errorMetricsL2 = np.zeros((nASMIterations), dtype="float64")
+        self.errorMetricsLinf = np.zeros((nASMIterations), dtype="float64")
 
         self.solutionLocalHistory = []
 
     def show(self, cp):
-
-        if dimension == 1:
-            print(
-                "Rank: %d, Subdomain %d: Bounds = [%d - %d]" %
-                (commWorld.rank, cp.gid(),
-                 self.xbounds[0],
-                 self.xbounds[1]))
-        elif dimension == 2:
-            print(
-                "Rank: %d, Subdomain %d: Bounds = [%d - %d, %d - %d]" %
-                (commWorld.rank, cp.gid(),
-                 self.xbounds[0],
-                 self.xbounds[1],
-                 self.xbounds[2],
-                 self.xbounds[3]))
-        elif dimension == 3:
-            print(
-                "Rank: %d, Subdomain %d: Bounds = [%d - %d, %d - %d, %d - %d]" %
-                (commWorld.rank, cp.gid(),
-                 self.xbounds[0],
-                 self.xbounds[1],
-                 self.xbounds[2],
-                 self.xbounds[3],
-                 self.xbounds[4],
-                 self.xbounds[5]))
-        else:
-            print("No implementation for dimension = ", dimension)
-            error('Not implemented')
+        print(
+            "Rank: %d, Subdomain %d:" % (commWorld.rank, cp.gid()),
+            " Bounds = ",
+            self.xbounds,
+        )
 
     def update_bounds(self, cp):
         localExtents[cp.gid()] = self.problemInterface.update_bounds()
@@ -899,41 +1026,40 @@ class InputControlBlock:
 
             if dimension == 1:
 
-                verts = self.mbInterface.get_entities_by_type(
-                    0, types.MBVERTEX)
+                verts = self.mbInterface.get_entities_by_type(0, types.MBVERTEX)
                 if len(verts) == 0:
                     # Now let us generate a MOAB SCD box
-                    xc = self.basisFunction['x'].greville()
+                    xc = self.basisFunction["x"].greville()
                     for xi in xc:
                         coords += [xi, 0.0, 0.0]
                     scdbox = self.scdGrid.construct_box(
-                        HomCoord([0, 0, 0, 0]), HomCoord([len(xc) - 1, 0, 0, 0]), coords)
+                        HomCoord([0, 0, 0, 0]), HomCoord([len(xc) - 1, 0, 0, 0]), coords
+                    )
 
             elif dimension == 2:
 
-                verts = self.mbInterface.get_entities_by_type(
-                    0, types.MBVERTEX)
+                verts = self.mbInterface.get_entities_by_type(0, types.MBVERTEX)
                 if len(verts) == 0:
                     # Now let us generate a MOAB SCD box
-                    xc = self.basisFunction['x'].greville()
-                    yc = self.basisFunction['y'].greville()
+                    xc = self.basisFunction["x"].greville()
+                    yc = self.basisFunction["y"].greville()
                     for yi in yc:
                         for xi in xc:
                             coords += [xi, yi, 0.0]
                     scdbox = self.scdGrid.construct_box(
                         HomCoord([0, 0, 0, 0]),
                         HomCoord([len(xc) - 1, len(yc) - 1, 0, 0]),
-                        coords)
+                        coords,
+                    )
 
             elif dimension == 3:
 
-                verts = self.mbInterface.get_entities_by_type(
-                    0, types.MBVERTEX)
+                verts = self.mbInterface.get_entities_by_type(0, types.MBVERTEX)
                 if len(verts) == 0:
                     # Now let us generate a MOAB SCD box
-                    xc = self.basisFunction['x'].greville()
-                    yc = self.basisFunction['y'].greville()
-                    zc = self.basisFunction['y'].greville()
+                    xc = self.basisFunction["x"].greville()
+                    yc = self.basisFunction["y"].greville()
+                    zc = self.basisFunction["y"].greville()
                     for zi in zc:
                         for yi in yc:
                             for xi in xc:
@@ -941,17 +1067,18 @@ class InputControlBlock:
                     scdbox = self.scdGrid.construct_box(
                         HomCoord([0, 0, 0, 0]),
                         HomCoord([len(xc) - 1, len(yc) - 1, len(zc) - 1, 0]),
-                        coords)
+                        coords,
+                    )
 
             else:
-                error('Invalid dimension')
+                error("Invalid dimension")
 
             print("MOAB structured mesh now has", len(verts), "vertices")
 
     # ------------------------------------
 
     def compute_decode_operators(self):
-        RN = {'x': [], 'y': [], 'z': []}
+        RN = {"x": [], "y": [], "z": []}
         # compute the decoded operators now
         self.problemInterface.compute_decode_operators(RN)
         return RN
@@ -969,30 +1096,46 @@ class InputControlBlock:
             # axHnd = self.figHnd.gca()
             self.pMK = self.decode(self.controlPointData, self.decodeOpXYZ)
 
-            xl = self.xyzCoordLocal['x'].reshape(
-                self.xyzCoordLocal['x'].shape[0], 1)
+            xl = self.xyzCoordLocal["x"].reshape(self.xyzCoordLocal["x"].shape[0], 1)
 
             plt.subplot(211)
             # Plot the control point solution
-            coeffs_x = self.basisFunction['x'].greville()
-            plt.plot(xl, self.pMK, linestyle='--', lw=2,
-                     color=['r', 'g', 'b', 'y', 'c'][cp.gid() % 5],
-                     label="Decoded-%d" % (cp.gid() + 1))
-            plt.plot(coeffs_x, self.controlPointData, marker='o', linestyle='', color=[
-                'r', 'g', 'b', 'y', 'c'][cp.gid() % 5], label="Control-%d" % (cp.gid()+1))
+            coeffs_x = self.basisFunction["x"].greville()
+            plt.plot(
+                xl,
+                self.pMK,
+                linestyle="--",
+                lw=2,
+                color=["r", "g", "b", "y", "c"][cp.gid() % 5],
+                label="Decoded-%d" % (cp.gid() + 1),
+            )
+            plt.plot(
+                coeffs_x,
+                self.controlPointData,
+                marker="o",
+                linestyle="",
+                color=["r", "g", "b", "y", "c"][cp.gid() % 5],
+                label="Control-%d" % (cp.gid() + 1),
+            )
 
             # Plot the error
-            errorDecoded = (
-                self.refSolutionLocal.reshape(self.refSolutionLocal.shape[0],
-                                              1) - self.pMK.reshape(self.pMK.shape[0],
-                                                                    1))  # / solutionRange
+            errorDecoded = self.refSolutionLocal.reshape(
+                self.refSolutionLocal.shape[0], 1
+            ) - self.pMK.reshape(
+                self.pMK.shape[0], 1
+            )  # / solutionRange
 
             plt.subplot(212)
-            plt.plot(xl, errorDecoded,
-                     # plt.plot(self.xyzCoordLocal['x'],
-                     #          error,
-                     linestyle='--', color=['r', 'g', 'b', 'y', 'c'][cp.gid() % 5],
-                     lw=2, label="Subdomain(%d) Error" % (cp.gid() + 1))
+            plt.plot(
+                xl,
+                errorDecoded,
+                # plt.plot(self.xyzCoordLocal['x'],
+                #          error,
+                linestyle="--",
+                color=["r", "g", "b", "y", "c"][cp.gid() % 5],
+                lw=2,
+                label="Subdomain(%d) Error" % (cp.gid() + 1),
+            )
 
         else:
             if useVTKOutput:
@@ -1007,77 +1150,106 @@ class InputControlBlock:
         from uvw import RectilinearGrid, DataArray
         from uvw.parallel import PRectilinearGrid
 
-        assert(useVTKOutput)
+        assert useVTKOutput
 
-        self.pMK = self.decode(self.controlPointData,
-                          self.decodeOpXYZ)
-        errorDecoded = (self.refSolutionLocal -
-                        self.pMK) / solutionRange
+        self.pMK = self.decode(self.controlPointData, self.decodeOpXYZ)
+        errorDecoded = (self.refSolutionLocal - self.pMK) / solutionRange
 
         locX = []
         locY = []
         locZ = []
         if augmentSpanSpace > 0:
-            locX = self.xyzCoordLocal['x'][self.corebounds[0]
-                                           [0]: self.corebounds[0][1]]
-            locY = self.xyzCoordLocal['y'][self.corebounds[1]
-                                           [0]: self.corebounds[1][1]]
-            if dimension > 2: locZ = self.xyzCoordLocal['z'][self.corebounds[2][0]: self.corebounds[2][1]]
+            locX = self.xyzCoordLocal["x"][
+                self.corebounds[0][0] : self.corebounds[0][1]
+            ]
+            locY = self.xyzCoordLocal["y"][
+                self.corebounds[1][0] : self.corebounds[1][1]
+            ]
+            if dimension > 2:
+                locZ = self.xyzCoordLocal["z"][
+                    self.corebounds[2][0] : self.corebounds[2][1]
+                ]
 
             if dimension == 2:
                 coreData = np.ascontiguousarray(
-                    self.pMK
-                    [self.corebounds[0][0]: self.corebounds[0][1],
-                        self.corebounds[1][0]: self.corebounds[1][1]])
+                    self.pMK[
+                        self.corebounds[0][0] : self.corebounds[0][1],
+                        self.corebounds[1][0] : self.corebounds[1][1],
+                    ]
+                )
                 errorDecoded = np.ascontiguousarray(
-                    errorDecoded
-                    [self.corebounds[0][0]: self.corebounds[0][1],
-                        self.corebounds[1][0]: self.corebounds[1][1]])
+                    errorDecoded[
+                        self.corebounds[0][0] : self.corebounds[0][1],
+                        self.corebounds[1][0] : self.corebounds[1][1],
+                    ]
+                )
 
-                proc = np.ones((locX.size-1, locY.size-1)) * commWorld.Get_rank()
+                proc = np.ones((locX.size - 1, locY.size - 1)) * commWorld.Get_rank()
             else:
                 coreData = np.ascontiguousarray(
-                    self.pMK
-                    [self.corebounds[0][0]: self.corebounds[0][1],
-                        self.corebounds[1][0]: self.corebounds[1][1],
-                        self.corebounds[2][0]: self.corebounds[2][1]])
+                    self.pMK[
+                        self.corebounds[0][0] : self.corebounds[0][1],
+                        self.corebounds[1][0] : self.corebounds[1][1],
+                        self.corebounds[2][0] : self.corebounds[2][1],
+                    ]
+                )
                 errorDecoded = np.ascontiguousarray(
-                    errorDecoded
-                    [self.corebounds[0][0]: self.corebounds[0][1],
-                        self.corebounds[1][0]: self.corebounds[1][1],
-                        self.corebounds[2][0]: self.corebounds[2][1]])
-                proc = np.ones((locX.size-1, locY.size-1, locZ.size-1)) * commWorld.Get_rank()
+                    errorDecoded[
+                        self.corebounds[0][0] : self.corebounds[0][1],
+                        self.corebounds[1][0] : self.corebounds[1][1],
+                        self.corebounds[2][0] : self.corebounds[2][1],
+                    ]
+                )
+                proc = (
+                    np.ones((locX.size - 1, locY.size - 1, locZ.size - 1))
+                    * commWorld.Get_rank()
+                )
         else:
 
-            locX = self.xyzCoordLocal['x']
-            locY = self.xyzCoordLocal['y']
+            locX = self.xyzCoordLocal["x"]
+            locY = self.xyzCoordLocal["y"]
             if dimension > 2:
-                locZ = self.xyzCoordLocal['z']
-                proc = np.ones((locX.size-1, locY.size-1, locZ.size-1)) * commWorld.Get_rank()
+                locZ = self.xyzCoordLocal["z"]
+                proc = (
+                    np.ones((locX.size - 1, locY.size - 1, locZ.size - 1))
+                    * commWorld.Get_rank()
+                )
             else:
-                proc = np.ones((locX.size-1, locY.size-1)) * commWorld.Get_rank()
+                proc = np.ones((locX.size - 1, locY.size - 1)) * commWorld.Get_rank()
             coreData = self.pMK
 
         if dimension == 2:
-            with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY)) as rect:
-                rect.addPointData(DataArray(coreData, range(dimension), 'solution'))
-                rect.addPointData(DataArray(errorDecoded, range(dimension), 'error'))
-                rect.addCellData(DataArray(proc, range(dimension), 'process'))
+            with RectilinearGrid(
+                "./structured-%s.vtr" % (self.figSuffix), (locX, locY)
+            ) as rect:
+                rect.addPointData(DataArray(coreData, range(dimension), "solution"))
+                rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
+                rect.addCellData(DataArray(proc, range(dimension), "process"))
         else:
-            with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY, locZ)) as rect:
-                rect.addPointData(DataArray(coreData, range(dimension), 'solution'))
-                rect.addPointData(DataArray(errorDecoded, range(dimension), 'error'))
-                rect.addCellData(DataArray(proc, range(dimension), 'process'))
+            with RectilinearGrid(
+                "./structured-%s.vtr" % (self.figSuffix), (locX, locY, locZ)
+            ) as rect:
+                rect.addPointData(DataArray(coreData, range(dimension), "solution"))
+                rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
+                rect.addCellData(DataArray(proc, range(dimension), "process"))
 
-        cpx = np.array(self.basisFunction['x'].greville())
-        cpy = np.array(self.basisFunction['y'].greville())
+        cpx = np.array(self.basisFunction["x"].greville())
+        cpy = np.array(self.basisFunction["y"].greville())
         if dimension > 2:
-            cpz = np.array(self.basisFunction['z'].greville())
-            with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz)) as rectc:
-                rectc.addPointData(DataArray(self.controlPointData, range(dimension), 'controlpoints'))
+            cpz = np.array(self.basisFunction["z"].greville())
+            with RectilinearGrid(
+                "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz)
+            ) as rectc:
+                rectc.addPointData(
+                    DataArray(self.controlPointData, range(dimension), "controlpoints")
+                )
         else:
-            with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy)) as rectc:
-                rectc.addPointData(DataArray(self.controlPointData, range(dimension), 'controlpoints'))
+            with RectilinearGrid(
+                "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy)
+            ) as rectc:
+                rectc.addPointData(
+                    DataArray(self.controlPointData, range(dimension), "controlpoints")
+                )
 
     def PlotControlPoints(self):
         import pyvista as pv
@@ -1086,15 +1258,18 @@ class InputControlBlock:
         # Create the spatial reference
         grid = pv.UniformGrid()
 
-        cpx = self.basisFunction['x'].greville()
-        cpy = self.basisFunction['y'].greville()
+        cpx = self.basisFunction["x"].greville()
+        cpy = self.basisFunction["y"].greville()
         # cpz = np.ones(len(cpx))
         Xi, Yi = np.meshgrid(cpx, cpy)
 
         print(Xi.shape, Yi.shape, self.controlPointData.shape)
 
-        points = np.c_[Xi.reshape(-1), Yi.reshape(-1),
-                       np.ones(self.controlPointData.T.reshape(-1).shape)]
+        points = np.c_[
+            Xi.reshape(-1),
+            Yi.reshape(-1),
+            np.ones(self.controlPointData.T.reshape(-1).shape),
+        ]
 
         grid = pv.StructuredGrid()
         grid.points = points
@@ -1130,9 +1305,13 @@ class InputControlBlock:
         # self.pMK = decode(self.refSolutionLocal, self.weightsData, self.Nu, self.Nv)
         #         errorDecoded = self.refSolutionLocal - self.pMK
 
-        print("Domain: ", cp.gid()+1, "Exact = ", self.refSolutionLocal)
-        print("Domain: ", cp.gid()+1, "Exact - Decoded = ",
-              np.abs(self.refSolutionLocal - self.pMK))
+        print("Domain: ", cp.gid() + 1, "Exact = ", self.refSolutionLocal)
+        print(
+            "Domain: ",
+            cp.gid() + 1,
+            "Exact - Decoded = ",
+            np.abs(self.refSolutionLocal - self.pMK),
+        )
 
     def send_diy(self, cp):
         self.problemInterface.send_diy(self, cp)
@@ -1408,13 +1587,14 @@ class InputControlBlock:
         for i in range(3, n + 2):
             for j in range(3, i + 1):
                 if abs(e[i - 1, j - 2] - e[i - 2, j - 2]) > 1e-10:
-                    e[i - 1, j - 1] = e[i - 2, j - 3] + 1 / \
-                        (e[i - 1, j - 2] - e[i - 2, j - 2])
+                    e[i - 1, j - 1] = e[i - 2, j - 3] + 1 / (
+                        e[i - 1, j - 2] - e[i - 2, j - 2]
+                    )
                 else:
                     # + 1 / (e[i - 1, j - 2] - e[i - 2, j - 2])
                     e[i - 1, j - 1] = e[i - 2, j - 3]
 
-        er = e[:, 1:n + 1:2]
+        er = e[:, 1 : n + 1 : 2]
         return er
 
     def WynnEpsilon(self, sn, r):
@@ -1429,35 +1609,33 @@ class InputControlBlock:
 
         for i in range(2, n + 1):
             for j in range(2, i):
-                e[i, j] = e[i - 1, j - 2] + 1.0 / \
-                    (e[i, j - 1] - e[i - 1, j - 1])
+                e[i, j] = e[i - 1, j - 2] + 1.0 / (e[i, j - 1] - e[i - 1, j - 1])
         # for i in range(3, n + 2):
         #     for j in range(3, i + 1):
         #         e[i - 1, j - 1] = e[i - 2, j - 3] + 1 / (e[i - 1, j - 2] - e[i - 2, j - 2])
 
-        er = e[:, 1:n + 1:2]
+        er = e[:, 1 : n + 1 : 2]
         return er
 
     def VectorAitken(self, sn):
         v1 = sn[:, 1] - sn[:, 0]
-        v1mag = (np.linalg.norm(v1, ord=2))
+        v1mag = np.linalg.norm(v1, ord=2)
         v2 = sn[:, 0] - 2 * sn[:, 1] + sn[:, 2]
-        v2mag = (np.linalg.norm(v2, ord=2))
-        return sn[:, 0] - (v1mag/v2mag) * v2
+        v2mag = np.linalg.norm(v2, ord=2)
+        return sn[:, 0] - (v1mag / v2mag) * v2
 
     def Aitken(self, sn):
         # return sn[2]
         # return sn[0] - (sn[2] - sn[1])**2/(sn[2] - 2*sn[1] + sn[0])
-        if abs(sn[2] - 2*sn[1] + sn[0]) > 1e-8:
-            return sn[0] - (sn[2] - sn[1])**2/(sn[2] - 2*sn[1] + sn[0])
+        if abs(sn[2] - 2 * sn[1] + sn[0]) > 1e-8:
+            return sn[0] - (sn[2] - sn[1]) ** 2 / (sn[2] - 2 * sn[1] + sn[0])
         else:
             return sn[2]
 
     def extrapolate_guess(self, cp, iterationNumber):
-        plen = self.controlPointData.shape[0]*self.controlPointData.shape[1]
+        plen = self.controlPointData.shape[0] * self.controlPointData.shape[1]
         self.solutionLocalHistory[:, 1:] = self.solutionLocalHistory[:, :-1]
-        self.solutionLocalHistory[:, 0] = np.copy(
-            self.controlPointData).reshape(plen)
+        self.solutionLocalHistory[:, 0] = np.copy(self.controlPointData).reshape(plen)
 
         vAcc = []
         if not useAitken:
@@ -1466,24 +1644,29 @@ class InputControlBlock:
                 for dofIndex in range(plen):
                     expVal = self.WynnEpsilon(
                         self.solutionLocalHistory[dofIndex, :],
-                        math.floor((nWynnEWork - 1) / 2))
+                        math.floor((nWynnEWork - 1) / 2),
+                    )
                     vAcc[dofIndex] = expVal[-1, -1]
-                print('Performing scalar Wynn-Epsilon algorithm: Error is ', np.linalg.norm(
-                    self.controlPointData.reshape(plen) - vAcc))  # , (self.refSolutionLocal - vAcc))
-                self.controlPointData = vAcc[:].reshape(self.controlPointData.shape[0],
-                                                        self.controlPointData.shape[1])
+                print(
+                    "Performing scalar Wynn-Epsilon algorithm: Error is ",
+                    np.linalg.norm(self.controlPointData.reshape(plen) - vAcc),
+                )  # , (self.refSolutionLocal - vAcc))
+                self.controlPointData = vAcc[:].reshape(
+                    self.controlPointData.shape[0], self.controlPointData.shape[1]
+                )
 
         else:
             if iterationNumber > 3:  # For Aitken acceleration
-                vAcc = self.VectorAitken(
-                    self.solutionLocalHistory).reshape(
-                    self.controlPointData.shape[0],
-                    self.controlPointData.shape[1])
+                vAcc = self.VectorAitken(self.solutionLocalHistory).reshape(
+                    self.controlPointData.shape[0], self.controlPointData.shape[1]
+                )
                 # vAcc = np.zeros(self.controlPointData.shape)
                 # for dofIndex in range(len(self.controlPointData)):
                 #     vAcc[dofIndex] = self.Aitken(self.solutionLocalHistory[dofIndex, :])
-                print('Performing Aitken Acceleration algorithm: Error is ',
-                      np.linalg.norm(self.controlPointData - vAcc))
+                print(
+                    "Performing Aitken Acceleration algorithm: Error is ",
+                    np.linalg.norm(self.controlPointData - vAcc),
+                )
                 self.controlPointData = vAcc[:]
 
     def initialize_data(self, cp):
@@ -1503,169 +1686,255 @@ class InputControlBlock:
         # self.UVW.y = np.linspace(self.Dmini[1], self.Dmaxi[1], self.nPointsPerSubDY)  # self.nPointsPerSubDY, nPointsY
 
         tu = np.linspace(
-            self.Dmini[0] + inc[0], self.Dmaxi[0] - inc[0], self.nControlPoints[0] - degree - 1)
+            self.Dmini[0] + inc[0],
+            self.Dmaxi[0] - inc[0],
+            self.nControlPoints[0] - degree - 1,
+        )
         if dimension > 1:
             tv = np.linspace(
-                self.Dmini[1] + inc[1], self.Dmaxi[1] - inc[1], self.nControlPoints[1] - degree - 1)
+                self.Dmini[1] + inc[1],
+                self.Dmaxi[1] - inc[1],
+                self.nControlPoints[1] - degree - 1,
+            )
             if dimension > 2:
                 tw = np.linspace(
-                    self.Dmini[2] + inc[2], self.Dmaxi[2] - inc[2], self.nControlPoints[2] - degree - 1)
+                    self.Dmini[2] + inc[2],
+                    self.Dmaxi[2] - inc[2],
+                    self.nControlPoints[2] - degree - 1,
+                )
 
         if nTotalSubDomains > 1 and not fullyPinned:
 
             if verbose:
-                print("Subdomain: ", cp.gid(), " X: ",
-                      self.Dmini[0], self.Dmaxi[0])
-            if abs(self.Dmaxi[0] - xyzMax[0]) < 1e-12 and abs(self.Dmini[0] - xyzMin[0]) < 1e-12:
-                self.knotsAdaptive['x'] = np.concatenate(
-                    ([self.Dmini[0]] * (degree + 1),
-                     tu, [self.Dmaxi[0]] * (degree + 1)))
-                self.isClamped['left'] = self.isClamped['right'] = True
+                print("Subdomain: ", cp.gid(), " X: ", self.Dmini[0], self.Dmaxi[0])
+            if (
+                abs(self.Dmaxi[0] - xyzMax[0]) < 1e-12
+                and abs(self.Dmini[0] - xyzMin[0]) < 1e-12
+            ):
+                self.knotsAdaptive["x"] = np.concatenate(
+                    ([self.Dmini[0]] * (degree + 1), tu, [self.Dmaxi[0]] * (degree + 1))
+                )
+                self.isClamped["left"] = self.isClamped["right"] = True
             else:
                 if abs(self.Dmaxi[0] - xyzMax[0]) < 1e-12:
-                    self.knotsAdaptive['x'] = np.concatenate(
-                        ([self.Dmini[0]] * (1), tu, [self.Dmaxi[0]] * (degree+1)))
-                    self.isClamped['right'] = True
+                    self.knotsAdaptive["x"] = np.concatenate(
+                        ([self.Dmini[0]] * (1), tu, [self.Dmaxi[0]] * (degree + 1))
+                    )
+                    self.isClamped["right"] = True
 
                 else:
                     if abs(self.Dmini[0] - xyzMin[0]) < 1e-12:
-                        self.knotsAdaptive['x'] = np.concatenate(
-                            ([self.Dmini[0]] * (degree+1), tu, [self.Dmaxi[0]] * (1)))
-                        self.isClamped['left'] = True
+                        self.knotsAdaptive["x"] = np.concatenate(
+                            ([self.Dmini[0]] * (degree + 1), tu, [self.Dmaxi[0]] * (1))
+                        )
+                        self.isClamped["left"] = True
 
                     else:
-                        self.knotsAdaptive['x'] = np.concatenate(
-                            ([self.Dmini[0]] * (1),
-                                tu, [self.Dmaxi[0]] * (1)))
-                        self.isClamped['left'] = self.isClamped['right'] = False
+                        self.knotsAdaptive["x"] = np.concatenate(
+                            ([self.Dmini[0]] * (1), tu, [self.Dmaxi[0]] * (1))
+                        )
+                        self.isClamped["left"] = self.isClamped["right"] = False
 
             if dimension == 1:
                 if verbose:
                     print(
-                        "Subdomain: ", cp.gid(),
-                        " clamped ? ", self.isClamped['left'], self.isClamped['right'])
+                        "Subdomain: ",
+                        cp.gid(),
+                        " clamped ? ",
+                        self.isClamped["left"],
+                        self.isClamped["right"],
+                    )
 
             if dimension > 1:
                 if verbose:
-                    print("Subdomain: ", cp.gid(), " Y: ",
-                          self.Dmini[1], self.Dmaxi[1])
-                if abs(self.Dmaxi[1] - xyzMax[1]) < 1e-12 and abs(self.Dmini[1] - xyzMin[1]) < 1e-12:
-                    print("Subdomain: ", cp.gid(), " checking top and bottom Y: ",
-                          self.Dmaxi[1], xyzMax[1], abs(self.Dmaxi[1] - xyzMax[1]))
-                    self.knotsAdaptive['y'] = np.concatenate(
-                        ([self.Dmini[1]] * (degree + 1),
-                         tv, [self.Dmaxi[1]] * (degree + 1)))
-                    self.isClamped['top'] = self.isClamped['bottom'] = True
+                    print("Subdomain: ", cp.gid(), " Y: ", self.Dmini[1], self.Dmaxi[1])
+                if (
+                    abs(self.Dmaxi[1] - xyzMax[1]) < 1e-12
+                    and abs(self.Dmini[1] - xyzMin[1]) < 1e-12
+                ):
+                    print(
+                        "Subdomain: ",
+                        cp.gid(),
+                        " checking top and bottom Y: ",
+                        self.Dmaxi[1],
+                        xyzMax[1],
+                        abs(self.Dmaxi[1] - xyzMax[1]),
+                    )
+                    self.knotsAdaptive["y"] = np.concatenate(
+                        (
+                            [self.Dmini[1]] * (degree + 1),
+                            tv,
+                            [self.Dmaxi[1]] * (degree + 1),
+                        )
+                    )
+                    self.isClamped["top"] = self.isClamped["bottom"] = True
                 else:
 
                     if abs(self.Dmaxi[1] - xyzMax[1]) < 1e-12:
-                        print("Subdomain: ", cp.gid(), " checking top Y: ",
-                              self.Dmaxi[1], xyzMax[1], abs(self.Dmaxi[1] - xyzMax[1]))
-                        self.knotsAdaptive['y'] = np.concatenate(
-                            ([self.Dmini[1]] * (1), tv, [self.Dmaxi[1]] * (degree+1)))
-                        self.isClamped['top'] = True
+                        print(
+                            "Subdomain: ",
+                            cp.gid(),
+                            " checking top Y: ",
+                            self.Dmaxi[1],
+                            xyzMax[1],
+                            abs(self.Dmaxi[1] - xyzMax[1]),
+                        )
+                        self.knotsAdaptive["y"] = np.concatenate(
+                            ([self.Dmini[1]] * (1), tv, [self.Dmaxi[1]] * (degree + 1))
+                        )
+                        self.isClamped["top"] = True
 
                     else:
 
                         if verbose:
-                            print("Subdomain: ", cp.gid(), " checking bottom Y: ",
-                                  self.Dmini[1], xyzMin[1], abs(self.Dmini[1] - xyzMin[1]))
+                            print(
+                                "Subdomain: ",
+                                cp.gid(),
+                                " checking bottom Y: ",
+                                self.Dmini[1],
+                                xyzMin[1],
+                                abs(self.Dmini[1] - xyzMin[1]),
+                            )
                         if abs(self.Dmini[1] - xyzMin[1]) < 1e-12:
-                            self.knotsAdaptive['y'] = np.concatenate(
-                                ([self.Dmini[1]] * (degree+1), tv, [self.Dmaxi[1]] * (1)))
-                            self.isClamped['bottom'] = True
+                            self.knotsAdaptive["y"] = np.concatenate(
+                                (
+                                    [self.Dmini[1]] * (degree + 1),
+                                    tv,
+                                    [self.Dmaxi[1]] * (1),
+                                )
+                            )
+                            self.isClamped["bottom"] = True
 
                         else:
-                            self.knotsAdaptive['y'] = np.concatenate(
-                                ([self.Dmini[1]] * (1),
-                                    tv, [self.Dmaxi[1]] * (1)))
+                            self.knotsAdaptive["y"] = np.concatenate(
+                                ([self.Dmini[1]] * (1), tv, [self.Dmaxi[1]] * (1))
+                            )
 
-                            self.isClamped['top'] = self.isClamped['bottom'] = False
+                            self.isClamped["top"] = self.isClamped["bottom"] = False
 
             if dimension > 2:
                 if verbose:
-                    print("Subdomain: ", cp.gid(), " Z: ",
-                        self.Dmini[2], self.Dmaxi[2])
-                if abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12 and abs(self.Dmini[2] - xyzMin[2]) < 1e-12:
-                    print("Subdomain: ", cp.gid(), " checking top and bottom Y: ",
-                        self.Dmaxi[2], xyzMax[2], abs(self.Dmaxi[2] - xyzMax[2]))
-                    self.knotsAdaptive['z'] = np.concatenate(
-                        ([self.Dmini[2]] * (degree + 1),
-                        tw, [self.Dmaxi[2]] * (degree + 1)))
-                    self.isClamped['up'] = self.isClamped['down'] = True
+                    print("Subdomain: ", cp.gid(), " Z: ", self.Dmini[2], self.Dmaxi[2])
+                if (
+                    abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12
+                    and abs(self.Dmini[2] - xyzMin[2]) < 1e-12
+                ):
+                    print(
+                        "Subdomain: ",
+                        cp.gid(),
+                        " checking top and bottom Y: ",
+                        self.Dmaxi[2],
+                        xyzMax[2],
+                        abs(self.Dmaxi[2] - xyzMax[2]),
+                    )
+                    self.knotsAdaptive["z"] = np.concatenate(
+                        (
+                            [self.Dmini[2]] * (degree + 1),
+                            tw,
+                            [self.Dmaxi[2]] * (degree + 1),
+                        )
+                    )
+                    self.isClamped["up"] = self.isClamped["down"] = True
                 else:
 
                     if abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12:
-                        print("Subdomain: ", cp.gid(), " checking top Z: ",
-                            self.Dmaxi[2], xyzMax[2], abs(self.Dmaxi[2] - xyzMax[2]))
-                        self.knotsAdaptive['z'] = np.concatenate(
-                            ([self.Dmini[2]] * (1), tw, [self.Dmaxi[2]] * (degree+1)))
-                        self.isClamped['up'] = True
+                        print(
+                            "Subdomain: ",
+                            cp.gid(),
+                            " checking top Z: ",
+                            self.Dmaxi[2],
+                            xyzMax[2],
+                            abs(self.Dmaxi[2] - xyzMax[2]),
+                        )
+                        self.knotsAdaptive["z"] = np.concatenate(
+                            ([self.Dmini[2]] * (1), tw, [self.Dmaxi[2]] * (degree + 1))
+                        )
+                        self.isClamped["up"] = True
 
                     else:
 
                         if verbose:
-                            print("Subdomain: ", cp.gid(), " checking bottom Z: ",
-                                self.Dmini[2], xyzMin[2], abs(self.Dmini[2] - xyzMin[2]))
+                            print(
+                                "Subdomain: ",
+                                cp.gid(),
+                                " checking bottom Z: ",
+                                self.Dmini[2],
+                                xyzMin[2],
+                                abs(self.Dmini[2] - xyzMin[2]),
+                            )
                         if abs(self.Dmini[2] - xyzMin[2]) < 1e-12:
-                            self.knotsAdaptive['z'] = np.concatenate(
-                                ([self.Dmini[2]] * (degree+1), tw, [self.Dmaxi[2]] * (1)))
-                            self.isClamped['down'] = True
+                            self.knotsAdaptive["z"] = np.concatenate(
+                                (
+                                    [self.Dmini[2]] * (degree + 1),
+                                    tw,
+                                    [self.Dmaxi[2]] * (1),
+                                )
+                            )
+                            self.isClamped["down"] = True
 
                         else:
-                            self.knotsAdaptive['z'] = np.concatenate(
-                                ([self.Dmini[2]] * (1),
-                                    tw, [self.Dmaxi[2]] * (1)))
+                            self.knotsAdaptive["z"] = np.concatenate(
+                                ([self.Dmini[2]] * (1), tw, [self.Dmaxi[2]] * (1))
+                            )
 
-                            self.isClamped['up'] = self.isClamped['down'] = False
+                            self.isClamped["up"] = self.isClamped["down"] = False
 
                 if verbose:
                     print(
-                        "Subdomain: ", cp.gid(),
-                        " clamped ? ", self.isClamped['left'],
-                        self.isClamped['right'],
-                        self.isClamped['top'],
-                        self.isClamped['bottom'])
+                        "Subdomain: ",
+                        cp.gid(),
+                        " clamped ? ",
+                        self.isClamped["left"],
+                        self.isClamped["right"],
+                        self.isClamped["top"],
+                        self.isClamped["bottom"],
+                    )
                     if dimension == 3:
-                        print("Subdomain: ", cp.gid(), self.isClamped['up'], self.isClamped['down'])
+                        print(
+                            "Subdomain: ",
+                            cp.gid(),
+                            self.isClamped["up"],
+                            self.isClamped["down"],
+                        )
 
         else:
-            self.knotsAdaptive['x'] = np.concatenate(
-                ([self.Dmini[0]] * (degree+1), tu, [self.Dmaxi[0]] * (degree+1)))
-            self.isClamped['left'] = self.isClamped['right'] = True
+            self.knotsAdaptive["x"] = np.concatenate(
+                ([self.Dmini[0]] * (degree + 1), tu, [self.Dmaxi[0]] * (degree + 1))
+            )
+            self.isClamped["left"] = self.isClamped["right"] = True
 
             if dimension > 1:
-                self.knotsAdaptive['y'] = np.concatenate(
-                    ([self.Dmini[1]] * (degree + 1),
-                     tv, [self.Dmaxi[1]] * (degree + 1)))
-                self.isClamped['top'] = self.isClamped['bottom'] = True
+                self.knotsAdaptive["y"] = np.concatenate(
+                    ([self.Dmini[1]] * (degree + 1), tv, [self.Dmaxi[1]] * (degree + 1))
+                )
+                self.isClamped["top"] = self.isClamped["bottom"] = True
 
             if dimension > 2:
-                self.knotsAdaptive['z'] = np.concatenate(
-                    ([self.Dmini[2]] * (degree + 1),
-                     tw, [self.Dmaxi[2]] * (degree + 1)))
-                self.isClamped['up'] = self.isClamped['down'] = True
+                self.knotsAdaptive["z"] = np.concatenate(
+                    ([self.Dmini[2]] * (degree + 1), tw, [self.Dmaxi[2]] * (degree + 1))
+                )
+                self.isClamped["up"] = self.isClamped["down"] = True
 
         # self.UVW['x'] = np.linspace(
         #     self.xyzCoordLocal['x'][0], self.xyzCoordLocal['x'][-1], self.nPointsPerSubD[0])
-        self.UVW['x'] = self.xyzCoordLocal['x']
+        self.UVW["x"] = self.xyzCoordLocal["x"]
         if dimension > 1:
             # self.UVW['y'] = np.linspace(
             #     self.xyzCoordLocal['y'][0], self.xyzCoordLocal['y'][-1], self.nPointsPerSubD[1])
-            self.UVW['y'] = self.xyzCoordLocal['y']
+            self.UVW["y"] = self.xyzCoordLocal["y"]
         if dimension > 2:
             # self.UVW['y'] = np.linspace(
             #     self.xyzCoordLocal['y'][0], self.xyzCoordLocal['y'][-1], self.nPointsPerSubD[1])
-            self.UVW['z'] = self.xyzCoordLocal['z']
+            self.UVW["z"] = self.xyzCoordLocal["z"]
 
         if debugProblem:
-            if not self.isClamped['left']:
+            if not self.isClamped["left"]:
                 self.refSolutionLocal[:, 0] = cp.gid() - 1
-            if not self.isClamped['right']:
+            if not self.isClamped["right"]:
                 self.refSolutionLocal[:, -1] = cp.gid() + 1
-            if not self.isClamped['top']:
+            if not self.isClamped["top"]:
                 self.refSolutionLocal[-1, :] = cp.gid() + nSubDomainsX
-            if not self.isClamped['bottom']:
+            if not self.isClamped["bottom"]:
                 self.refSolutionLocal[0, :] = cp.gid() - nSubDomainsX
 
     def augment_spans(self, cp):
@@ -1674,73 +1943,137 @@ class InputControlBlock:
             return
 
         if verbose:
-            print('augment_spans:', cp.gid(),
-                  'Number of control points = ', self.nControlPoints)
+            print(
+                "augment_spans:",
+                cp.gid(),
+                "Number of control points = ",
+                self.nControlPoints,
+            )
             if dimension == 1:
-                print("Subdomain -- ", cp.gid()+1, ": before Shapes: ",
-                      self.refSolutionLocal.shape, self.weightsData.shape, self.knotsAdaptive['x'])
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": before Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
+                    self.knotsAdaptive["x"],
+                )
             else:
-                print("Subdomain -- ", cp.gid()+1, ": before Shapes: ", self.refSolutionLocal.shape,
-                      self.weightsData.shape, self.knotsAdaptive['x'], self.knotsAdaptive['y'])
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": before Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
+                    self.knotsAdaptive["x"],
+                    self.knotsAdaptive["y"],
+                )
 
-        if not self.isClamped['left']:  # Pad knot spans from the left of subdomain
+        if not self.isClamped["left"]:  # Pad knot spans from the left of subdomain
             if verbose:
-                print("\tSubdomain -- ", cp.gid()+1,
-                      ": left ghost: ", self.ghostKnots['left'])
-            self.knotsAdaptive['x'] = np.concatenate(
-                (self.ghostKnots['left'][-1:0:-1], self.knotsAdaptive['x']))
+                print(
+                    "\tSubdomain -- ",
+                    cp.gid() + 1,
+                    ": left ghost: ",
+                    self.ghostKnots["left"],
+                )
+            self.knotsAdaptive["x"] = np.concatenate(
+                (self.ghostKnots["left"][-1:0:-1], self.knotsAdaptive["x"])
+            )
 
-        if not self.isClamped['right']:  # Pad knot spans from the right of subdomain
+        if not self.isClamped["right"]:  # Pad knot spans from the right of subdomain
             if verbose:
-                print("\tSubdomain -- ", cp.gid()+1,
-                      ": right ghost: ", self.ghostKnots['right'])
-            self.knotsAdaptive['x'] = np.concatenate(
-                (self.knotsAdaptive['x'], self.ghostKnots['right'][1:]))
+                print(
+                    "\tSubdomain -- ",
+                    cp.gid() + 1,
+                    ": right ghost: ",
+                    self.ghostKnots["right"],
+                )
+            self.knotsAdaptive["x"] = np.concatenate(
+                (self.knotsAdaptive["x"], self.ghostKnots["right"][1:])
+            )
 
         if dimension > 1:
             # Pad knot spans from the left of subdomain
-            if not self.isClamped['top']:
+            if not self.isClamped["top"]:
                 if verbose:
-                    print("\tSubdomain -- ", cp.gid()+1,
-                          ": top ghost: ", self.ghostKnots['top'])
-                self.knotsAdaptive['y'] = np.concatenate(
-                    (self.knotsAdaptive['y'], self.ghostKnots['top'][1:]))
+                    print(
+                        "\tSubdomain -- ",
+                        cp.gid() + 1,
+                        ": top ghost: ",
+                        self.ghostKnots["top"],
+                    )
+                self.knotsAdaptive["y"] = np.concatenate(
+                    (self.knotsAdaptive["y"], self.ghostKnots["top"][1:])
+                )
 
             # Pad knot spans from the right of subdomain
-            if not self.isClamped['bottom']:
+            if not self.isClamped["bottom"]:
                 if verbose:
-                    print("\tSubdomain -- ", cp.gid()+1,
-                          ": bottom ghost: ", self.ghostKnots['bottom'])
-                self.knotsAdaptive['y'] = np.concatenate(
-                    (self.ghostKnots['bottom'][-1:0:-1], self.knotsAdaptive['y']))
+                    print(
+                        "\tSubdomain -- ",
+                        cp.gid() + 1,
+                        ": bottom ghost: ",
+                        self.ghostKnots["bottom"],
+                    )
+                self.knotsAdaptive["y"] = np.concatenate(
+                    (self.ghostKnots["bottom"][-1:0:-1], self.knotsAdaptive["y"])
+                )
 
         if dimension > 2:
             # Pad knot spans from the left of subdomain
-            if not self.isClamped['up']:
+            if not self.isClamped["up"]:
                 if verbose or True:
-                    print("\tSubdomain -- ", cp.gid()+1,
-                          ": up ghost: ", self.ghostKnots['up'])
-                self.knotsAdaptive['z'] = np.concatenate(
-                    (self.knotsAdaptive['z'], self.ghostKnots['up'][1:]))
+                    print(
+                        "\tSubdomain -- ",
+                        cp.gid() + 1,
+                        ": up ghost: ",
+                        self.ghostKnots["up"],
+                    )
+                self.knotsAdaptive["z"] = np.concatenate(
+                    (self.knotsAdaptive["z"], self.ghostKnots["up"][1:])
+                )
 
             # Pad knot spans from the right of subdomain
-            if not self.isClamped['down']:
+            if not self.isClamped["down"]:
                 if verbose or True:
-                    print("\tSubdomain -- ", cp.gid()+1,
-                          ": down ghost: ", self.ghostKnots['down'])
-                self.knotsAdaptive['z'] = np.concatenate(
-                    (self.ghostKnots['down'][-1:0:-1], self.knotsAdaptive['z']))
+                    print(
+                        "\tSubdomain -- ",
+                        cp.gid() + 1,
+                        ": down ghost: ",
+                        self.ghostKnots["down"],
+                    )
+                self.knotsAdaptive["z"] = np.concatenate(
+                    (self.ghostKnots["down"][-1:0:-1], self.knotsAdaptive["z"])
+                )
 
         if verbose:
             if dimension == 1:
-                print("Subdomain -- ", cp.gid()+1, ": after Shapes: ",
-                      self.refSolutionLocal.shape, self.weightsData.shape, self.knotsAdaptive['x'])
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": after Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
+                    self.knotsAdaptive["x"],
+                )
             else:
-                print("Subdomain -- ", cp.gid()+1, ": after Shapes: ", self.refSolutionLocal.shape,
-                      self.weightsData.shape, self.knotsAdaptive['x'], self.knotsAdaptive['y'])
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": after Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
+                    self.knotsAdaptive["x"],
+                    self.knotsAdaptive["y"],
+                )
 
-            print('augment_spans:', cp.gid(),
-                  'Number of control points = ', self.nControlPoints)
+            print(
+                "augment_spans:",
+                cp.gid(),
+                "Number of control points = ",
+                self.nControlPoints,
+            )
 
     def augment_inputdata(self, cp):
 
@@ -1750,30 +2083,41 @@ class InputControlBlock:
         verbose = False
         postol = 1e-10
         if verbose:
-            print('augment_inputdata:', cp.gid(),
-                  'Number of control points = ', self.nControlPoints)
+            print(
+                "augment_inputdata:",
+                cp.gid(),
+                "Number of control points = ",
+                self.nControlPoints,
+            )
 
         if verbose:
             if dimension == 1:
                 print(
                     "Subdomain -- {0}: before augment -- bounds = {1}, {2}, shape = {3}, knots = {4}, {5}".format(
-                        cp.gid() + 1, self.xyzCoordLocal['x'][0],
-                        self.xyzCoordLocal['x'][-1],
-                        self.xyzCoordLocal['x'].shape, self.knotsAdaptive['x'][degree],
-                        self.knotsAdaptive['x'][-degree]))
+                        cp.gid() + 1,
+                        self.xyzCoordLocal["x"][0],
+                        self.xyzCoordLocal["x"][-1],
+                        self.xyzCoordLocal["x"].shape,
+                        self.knotsAdaptive["x"][degree],
+                        self.knotsAdaptive["x"][-degree],
+                    )
+                )
             else:
                 print(
-                    "Subdomain -- {0}: before augment -- bounds = {1}, {2}, {3}, {4}, shape = {5}, {6}, knots = {7}, {8}, {9}, {10}".
-                    format(
-                        cp.gid() + 1, self.xyzCoordLocal['x'][0],
-                        self.xyzCoordLocal['x'][-1],
-                        self.xyzCoordLocal['y'][0],
-                        self.xyzCoordLocal['y'][-1],
-                        self.xyzCoordLocal['x'].shape, self.xyzCoordLocal['y'].shape, self.knotsAdaptive['x']
-                        [degree],
-                        self.knotsAdaptive['x'][-degree],
-                        self.knotsAdaptive['y'][degree],
-                        self.knotsAdaptive['y'][-degree]))
+                    "Subdomain -- {0}: before augment -- bounds = {1}, {2}, {3}, {4}, shape = {5}, {6}, knots = {7}, {8}, {9}, {10}".format(
+                        cp.gid() + 1,
+                        self.xyzCoordLocal["x"][0],
+                        self.xyzCoordLocal["x"][-1],
+                        self.xyzCoordLocal["y"][0],
+                        self.xyzCoordLocal["y"][-1],
+                        self.xyzCoordLocal["x"].shape,
+                        self.xyzCoordLocal["y"].shape,
+                        self.knotsAdaptive["x"][degree],
+                        self.knotsAdaptive["x"][-degree],
+                        self.knotsAdaptive["y"][degree],
+                        self.knotsAdaptive["y"][-degree],
+                    )
+                )
 
         # print('Knots: ', self.knotsAdaptive['x'], self.knotsAdaptive['y'])
         # locX = sp.BSplineBasis(order=degree+1, knots=self.knotsAdaptive['x']).greville()
@@ -1786,68 +2130,148 @@ class InputControlBlock:
 
             print("Checking direction ", cDirection)
 
-            xyzCP = [self.knotsAdaptive[cDirection][degree],
-                     self.knotsAdaptive[cDirection][-degree-1]]
+            xyzCP = [
+                self.knotsAdaptive[cDirection][degree],
+                self.knotsAdaptive[cDirection][-degree - 1],
+            ]
 
-            indicesXYZ = np.where(np.logical_and(
-                coordinates[cDirection] >= xyzCP[0]-postol, coordinates[cDirection] <= xyzCP[1]+postol))
+            indicesXYZ = np.where(
+                np.logical_and(
+                    coordinates[cDirection] >= xyzCP[0] - postol,
+                    coordinates[cDirection] <= xyzCP[1] + postol,
+                )
+            )
 
             lboundXYZ[idir] = indicesXYZ[0][0]
             # indicesX[0][-1] < len(coordinates[cDirection])
-            uboundXYZ[idir] = min(indicesXYZ[0][-1]+1, len(coordinates[cDirection]))
-            if (idir == 0 and self.isClamped['left'] and self.isClamped['right']) or (idir == 1 and self.isClamped['top'] and self.isClamped['bottom']) or (idir == 2 and self.isClamped['up'] and self.isClamped['down']):
+            uboundXYZ[idir] = min(indicesXYZ[0][-1] + 1, len(coordinates[cDirection]))
+            if (
+                (idir == 0 and self.isClamped["left"] and self.isClamped["right"])
+                or (idir == 1 and self.isClamped["top"] and self.isClamped["bottom"])
+                or (idir == 2 and self.isClamped["up"] and self.isClamped["down"])
+            ):
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][:]
-            elif (idir == 0 and self.isClamped['left']) or (idir == 1 and self.isClamped['bottom']) or (idir == 2 and self.isClamped['down']):
-                self.xyzCoordLocal[cDirection] = coordinates[cDirection][:uboundXYZ[idir]]
-            elif (idir == 0 and self.isClamped['right']) or (idir == 1 and self.isClamped['top']) or (idir == 2 and self.isClamped['up']):
-                self.xyzCoordLocal[cDirection] = coordinates[cDirection][lboundXYZ[idir]:]
+            elif (
+                (idir == 0 and self.isClamped["left"])
+                or (idir == 1 and self.isClamped["bottom"])
+                or (idir == 2 and self.isClamped["down"])
+            ):
+                self.xyzCoordLocal[cDirection] = coordinates[cDirection][
+                    : uboundXYZ[idir]
+                ]
+            elif (
+                (idir == 0 and self.isClamped["right"])
+                or (idir == 1 and self.isClamped["top"])
+                or (idir == 2 and self.isClamped["up"])
+            ):
+                self.xyzCoordLocal[cDirection] = coordinates[cDirection][
+                    lboundXYZ[idir] :
+                ]
             else:
-                self.xyzCoordLocal[cDirection] = coordinates[cDirection][lboundXYZ[idir]:uboundXYZ[idir]]
-            print("%s bounds: "%(cDirection), self.xyzCoordLocal[cDirection]
-                [0], self.xyzCoordLocal[cDirection][-1], xyzCP)
+                self.xyzCoordLocal[cDirection] = coordinates[cDirection][
+                    lboundXYZ[idir] : uboundXYZ[idir]
+                ]
+            print(
+                "%s bounds: " % (cDirection),
+                self.xyzCoordLocal[cDirection][0],
+                self.xyzCoordLocal[cDirection][-1],
+                xyzCP,
+            )
 
         if dimension == 1:
-            self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0]]
+            self.refSolutionLocal = solution[lboundXYZ[0] : uboundXYZ[0]]
             self.refSolutionLocal = self.refSolutionLocal.reshape(
-                (len(self.refSolutionLocal), 1))
+                (len(self.refSolutionLocal), 1)
+            )
         elif dimension == 2:
-            self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0], lboundXYZ[1]:uboundXYZ[1]]
+            self.refSolutionLocal = solution[
+                lboundXYZ[0] : uboundXYZ[0], lboundXYZ[1] : uboundXYZ[1]
+            ]
         else:
-            self.refSolutionLocal = solution[lboundXYZ[0]:uboundXYZ[0], lboundXYZ[1]:uboundXYZ[1], lboundXYZ[2]:uboundXYZ[2]]
+            self.refSolutionLocal = solution[
+                lboundXYZ[0] : uboundXYZ[0],
+                lboundXYZ[1] : uboundXYZ[1],
+                lboundXYZ[2] : uboundXYZ[2],
+            ]
 
         # Store the core indices before augment
         cindicesX = np.array(
             np.where(
                 np.logical_and(
-                    self.xyzCoordLocal['x'] >= coordinates["x"][self.xbounds[0]
-                                                      ] - postol, self.xyzCoordLocal
-                    ['x'] <= coordinates["x"][self.xbounds[1]] + postol)))
+                    self.xyzCoordLocal["x"]
+                    >= coordinates["x"][self.xbounds[0]] - postol,
+                    self.xyzCoordLocal["x"]
+                    <= coordinates["x"][self.xbounds[1]] + postol,
+                )
+            )
+        )
         if dimension > 1:
             cindicesY = np.array(
                 np.where(
                     np.logical_and(
-                        self.xyzCoordLocal['y'] >= coordinates["y"][self.xbounds[2]] - postol, self.xyzCoordLocal['y'] <=
-                        coordinates["y"][self.xbounds[3]] + postol)))
+                        self.xyzCoordLocal["y"]
+                        >= coordinates["y"][self.xbounds[2]] - postol,
+                        self.xyzCoordLocal["y"]
+                        <= coordinates["y"][self.xbounds[3]] + postol,
+                    )
+                )
+            )
             if dimension > 2:
                 cindicesZ = np.array(
                     np.where(
                         np.logical_and(
-                            self.xyzCoordLocal['z'] >= coordinates["z"][self.xbounds[4]] - postol, self.xyzCoordLocal['z'] <=
-                            coordinates["z"][self.xbounds[5]] + postol)))
+                            self.xyzCoordLocal["z"]
+                            >= coordinates["z"][self.xbounds[4]] - postol,
+                            self.xyzCoordLocal["z"]
+                            <= coordinates["z"][self.xbounds[5]] + postol,
+                        )
+                    )
+                )
                 self.corebounds = [
-                    [cindicesX[0][0], len(
-                        self.xyzCoordLocal['x']) if self.isClamped['right'] else cindicesX[0][-1]+1],
-                    [cindicesY[0][0], len(self.xyzCoordLocal['y']) if self.isClamped['top'] else cindicesY[0][-1]+1],
-                    [cindicesZ[0][0], len(self.xyzCoordLocal['z']) if self.isClamped['up'] else cindicesZ[0][-1]+1]]
+                    [
+                        cindicesX[0][0],
+                        len(self.xyzCoordLocal["x"])
+                        if self.isClamped["right"]
+                        else cindicesX[0][-1] + 1,
+                    ],
+                    [
+                        cindicesY[0][0],
+                        len(self.xyzCoordLocal["y"])
+                        if self.isClamped["top"]
+                        else cindicesY[0][-1] + 1,
+                    ],
+                    [
+                        cindicesZ[0][0],
+                        len(self.xyzCoordLocal["z"])
+                        if self.isClamped["up"]
+                        else cindicesZ[0][-1] + 1,
+                    ],
+                ]
             else:
                 self.corebounds = [
-                    [cindicesX[0][0], len(
-                        self.xyzCoordLocal['x']) if self.isClamped['right'] else cindicesX[0][-1]+1],
-                    [cindicesY[0][0], len(self.xyzCoordLocal['y']) if self.isClamped['top'] else cindicesY[0][-1]+1]]
+                    [
+                        cindicesX[0][0],
+                        len(self.xyzCoordLocal["x"])
+                        if self.isClamped["right"]
+                        else cindicesX[0][-1] + 1,
+                    ],
+                    [
+                        cindicesY[0][0],
+                        len(self.xyzCoordLocal["y"])
+                        if self.isClamped["top"]
+                        else cindicesY[0][-1] + 1,
+                    ],
+                ]
 
         else:
-            self.corebounds = [[cindicesX[0][0], len(
-                self.xyzCoordLocal['x']) if self.isClamped['right'] else cindicesX[0][-1]+1]]
+            self.corebounds = [
+                [
+                    cindicesX[0][0],
+                    len(self.xyzCoordLocal["x"])
+                    if self.isClamped["right"]
+                    else cindicesX[0][-1] + 1,
+                ]
+            ]
 
         if verbose:
             print("self.corebounds = ", self.xbounds, self.corebounds)
@@ -1864,41 +2288,55 @@ class InputControlBlock:
             if dimension == 1:
                 print(
                     "Subdomain -- {0}: after augment -- bounds = {1}, {2}, shape = {3}, knots = {4}, {5}".format(
-                        cp.gid() + 1, self.xyzCoordLocal['x'][0],
-                        self.xyzCoordLocal['x'][-1],
-                        self.xyzCoordLocal['x'].shape, self.knotsAdaptive['x'][degree],
-                        self.knotsAdaptive['x'][-degree]))
+                        cp.gid() + 1,
+                        self.xyzCoordLocal["x"][0],
+                        self.xyzCoordLocal["x"][-1],
+                        self.xyzCoordLocal["x"].shape,
+                        self.knotsAdaptive["x"][degree],
+                        self.knotsAdaptive["x"][-degree],
+                    )
+                )
             else:
                 print(
-                    "Subdomain -- {0}: after augment -- bounds = {1}, {2}, {3}, {4}, shape = {5}, {6}, knots = {7}, {8}, {9}, {10}".
-                    format(
-                        cp.gid() + 1, self.xyzCoordLocal['x'][0],
-                        self.xyzCoordLocal['x'][-1],
-                        self.xyzCoordLocal['y'][0],
-                        self.xyzCoordLocal['y'][-1],
-                        self.xyzCoordLocal['x'].shape, self.xyzCoordLocal['y'].shape, self.knotsAdaptive['x']
-                        [degree],
-                        self.knotsAdaptive['x'][-degree],
-                        self.knotsAdaptive['y'][degree],
-                        self.knotsAdaptive['y'][-degree]))
+                    "Subdomain -- {0}: after augment -- bounds = {1}, {2}, {3}, {4}, shape = {5}, {6}, knots = {7}, {8}, {9}, {10}".format(
+                        cp.gid() + 1,
+                        self.xyzCoordLocal["x"][0],
+                        self.xyzCoordLocal["x"][-1],
+                        self.xyzCoordLocal["y"][0],
+                        self.xyzCoordLocal["y"][-1],
+                        self.xyzCoordLocal["x"].shape,
+                        self.xyzCoordLocal["y"].shape,
+                        self.knotsAdaptive["x"][degree],
+                        self.knotsAdaptive["x"][-degree],
+                        self.knotsAdaptive["y"][degree],
+                        self.knotsAdaptive["y"][-degree],
+                    )
+                )
 
         # self.nControlPoints += augmentSpanSpace
-        self.nControlPoints[0] += (augmentSpanSpace if not self.isClamped['left']
-                                   else 0) + (augmentSpanSpace if not self.isClamped['right'] else 0)
+        self.nControlPoints[0] += (
+            augmentSpanSpace if not self.isClamped["left"] else 0
+        ) + (augmentSpanSpace if not self.isClamped["right"] else 0)
         if dimension > 1:
-            self.nControlPoints[1] += (augmentSpanSpace if not self.isClamped['top']
-                                       else 0) + (augmentSpanSpace if not self.isClamped['bottom'] else 0)
+            self.nControlPoints[1] += (
+                augmentSpanSpace if not self.isClamped["top"] else 0
+            ) + (augmentSpanSpace if not self.isClamped["bottom"] else 0)
             if dimension > 2:
-                self.nControlPoints[2] += (augmentSpanSpace if not self.isClamped['up']
-                                       else 0) + (augmentSpanSpace if not self.isClamped['down'] else 0)
+                self.nControlPoints[2] += (
+                    augmentSpanSpace if not self.isClamped["up"] else 0
+                ) + (augmentSpanSpace if not self.isClamped["down"] else 0)
 
         self.controlPointData = np.zeros(self.nControlPoints)
         self.weightsData = np.ones(self.nControlPoints)
         self.solutionDecoded = np.zeros(self.refSolutionLocal.shape)
         self.solutionDecodedOld = np.zeros(self.refSolutionLocal.shape)
 
-        print('augment_inputdata:', cp.gid(),
-              'Number of control points = ', self.nControlPoints)
+        print(
+            "augment_inputdata:",
+            cp.gid(),
+            "Number of control points = ",
+            self.nControlPoints,
+        )
 
     def LSQFit_NonlinearOptimize(self, idom, degree, constraints=None):
 
@@ -1909,7 +2347,7 @@ class InputControlBlock:
             initSol = np.copy(constraints)
 
         else:
-            print('Constraints are all null. Solving unconstrained.')
+            print("Constraints are all null. Solving unconstrained.")
             initSol = np.ones_like(self.controlPointData)
 
         # Compute hte linear operators needed to compute decoded residuals
@@ -1929,38 +2367,45 @@ class InputControlBlock:
             bc_norm = 0.0
             P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
 
-            oddDegree = (degree % 2)
-            nconstraints = augmentSpanSpace + \
-                (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+            oddDegree = degree % 2
+            nconstraints = augmentSpanSpace + (
+                int(degree / 2.0) if not oddDegree else int((degree + 1) / 2.0)
+            )
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = self.decode(P, self.decodeOpXYZ)
-            residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
+            residual_decoded = (self.refSolutionLocal - decoded) / solutionRange
 
-            residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(
-                residual_decoded, self.decodeOpXYZ['y']))
+            residual_encoded = np.matmul(
+                self.decodeOpXYZ["x"].T,
+                np.matmul(residual_decoded, self.decodeOpXYZ["y"]),
+            )
 
-            if not self.isClamped['left']:
-                bc_norm += np.sum(residual_encoded[:nconstraints, :]
-                                  ** 2)/len(residual_encoded[0, :])
-            if not self.isClamped['right']:
-                bc_norm += np.sum(residual_encoded[-nconstraints-1:, :]
-                                  ** 2)/len(residual_encoded[0, :])
-            if not self.isClamped['bottom']:
-                bc_norm += np.sum(residual_encoded[:, :nconstraints]
-                                  ** 2)/len(residual_encoded[:, 0])
-            if not self.isClamped['top']:
-                bc_norm += np.sum(residual_encoded[:, -nconstraints-1:]
-                                  ** 2)/len(residual_encoded[:, 0])
+            if not self.isClamped["left"]:
+                bc_norm += np.sum(residual_encoded[:nconstraints, :] ** 2) / len(
+                    residual_encoded[0, :]
+                )
+            if not self.isClamped["right"]:
+                bc_norm += np.sum(residual_encoded[-nconstraints - 1 :, :] ** 2) / len(
+                    residual_encoded[0, :]
+                )
+            if not self.isClamped["bottom"]:
+                bc_norm += np.sum(residual_encoded[:, :nconstraints] ** 2) / len(
+                    residual_encoded[:, 0]
+                )
+            if not self.isClamped["top"]:
+                bc_norm += np.sum(residual_encoded[:, -nconstraints - 1 :] ** 2) / len(
+                    residual_encoded[:, 0]
+                )
 
             residual_vec_encoded = residual_encoded.reshape(-1)
-            net_residual_norm = (np.sum(residual_vec_encoded**2)/len(residual_vec_encoded)
-                                 ) + bc_penalty*np.sqrt(bc_norm/4)
+            net_residual_norm = (
+                np.sum(residual_vec_encoded**2) / len(residual_vec_encoded)
+            ) + bc_penalty * np.sqrt(bc_norm / 4)
             if type(Pin) is not np.numpy_boxes.ArrayBox:
-                print('Residual = ', net_residual_norm)
+                print("Residual = ", net_residual_norm)
 
             return net_residual_norm
-
 
         def residual2D(Pin):
 
@@ -1971,15 +2416,17 @@ class InputControlBlock:
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = self.decode(P, self.decodeOpXYZ)
-            residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
+            residual_decoded = (self.refSolutionLocal - decoded) / solutionRange
 
             if augmentSpanSpace > 0:
                 # residual_decoded[self.corebounds[0][0], :] *= bc_penalty
                 # residual_decoded[self.corebounds[0][1]-1, :] *= bc_penalty
                 # residual_decoded[:, self.corebounds[1][0]] *= bc_penalty
                 # residual_decoded[:, self.corebounds[1][1]-1] *= bc_penalty
-                residual_decoded = residual_decoded[self.corebounds[0][0]: self.corebounds[0][
-                    1], self.corebounds[1][0]: self.corebounds[1][1]]
+                residual_decoded = residual_decoded[
+                    self.corebounds[0][0] : self.corebounds[0][1],
+                    self.corebounds[1][0] : self.corebounds[1][1],
+                ]
                 # residual_decoded[0, :] *= bc_penalty
                 # residual_decoded[-1, :] *= bc_penalty
                 # residual_decoded[:, 0] *= bc_penalty
@@ -1987,17 +2434,20 @@ class InputControlBlock:
 
             residual_vec_decoded = residual_decoded.reshape(-1)
             decoded_residual_norm_a = np.sqrt(
-                np.sum(residual_vec_decoded**2)/len(residual_vec_decoded))
+                np.sum(residual_vec_decoded**2) / len(residual_vec_decoded)
+            )
 
             tvector = residual_decoded[0, :].reshape(-1)
             tvector = np.concatenate(
-                (tvector, residual_decoded[-1, :].reshape(-1)), axis=0)
-            tvector = np.concatenate(
-                (tvector, residual_decoded[:, 0].T), axis=0)
+                (tvector, residual_decoded[-1, :].reshape(-1)), axis=0
+            )
+            tvector = np.concatenate((tvector, residual_decoded[:, 0].T), axis=0)
             residual_decoded = np.concatenate(
-                (tvector, residual_decoded[:, -1].T), axis=0)
+                (tvector, residual_decoded[:, -1].T), axis=0
+            )
             decoded_residual_norm_b = np.sqrt(
-                np.sum(residual_decoded**2)/len(residual_decoded))
+                np.sum(residual_decoded**2) / len(residual_decoded)
+            )
 
             # if type(residual_decoded) is np.numpy_boxes.ArrayBox:
             #     decoded_residual_norm = np.linalg.norm(residual_decoded._value, ord=2)
@@ -2006,13 +2456,14 @@ class InputControlBlock:
 
             # return decoded_residual_norm
 
-#             res1 = np.dot(res_dec, self.Nv)
-#             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
+            #             res1 = np.dot(res_dec, self.Nv)
+            #             residual = np.dot(self.Nu.T, res1).reshape(self.Nu.shape[1]*self.Nv.shape[1])
 
             # compute the net residual norm that includes the decoded error in the current subdomain and the penalized
             # constraint error of solution on the subdomain interfaces
-            net_residual_norm = decoded_residual_norm_a + \
-                bc_penalty * (decoded_residual_norm_b)
+            net_residual_norm = decoded_residual_norm_a + bc_penalty * (
+                decoded_residual_norm_b
+            )
 
             # bc_penalty = 1e7
             # BCPenalty = np.ones(residual_decoded.shape)
@@ -2038,7 +2489,7 @@ class InputControlBlock:
                 #       constrained_residual_norm, ', diagonal = ', diagonal_boundary_residual_norm if useDiagonalBlocks else 0)
                 # print('Constraint errors = ', ltn, rtn,
                 #       tpn, btn, constrained_residual_norm)
-                print('Residual = ', net_residual_norm)
+                print("Residual = ", net_residual_norm)
                 # if useDiagonalBlocks:
                 #     print('Constraint diagonal errors = ', topleftBndErr, toprightBndErr, bottomleftBndErr,
                 #           bottomrightBndErr, diagonal_boundary_residual_norm)
@@ -2051,17 +2502,18 @@ class InputControlBlock:
 
             # Residuals are in the decoded space - so direct way to constrain the boundary data
             decoded = self.decode(P, self.decodeOpXYZ)
-            residual_decoded = (self.refSolutionLocal - decoded)/solutionRange
+            residual_decoded = (self.refSolutionLocal - decoded) / solutionRange
 
             # residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(
             #     self.decodeOpXYZ['x'].T, np.matmul(residual_decoded, self.decodeOpXYZ['z'])))
 
             net_residual_vec = residual_decoded.reshape(-1)
             net_residual_norm = np.sqrt(
-                np.sum(net_residual_vec**2)/len(net_residual_vec))
+                np.sum(net_residual_vec**2) / len(net_residual_vec)
+            )
 
             if type(Pin) is not np.numpy_boxes.ArrayBox:
-                print('Residual = ', net_residual_norm)
+                print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
@@ -2089,20 +2541,21 @@ class InputControlBlock:
 
             # Create a gradient function to pass to the minimizer
             jacobian = egrad(residualFunction)(P, printVerbose=False)
-#             jacobian = jacobian_const
+            #             jacobian = jacobian_const
             return jacobian
 
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
             solution = self.lsqFit()
-            print('LSQFIT solution: min = ', np.min(
-                solution), 'max = ', np.max(solution))
+            print(
+                "LSQFIT solution: min = ", np.min(solution), "max = ", np.max(solution)
+            )
         else:
 
             if constraints is None and alwaysSolveConstrained:
                 initSol = self.lsqFit()
 
-            oddDegree = (degree % 2)
+            oddDegree = degree % 2
             # alpha = 0.5 if dimension == 2 or oddDegree else 0.0
             alpha = 0.5
             beta = 0.0
@@ -2111,17 +2564,28 @@ class InputControlBlock:
             if dimension == 1:
                 freeBounds = [0, len(localBCAssembly[:, 0])]
             elif dimension == 2:
-                freeBounds = [0, len(localBCAssembly[:, 0]),
-                            0, len(localBCAssembly[0, :])]
+                freeBounds = [
+                    0,
+                    len(localBCAssembly[:, 0]),
+                    0,
+                    len(localBCAssembly[0, :]),
+                ]
             else:
-                freeBounds = [0, len(localBCAssembly[:, 0, :]),
-                            0, len(localBCAssembly[0, :, :]),
-                            0, len(localBCAssembly[:, :, 0])]
-            print('Initial calculation')
+                freeBounds = [
+                    0,
+                    len(localBCAssembly[:, 0, :]),
+                    0,
+                    len(localBCAssembly[0, :, :]),
+                    0,
+                    len(localBCAssembly[:, :, 0]),
+                ]
+            print("Initial calculation")
             # Lets update our initial solution with constraints
             if constraints is not None and len(constraints) > 0:
 
-                initSol = self.problemInterface.initialize_solution(self, initSol, degree, augmentSpanSpace, fullyPinned)
+                initSol = self.problemInterface.initialize_solution(
+                    self, initSol, degree, augmentSpanSpace, fullyPinned
+                )
 
                 # if dimension < 3:
                 #     initSol = self.problemInterface.initialize_solution(self, initSol, degree, augmentSpanSpace, fullyPinned)
@@ -2556,68 +3020,107 @@ class InputControlBlock:
                 if enforceBounds:
                     if dimension == 1:
                         nshape = self.controlPointData.shape[0]
-                        bnds = np.tensordot(np.ones(nshape),
-                                            self.controlPointBounds, axes=0)
+                        bnds = np.tensordot(
+                            np.ones(nshape), self.controlPointBounds, axes=0
+                        )
 
-                        oddDegree = (degree % 2)
-                        nconstraints = augmentSpanSpace + \
-                            (int(degree/2.0) if not oddDegree else int((degree+1)/2.0))
+                        oddDegree = degree % 2
+                        nconstraints = augmentSpanSpace + (
+                            int(degree / 2.0)
+                            if not oddDegree
+                            else int((degree + 1) / 2.0)
+                        )
 
-                        if not self.isClamped['left']:
-                            for i in range(nconstraints+1):
+                        if not self.isClamped["left"]:
+                            for i in range(nconstraints + 1):
                                 bnds[i][:] = initSol[i]
-                        if not self.isClamped['right']:
+                        if not self.isClamped["right"]:
                             for i in range(nconstraints):
-                                bnds[-i-1][:] = initSol[-i-1]
+                                bnds[-i - 1][:] = initSol[-i - 1]
                     elif dimension == 2:
-                        nshape = self.controlPointData.shape[0] * \
-                            self.controlPointData.shape[1]
-                        bnds = np.tensordot(np.ones(nshape),
-                                            self.controlPointBounds, axes=0)
+                        nshape = (
+                            self.controlPointData.shape[0]
+                            * self.controlPointData.shape[1]
+                        )
+                        bnds = np.tensordot(
+                            np.ones(nshape), self.controlPointBounds, axes=0
+                        )
                     else:
-                        nshape = self.controlPointData.shape[0] * \
-                            self.controlPointData.shape[1] * \
-                            self.controlPointData.shape[2]
-                        bnds = np.tensordot(np.ones(nshape),
-                                            self.controlPointBounds, axes=0)
+                        nshape = (
+                            self.controlPointData.shape[0]
+                            * self.controlPointData.shape[1]
+                            * self.controlPointData.shape[2]
+                        )
+                        bnds = np.tensordot(
+                            np.ones(nshape), self.controlPointBounds, axes=0
+                        )
                 else:
                     bnds = None
 
-                print('Using optimization solver = ', solverScheme)
+                print("Using optimization solver = ", solverScheme)
                 # Solver options: https://docs.scipy.org/doc/scipy-0.13.0/reference/generated/scipy.optimize.show_options.html
-                if solverScheme == 'L-BFGS-B':
-                    res = minimize(residualFunction, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
-                                   bounds=bnds,
-                                   jac=jacobian,
-                                   callback=print_iterate,
-                                   tol=self.globalTolerance,
-                                   options={'disp': False, 'ftol': maxRelErr, 'gtol': self.globalTolerance, 'maxiter': solverMaxIter})
-                elif solverScheme == 'CG':
-                    res = minimize(residualFunction, x0=initSol, method=solverScheme,  # Unbounded - can blow up
-                                   jac=jacobian,
-                                   bounds=bnds,
-                                   callback=print_iterate,
-                                   tol=self.globalTolerance,
-                                   options={'disp': False, 'norm': 2, 'maxiter': solverMaxIter})
-                elif solverScheme == 'SLSQP' or solverScheme == 'COBYLA':
-                    res = minimize(residualFunction, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
-                                   bounds=bnds,
-                                   jac=jacobian,
-                                   callback=print_iterate,
-                                   tol=self.globalTolerance,
-                                   options={'disp': False, 'ftol': maxRelErr, 'maxiter': solverMaxIter})
-                elif solverScheme == 'Newton-CG' or solverScheme == 'TNC':
-                    res = minimize(residualFunction, x0=initSol, method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
-                                   jac=jacobian,
-                                   bounds=bnds,
-                                   # jac=egrad(residual)(initSol),
-                                   callback=print_iterate,
-                                   tol=self.globalTolerance,
-                                   options={'disp': False, 'eps': self.globalTolerance, 'maxiter': solverMaxIter})
+                if solverScheme == "L-BFGS-B":
+                    res = minimize(
+                        residualFunction,
+                        x0=initSol,
+                        method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        bounds=bnds,
+                        jac=jacobian,
+                        callback=print_iterate,
+                        tol=self.globalTolerance,
+                        options={
+                            "disp": False,
+                            "ftol": maxRelErr,
+                            "gtol": self.globalTolerance,
+                            "maxiter": solverMaxIter,
+                        },
+                    )
+                elif solverScheme == "CG":
+                    res = minimize(
+                        residualFunction,
+                        x0=initSol,
+                        method=solverScheme,  # Unbounded - can blow up
+                        jac=jacobian,
+                        bounds=bnds,
+                        callback=print_iterate,
+                        tol=self.globalTolerance,
+                        options={"disp": False, "norm": 2, "maxiter": solverMaxIter},
+                    )
+                elif solverScheme == "SLSQP" or solverScheme == "COBYLA":
+                    res = minimize(
+                        residualFunction,
+                        x0=initSol,
+                        method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        bounds=bnds,
+                        jac=jacobian,
+                        callback=print_iterate,
+                        tol=self.globalTolerance,
+                        options={
+                            "disp": False,
+                            "ftol": maxRelErr,
+                            "maxiter": solverMaxIter,
+                        },
+                    )
+                elif solverScheme == "Newton-CG" or solverScheme == "TNC":
+                    res = minimize(
+                        residualFunction,
+                        x0=initSol,
+                        method=solverScheme,  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        jac=jacobian,
+                        bounds=bnds,
+                        # jac=egrad(residual)(initSol),
+                        callback=print_iterate,
+                        tol=self.globalTolerance,
+                        options={
+                            "disp": False,
+                            "eps": self.globalTolerance,
+                            "maxiter": solverMaxIter,
+                        },
+                    )
                 else:
-                    error('No implementation available')
+                    error("No implementation available")
 
-                print('[%d] : %s' % (idom, res.message))
+                print("[%d] : %s" % (idom, res.message))
                 solution = np.copy(res.x).reshape(self.controlPointData.shape)
 
             else:
@@ -2634,11 +3137,20 @@ class InputControlBlock:
         # print('Size: ', commW.size, ' rank = ', commW.rank, ' Metrics: ', self.errorMetricsL2[:])
         # print('Rank:', commW.rank, ' SDom:', cp.gid(), ' L2 Error table: ', self.errorMetricsL2)
         print(
-            'Rank:', commWorld.rank, ' SDom:', cp.gid(),
-            ' Error: ', self.errorMetricsL2[self.outerIteration - 1],
-            ', Convergence: ', np.abs(
-                [self.errorMetricsL2[1: self.outerIteration] - self.errorMetricsL2
-                 [0: self.outerIteration - 1]]))
+            "Rank:",
+            commWorld.rank,
+            " SDom:",
+            cp.gid(),
+            " Error: ",
+            self.errorMetricsL2[self.outerIteration - 1],
+            ", Convergence: ",
+            np.abs(
+                [
+                    self.errorMetricsL2[1 : self.outerIteration]
+                    - self.errorMetricsL2[0 : self.outerIteration - 1]
+                ]
+            ),
+        )
 
         # L2NormVector = MPI.gather(self.errorMetricsL2[self.outerIteration - 1], root=0)
 
@@ -2648,34 +3160,51 @@ class InputControlBlock:
         if len(self.solutionDecodedOld):
 
             # Let us compute the relative change in the solution between current and previous iteration
-            iterateChangeVec = (self.solutionDecoded -
-                                self.solutionDecodedOld).flatten()
+            iterateChangeVec = (
+                self.solutionDecoded - self.solutionDecodedOld
+            ).flatten()
             errorMetricsSubDomL2 = np.linalg.norm(
-                iterateChangeVec, ord=2) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=2)
+                iterateChangeVec, ord=2
+            ) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=2)
             errorMetricsSubDomLinf = np.linalg.norm(
-                iterateChangeVec, ord=np.inf) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=np.inf)
+                iterateChangeVec, ord=np.inf
+            ) / np.linalg.norm(self.refSolutionLocal.reshape(-1), ord=np.inf)
 
             self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
             self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
 
             print(
-                cp.gid() + 1, ' Convergence check: ', errorMetricsSubDomL2, errorMetricsSubDomLinf,
+                cp.gid() + 1,
+                " Convergence check: ",
+                errorMetricsSubDomL2,
+                errorMetricsSubDomLinf,
                 np.abs(
-                    self.errorMetricsLinf[self.outerIteration] -
-                    self.errorMetricsLinf
-                    [self.outerIteration - 1]),
-                errorMetricsSubDomLinf < 1e-8 and np.abs(
-                    self.errorMetricsL2[self.outerIteration] -
-                    self.errorMetricsL2
-                    [self.outerIteration - 1]) < 1e-10)
+                    self.errorMetricsLinf[self.outerIteration]
+                    - self.errorMetricsLinf[self.outerIteration - 1]
+                ),
+                errorMetricsSubDomLinf < 1e-8
+                and np.abs(
+                    self.errorMetricsL2[self.outerIteration]
+                    - self.errorMetricsL2[self.outerIteration - 1]
+                )
+                < 1e-10,
+            )
 
             L2err[cp.gid()] = self.decodederrors[0]
-            if errorMetricsSubDomLinf < 1e-12 and np.abs(
-                    self.errorMetricsL2[self.outerIteration] -
-                self.errorMetricsL2
-                    [self.outerIteration - 1]) < 1e-12:
-                print('Subdomain ', cp.gid(
-                )+1, ' has converged to its final solution with error = ', errorMetricsSubDomLinf)
+            if (
+                errorMetricsSubDomLinf < 1e-12
+                and np.abs(
+                    self.errorMetricsL2[self.outerIteration]
+                    - self.errorMetricsL2[self.outerIteration - 1]
+                )
+                < 1e-12
+            ):
+                print(
+                    "Subdomain ",
+                    cp.gid() + 1,
+                    " has converged to its final solution with error = ",
+                    errorMetricsSubDomLinf,
+                )
                 isConverged[cp.gid()] = 1
 
         # self.outerIteration = iterationNum+1
@@ -2688,12 +3217,17 @@ class InputControlBlock:
         global isConverged
         if isConverged[cp.gid()] == 1:
             print(
-                cp.gid()+1, ' subdomain has already converged to its solution. Skipping solve ...')
+                cp.gid() + 1,
+                " subdomain has already converged to its solution. Skipping solve ...",
+            )
             return
 
         # Subdomain ID: iSubDom = cp.gid()+1
         newSolve = False
-        if (np.sum(np.abs(self.controlPointData)) < 1e-14 and len(self.controlPointData) > 0) or len(self.controlPointData) == 0:
+        if (
+            np.sum(np.abs(self.controlPointData)) < 1e-14
+            and len(self.controlPointData) > 0
+        ) or len(self.controlPointData) == 0:
             newSolve = True
 
             # Compute the basis functions now that we are ready to solve the problem
@@ -2701,18 +3235,24 @@ class InputControlBlock:
 
             self.decodeOpXYZ = self.compute_decode_operators()
 
-        print("Subdomain -- ", cp.gid()+1)
+        print("Subdomain -- ", cp.gid() + 1)
 
         # Let do the recursive iterations
         # Use the previous MAK solver solution as initial guess; Could do something clever later
 
         # Invoke the adaptive fitting routine for this subdomain
-        iSubDom = cp.gid()+1
+        iSubDom = cp.gid() + 1
 
         self.solutionDecodedOld = np.copy(self.solutionDecoded)
         # self.globalTolerance = 1e-3 * 1e-3**self.adaptiveIterationNum
 
-        if ((np.sum(np.abs(self.controlPointData)) < 1e-14 and len(self.controlPointData) > 0) or len(self.controlPointData) == 0) and self.outerIteration == 0:
+        if (
+            (
+                np.sum(np.abs(self.controlPointData)) < 1e-14
+                and len(self.controlPointData) > 0
+            )
+            or len(self.controlPointData) == 0
+        ) and self.outerIteration == 0:
             print(iSubDom, " - Applying the unconstrained solver.")
             constraints = None
 
@@ -2722,12 +3262,14 @@ class InputControlBlock:
 
         #  Invoke the local subdomain solver
         self.controlPointData = self.LSQFit_NonlinearOptimize(
-            iSubDom, degree, constraints)
+            iSubDom, degree, constraints
+        )
 
         if constraints is None:  # We just solved the initial LSQ problem.
             # Store the maximum bounds to respect so that we remain monotone
             self.controlPointBounds = np.array(
-                [np.min(self.controlPointData), np.max(self.controlPointData)])
+                [np.min(self.controlPointData), np.max(self.controlPointData)]
+            )
 
         # Update the local decoded data
         self.solutionDecoded = self.decode(self.controlPointData, self.decodeOpXYZ)
@@ -2736,46 +3278,59 @@ class InputControlBlock:
         if len(self.solutionLocalHistory) == 0 and extrapolate:
             if useAitken:
                 self.solutionLocalHistory = np.zeros(
-                    (self.controlPointData.shape[0]*self.controlPointData.shape[1], 3))
+                    (self.controlPointData.shape[0] * self.controlPointData.shape[1], 3)
+                )
             else:
                 self.solutionLocalHistory = np.zeros(
-                    (self.controlPointData.shape[0]*self.controlPointData.shape[1], nWynnEWork))
+                    (
+                        self.controlPointData.shape[0] * self.controlPointData.shape[1],
+                        nWynnEWork,
+                    )
+                )
 
         # E = (self.solutionDecoded[self.corebounds[0]:self.corebounds[1]] - self.controlPointData[self.corebounds[0]:self.corebounds[1]])/solutionRange
         if dimension == 1:
             decodedError = (
-                self.refSolutionLocal[self.corebounds[0][0]
-                    : self.corebounds[0][1]] - self.solutionDecoded
-                [self.corebounds[0][0]: self.corebounds[0][1]]) / solutionRange
+                self.refSolutionLocal[self.corebounds[0][0] : self.corebounds[0][1]]
+                - self.solutionDecoded[self.corebounds[0][0] : self.corebounds[0][1]]
+            ) / solutionRange
         elif dimension == 2:
-            decodedErrorT = (self.refSolutionLocal -
-                             self.solutionDecoded) / solutionRange
-            decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
-                                          self.corebounds[1][0]: self.corebounds[1][1]].reshape(-1))
+            decodedErrorT = (
+                self.refSolutionLocal - self.solutionDecoded
+            ) / solutionRange
+            decodedError = decodedErrorT[
+                self.corebounds[0][0] : self.corebounds[0][1],
+                self.corebounds[1][0] : self.corebounds[1][1],
+            ].reshape(-1)
         elif dimension == 3:
             print("Shapes: ", self.refSolutionLocal.shape, self.solutionDecoded.shape)
-            decodedErrorT = (self.refSolutionLocal -
-                             self.solutionDecoded) / solutionRange
-            decodedError = (decodedErrorT[self.corebounds[0][0]: self.corebounds[0][1],
-                                          self.corebounds[1][0]: self.corebounds[1][1],
-                                          self.corebounds[2][0]: self.corebounds[2][1]].reshape(-1))
+            decodedErrorT = (
+                self.refSolutionLocal - self.solutionDecoded
+            ) / solutionRange
+            decodedError = decodedErrorT[
+                self.corebounds[0][0] : self.corebounds[0][1],
+                self.corebounds[1][0] : self.corebounds[1][1],
+                self.corebounds[2][0] : self.corebounds[2][1],
+            ].reshape(-1)
         LinfErr = np.linalg.norm(decodedError, ord=np.inf)
-        L2Err = np.sqrt(np.sum(decodedError**2)/len(decodedError))
+        L2Err = np.sqrt(np.sum(decodedError**2) / len(decodedError))
 
         self.decodederrors[0] = L2Err
         self.decodederrors[1] = LinfErr
 
-        print("Subdomain -- ", iSubDom, ": L2 error: ",
-              L2Err, ", Linf error: ", LinfErr)
+        print(
+            "Subdomain -- ", iSubDom, ": L2 error: ", L2Err, ", Linf error: ", LinfErr
+        )
 
 
 #########
 domain_control = diy.DiscreteBounds(
-    np.zeros((dimension, 1), dtype=np.uint32), nPoints-1)
+    np.zeros((dimension, 1), dtype=np.uint32), nPoints - 1
+)
 
 # Routine to recursively add a block and associated data to it
 
-print('')
+print("")
 
 
 def add_input_control_block2(gid, core, bounds, domain, link):
@@ -2783,31 +3338,37 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     minb = bounds.min
     maxb = bounds.max
 
-    xlocal = coordinates["x"][minb[0]:maxb[0]+1]
+    xlocal = coordinates["x"][minb[0] : maxb[0] + 1]
     if dimension > 1:
-        ylocal = coordinates["y"][minb[1]:maxb[1]+1]
+        ylocal = coordinates["y"][minb[1] : maxb[1] + 1]
         if dimension > 2:
-            zlocal = coordinates["z"][minb[2]:maxb[2]+1]
-            sollocal = solution[minb[0]:maxb[0]+1,
-                                minb[1]:maxb[1]+1, minb[2]:maxb[2]+1]
+            zlocal = coordinates["z"][minb[2] : maxb[2] + 1]
+            sollocal = solution[
+                minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1, minb[2] : maxb[2] + 1
+            ]
         else:
             zlocal = None
-            sollocal = solution[minb[0]:maxb[0]+1, minb[1]:maxb[1]+1]
+            sollocal = solution[minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1]
 
     else:
         ylocal = None
         zlocal = None
-        sollocal = solution[minb[0]:maxb[0]+1]
+        sollocal = solution[minb[0] : maxb[0] + 1]
         sollocal = sollocal.reshape((len(sollocal), 1))
 
     # print("Subdomain %d: " % gid, minb[0], minb[1], maxb[0], maxb[1], z.shape, zlocal.shape)
-    masterControl.add(gid, InputControlBlock(
-        gid, nControlPointsInput, core, bounds, sollocal, xlocal, ylocal, zlocal), link)
+    masterControl.add(
+        gid,
+        InputControlBlock(
+            gid, nControlPointsInput, core, bounds, sollocal, xlocal, ylocal, zlocal
+        ),
+        link,
+    )
 
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
 # Store L2, Linf errors as function of iteration
-errors = np.zeros([nASMIterations+1, 2])
+errors = np.zeros([nASMIterations + 1, 2])
 
 # Let us initialize DIY and setup the problem
 share_face = np.ones((dimension, 1)) > 0
@@ -2815,15 +3376,18 @@ wrap = np.ones((dimension, 1)) < 0
 ghosts = np.zeros((dimension, 1), dtype=np.uint32)
 
 discreteDec = diy.DiscreteDecomposer(
-    dimension, domain_control, nTotalSubDomains, share_face, wrap, ghosts, nSubDomains)
+    dimension, domain_control, nTotalSubDomains, share_face, wrap, ghosts, nSubDomains
+)
 
 contigAssigner = diy.ContiguousAssigner(nprocs, nTotalSubDomains)
 
 discreteDec.decompose(rank, contigAssigner, add_input_control_block2)
 
-if verbose: masterControl.foreach(InputControlBlock.show)
+if verbose:
+    masterControl.foreach(InputControlBlock.show)
 
 #########
+
 
 def send_receive_all():
 
@@ -2844,6 +3408,7 @@ def send_receive_all():
     #     masterControl.foreach(InputControlBlock.recv_diy_3d)
 
     return
+
 
 sys.stdout.flush()
 commWorld.Barrier()
@@ -2882,7 +3447,7 @@ del coordinates, solution
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 if rank == 0:
-    print('\nTotal setup time for solver = ', elapsed, '\n')
+    print("\nTotal setup time for solver = ", elapsed, "\n")
 
 commWorld.Barrier()
 start_time = timeit.default_timer()
@@ -2900,7 +3465,8 @@ for iterIdx in range(nASMIterations):
 
     # check if we have locally converged within criteria
     masterControl.foreach(
-        lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx))
+        lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
+    )
 
     isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
 
@@ -2916,8 +3482,11 @@ for iterIdx in range(nASMIterations):
             # figErrHnd = plt.figure()
             # plt.plot(coordinates["x"], solution, 'b-', ms=5, label='Input')
 
-            masterControl.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(
-                icb, cp, figHnd, figErrHnd, "%d-%d" % (cp.gid(), iterIdx)))
+            masterControl.foreach(
+                lambda icb, cp: InputControlBlock.set_fig_handles(
+                    icb, cp, figHnd, figErrHnd, "%d-%d" % (cp.gid(), iterIdx)
+                )
+            )
             masterControl.foreach(InputControlBlock.output_solution)
 
             # plt.legend()
@@ -2927,8 +3496,11 @@ for iterIdx in range(nASMIterations):
         else:
 
             if useVTKOutput:
-                masterControl.foreach(lambda icb, cp: InputControlBlock.set_fig_handles(
-                    icb, cp, None, None, "%d-%d" % (cp.gid(), iterIdx)))
+                masterControl.foreach(
+                    lambda icb, cp: InputControlBlock.set_fig_handles(
+                        icb, cp, None, None, "%d-%d" % (cp.gid(), iterIdx)
+                    )
+                )
                 # masterControl.foreach(InputControlBlock.output_solution)
                 masterControl.foreach(InputControlBlock.output_vtk)
 
@@ -2938,13 +3510,14 @@ for iterIdx in range(nASMIterations):
 
     if isASMConverged == nTotalSubDomains:
         if rank == 0:
-            print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx+1))
+            print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx + 1))
         break
 
     else:
         if extrapolate:
             masterControl.foreach(
-                lambda icb, cp: InputControlBlock.extrapolate_guess(icb, cp, iterIdx))
+                lambda icb, cp: InputControlBlock.extrapolate_guess(icb, cp, iterIdx)
+            )
 
         # Now let us perform send-receive to get the data on the interface boundaries from
         # adjacent nearest-neighbor subdomains
@@ -2956,25 +3529,25 @@ for iterIdx in range(nASMIterations):
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 if rank == 0:
-    print('\nTotal computational time for solve = ', elapsed, '\n')
+    print("\nTotal computational time for solve = ", elapsed, "\n")
 
-avgL2err = commWorld.allreduce(np.sum(L2err[np.nonzero(L2err)]**2), op=MPI.SUM)
-avgL2err = np.sqrt(avgL2err/nTotalSubDomains)
-maxL2err = commWorld.allreduce(
-    np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX)
-minL2err = commWorld.allreduce(
-    np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN)
+avgL2err = commWorld.allreduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM)
+avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
+maxL2err = commWorld.allreduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX)
+minL2err = commWorld.allreduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN)
 
 # np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
-    print("\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n" % (
-        avgL2err, maxL2err, minL2err))
-    print('')
+    print(
+        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n"
+        % (avgL2err, maxL2err, minL2err)
+    )
+    print("")
 
 commWorld.Barrier()
 
-np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
+np.set_printoptions(formatter={"float": "{: 5.12e}".format})
 masterControl.foreach(InputControlBlock.print_error_metrics)
 
 if showplot:
