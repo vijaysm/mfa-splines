@@ -489,8 +489,8 @@ class ProblemSolver2D:
         self, inputCB, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
-        alpha = 0.5
-        beta = 0.0
+        alpha = 0.5 # Between [0, 1.0]
+        beta = 0.5 # Between [0, 0.5]
         localAssemblyWeights = np.zeros(initSol.shape)
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0]), 0, len(localBCAssembly[0, :])]
@@ -568,10 +568,11 @@ class ProblemSolver2D:
                     if nconstraints > 1:
                         initSol[
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
-                        ] = inputCB.boundaryConstraints["left"][
+                        ] = beta * initSol[
+                            : nconstraints - 1, freeBounds[2] : freeBounds[3] ] + (1 - beta) * inputCB.boundaryConstraints["left"][
                             -degree - loffset : -nconstraints,
-                            freeBounds[2] : freeBounds[3],
-                        ]
+                            freeBounds[2] : freeBounds[3] ]
+
                         localAssemblyWeights[
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
                         ] += 1.0
@@ -581,9 +582,9 @@ class ProblemSolver2D:
                     ] += 1.0
                     initSol[
                         :nconstraints, freeBounds[2] : freeBounds[3]
-                    ] = inputCB.boundaryConstraints["left"][
-                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3]
-                    ]
+                    ] = beta * initSol[
+                        :nconstraints, freeBounds[2] : freeBounds[3]] + (1 - beta) * inputCB.boundaryConstraints["left"][
+                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3] ]
 
             if "right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -599,9 +600,10 @@ class ProblemSolver2D:
                     if nconstraints > 1:
                         initSol[
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
-                        ] = inputCB.boundaryConstraints["right"][
+                        ] = beta * initSol[
+                            -nconstraints + 1 :, freeBounds[2] : freeBounds[3] ] + (1-beta) * inputCB.boundaryConstraints["right"][
                             nconstraints : degree + loffset,
-                            freeBounds[2] : freeBounds[3],
+                            freeBounds[2] : freeBounds[3]
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
@@ -612,7 +614,8 @@ class ProblemSolver2D:
                     ] += 1.0
                     initSol[
                         -nconstraints:, freeBounds[2] : freeBounds[3]
-                    ] = inputCB.boundaryConstraints["right"][
+                    ] = beta * initSol[
+                            -nconstraints:, freeBounds[2] : freeBounds[3] ] + (1-beta) * inputCB.boundaryConstraints["right"][
                         nconstraints : degree + loffset, freeBounds[2] : freeBounds[3]
                     ]
 
@@ -630,7 +633,8 @@ class ProblemSolver2D:
                     if nconstraints > 1:
                         initSol[
                             freeBounds[0] : freeBounds[1], -nconstraints + 1 :
-                        ] = inputCB.boundaryConstraints["top"][
+                        ] = beta * initSol[
+                            freeBounds[0] : freeBounds[1], -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top"][
                             freeBounds[0] : freeBounds[1],
                             nconstraints : loffset + degree,
                         ]
@@ -640,7 +644,8 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], -nconstraints:
-                    ] = inputCB.boundaryConstraints["top"][
+                    ] = beta * initSol[
+                            freeBounds[0] : freeBounds[1], -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top"][
                         freeBounds[0] : freeBounds[1], nconstraints : loffset + degree
                     ]
                     localAssemblyWeights[
@@ -661,7 +666,8 @@ class ProblemSolver2D:
                     if nconstraints > 1:
                         initSol[
                             freeBounds[0] : freeBounds[1], : nconstraints - 1
-                        ] = inputCB.boundaryConstraints["bottom"][
+                        ] = beta * initSol[
+                            freeBounds[0] : freeBounds[1], : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom"][
                             freeBounds[0] : freeBounds[1],
                             -degree - loffset : -nconstraints,
                         ]
@@ -671,7 +677,8 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], :nconstraints
-                    ] = inputCB.boundaryConstraints["bottom"][
+                    ] = beta * initSol[
+                            freeBounds[0] : freeBounds[1], :nconstraints ] + (1-beta) * inputCB.boundaryConstraints["bottom"][
                         freeBounds[0] : freeBounds[1], -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
@@ -696,14 +703,16 @@ class ProblemSolver2D:
                         ] += 1.0
                         initSol[
                             : nconstraints - 1, -nconstraints + 1 :
-                        ] = inputCB.boundaryConstraints["top-left"][
+                        ] = beta * initSol[
+                            : nconstraints - 1, -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top-left"][
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
                         ]
                 else:
                     initSol[
                         :nconstraints, -nconstraints:
-                    ] = inputCB.boundaryConstraints["top-left"][
+                    ] = beta * initSol[
+                            :nconstraints, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-left"][
                         -degree - loffset : -nconstraints,
                         nconstraints : degree + loffset,
                     ]
@@ -722,7 +731,8 @@ class ProblemSolver2D:
                         assert freeBounds[2] == nconstraints - 1
                         initSol[
                             -nconstraints + 1 :, : nconstraints - 1
-                        ] = inputCB.boundaryConstraints["bottom-right"][
+                        ] = beta * initSol[
+                            -nconstraints + 1 :, : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom-right"][
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
                         ]
@@ -732,7 +742,8 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         -nconstraints:, :nconstraints
-                    ] = inputCB.boundaryConstraints["bottom-right"][
+                    ] = beta * initSol[
+                            -nconstraints:, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints["bottom-right"][
                         nconstraints : degree + loffset,
                         -degree - loffset : -nconstraints,
                     ]
@@ -751,7 +762,8 @@ class ProblemSolver2D:
                         assert freeBounds[0] == nconstraints - 1
                         initSol[
                             : nconstraints - 1, : nconstraints - 1
-                        ] = inputCB.boundaryConstraints["bottom-left"][
+                        ] = beta * initSol[
+                            : nconstraints - 1, : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom-left"][
                             -degree - loffset : -nconstraints,
                             -degree - loffset : -nconstraints,
                         ]
@@ -759,7 +771,8 @@ class ProblemSolver2D:
                             : nconstraints - 1, : nconstraints - 1
                         ] += 1.0
                 else:
-                    initSol[:nconstraints, :nconstraints] = inputCB.boundaryConstraints[
+                    initSol[:nconstraints, :nconstraints] = beta * initSol[
+                            :nconstraints, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints[
                         "bottom-left"
                     ][
                         -degree - loffset : -nconstraints,
@@ -779,7 +792,8 @@ class ProblemSolver2D:
                     if nconstraints > 1:
                         initSol[
                             -nconstraints + 1 :, -nconstraints + 1 :
-                        ] = inputCB.boundaryConstraints["top-right"][
+                        ] = beta * initSol[
+                            -nconstraints + 1 :, -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top-right"][
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
                         ]
@@ -789,7 +803,8 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         -nconstraints:, -nconstraints:
-                    ] = inputCB.boundaryConstraints["top-right"][
+                    ] = beta * initSol[
+                            -nconstraints:, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-right"][
                         nconstraints : degree + loffset, nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[-nconstraints:, -nconstraints:] += 1.0

@@ -828,13 +828,13 @@ class ProblemSolver3D:
                             : nconstraints - 1,
                             freeBounds[2] : freeBounds[3],
                             freeBounds[4] : freeBounds[5],
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     localAssemblyWeights[
                         :nconstraints,
                         freeBounds[2] : freeBounds[3],
                         freeBounds[4] : freeBounds[5],
-                    ] += 1.0
+                    ] = 1.0
                     initSol[
                         :nconstraints,
                         freeBounds[2] : freeBounds[3],
@@ -876,13 +876,13 @@ class ProblemSolver3D:
                             -nconstraints + 1 :,
                             freeBounds[2] : freeBounds[3],
                             freeBounds[4] : freeBounds[5],
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     localAssemblyWeights[
                         -nconstraints:,
                         freeBounds[2] : freeBounds[3],
                         freeBounds[4] : freeBounds[5],
-                    ] += 1.0
+                    ] = 1.0
                     initSol[
                         -nconstraints:,
                         freeBounds[2] : freeBounds[3],
@@ -924,7 +924,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             -nconstraints + 1 :,
                             freeBounds[4] : freeBounds[5],
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1],
@@ -939,7 +939,7 @@ class ProblemSolver3D:
                         freeBounds[0] : freeBounds[1],
                         -nconstraints:,
                         freeBounds[4] : freeBounds[5],
-                    ] += 1.0
+                    ] = 1.0
 
             if "bottom" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -972,7 +972,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             : nconstraints - 1,
                             freeBounds[4] : freeBounds[5],
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1],
@@ -987,7 +987,7 @@ class ProblemSolver3D:
                         freeBounds[0] : freeBounds[1],
                         :nconstraints,
                         freeBounds[4] : freeBounds[5],
-                    ] += 1.0
+                    ] = 1.0
 
             if "down" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1020,7 +1020,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             freeBounds[2] : freeBounds[3],
                             : nconstraints - 1,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1],
@@ -1035,7 +1035,7 @@ class ProblemSolver3D:
                         freeBounds[0] : freeBounds[1],
                         freeBounds[2] : freeBounds[3],
                         :nconstraints,
-                    ] += 1.0
+                    ] = 1.0
 
             if "up" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1068,7 +1068,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             freeBounds[2] : freeBounds[3],
                             -nconstraints + 1 :,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1],
@@ -1083,7 +1083,7 @@ class ProblemSolver3D:
                         freeBounds[0] : freeBounds[1],
                         freeBounds[2] : freeBounds[3],
                         -nconstraints:,
-                    ] += 1.0
+                    ] = 1.0
 
             if "top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1100,7 +1100,7 @@ class ProblemSolver3D:
                         #         1, -nconstraints + 1:, :] = 0
                         localAssemblyWeights[
                             : nconstraints - 1, -nconstraints + 1 :, :
-                        ] += 1.0
+                        ] = 1.0
                         initSol[
                             : nconstraints - 1, -nconstraints + 1 :, :
                         ] = inputCB.boundaryConstraints["top-left"][
@@ -1116,7 +1116,7 @@ class ProblemSolver3D:
                         nconstraints : degree + loffset,
                         :,
                     ]
-                    localAssemblyWeights[:nconstraints, -nconstraints:, :] += 1.0
+                    localAssemblyWeights[:nconstraints, -nconstraints:, :] = 1.0
 
             if "bottom-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1138,7 +1138,7 @@ class ProblemSolver3D:
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, : nconstraints - 1, :
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, :nconstraints, :
@@ -1147,7 +1147,7 @@ class ProblemSolver3D:
                         -degree - loffset : -nconstraints,
                         :,
                     ]
-                    localAssemblyWeights[-nconstraints:, :nconstraints, :] += 1.0
+                    localAssemblyWeights[-nconstraints:, :nconstraints, :] = 1.0
 
             if "bottom-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1169,7 +1169,7 @@ class ProblemSolver3D:
                         ]
                         localAssemblyWeights[
                             : nconstraints - 1, : nconstraints - 1, :
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, :nconstraints, :
@@ -1178,7 +1178,7 @@ class ProblemSolver3D:
                         -degree - loffset : -nconstraints,
                         :,
                     ]
-                    localAssemblyWeights[:nconstraints, :nconstraints, :] += 1.0
+                    localAssemblyWeights[:nconstraints, :nconstraints, :] = 1.0
 
             if "top-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1199,7 +1199,7 @@ class ProblemSolver3D:
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, -nconstraints + 1 :, :
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, -nconstraints:, :
@@ -1208,7 +1208,7 @@ class ProblemSolver3D:
                         nconstraints : degree + loffset,
                         :,
                     ]
-                    localAssemblyWeights[-nconstraints:, -nconstraints:, :] += 1.0
+                    localAssemblyWeights[-nconstraints:, -nconstraints:, :] = 1.0
 
             if "up-top" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1237,7 +1237,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             -nconstraints + 1 :,
                             -nconstraints + 1 :,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], -nconstraints:, -nconstraints:
@@ -1248,7 +1248,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         freeBounds[0] : freeBounds[1], -nconstraints:, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-bottom" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1277,7 +1277,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             : nconstraints - 1,
                             -nconstraints + 1 :,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], :nconstraints, -nconstraints:
@@ -1288,7 +1288,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         freeBounds[0] : freeBounds[1], :nconstraints, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-top" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1315,7 +1315,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             -nconstraints + 1 :,
                             : nconstraints - 1,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
@@ -1326,7 +1326,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-bottom" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1357,7 +1357,7 @@ class ProblemSolver3D:
                             freeBounds[0] : freeBounds[1],
                             : nconstraints - 1,
                             : nconstraints - 1,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
@@ -1368,7 +1368,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1397,7 +1397,7 @@ class ProblemSolver3D:
                             -nconstraints + 1 :,
                             freeBounds[2] : freeBounds[3],
                             -nconstraints + 1 :,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, freeBounds[2] : freeBounds[3], -nconstraints:
@@ -1408,7 +1408,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         -nconstraints:, freeBounds[2] : freeBounds[3], -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1437,7 +1437,7 @@ class ProblemSolver3D:
                             : nconstraints - 1,
                             freeBounds[2] : freeBounds[3],
                             -nconstraints + 1 :,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, freeBounds[2] : freeBounds[3], -nconstraints:
@@ -1448,7 +1448,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3], -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1475,7 +1475,7 @@ class ProblemSolver3D:
                             -nconstraints + 1 :,
                             freeBounds[2] : freeBounds[3],
                             : nconstraints - 1,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, freeBounds[2] : freeBounds[3], :nconstraints
@@ -1486,7 +1486,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         -nconstraints:, freeBounds[2] : freeBounds[3], :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1517,7 +1517,7 @@ class ProblemSolver3D:
                             : nconstraints - 1,
                             freeBounds[2] : freeBounds[3],
                             : nconstraints - 1,
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, freeBounds[2] : freeBounds[3], :nconstraints
@@ -1528,7 +1528,7 @@ class ProblemSolver3D:
                     ]
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3], :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1546,14 +1546,14 @@ class ProblemSolver3D:
                         # initSol[: nconstraints -
                         #         1, -nconstraints + 1:, -nconstraints + 1:] = 0
                         localAssemblyWeights[
-                            : nconstraints - 1, -nconstraints + 1 :, :
-                        ] += 1.0
+                            : nconstraints - 1, -nconstraints + 1 :, -nconstraints + 1 :
+                        ] = 1.0
                         initSol[
                             : nconstraints - 1, -nconstraints + 1 :, -nconstraints + 1 :
                         ] = inputCB.boundaryConstraints["up-top-left"][
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
-                            nconstraints : loffset + degree,
+                            nconstraints : degree + loffset
                         ]
                 else:
                     initSol[
@@ -1561,11 +1561,11 @@ class ProblemSolver3D:
                     ] = inputCB.boundaryConstraints["up-top-left"][
                         -degree - loffset : -nconstraints,
                         nconstraints : degree + loffset,
-                        nconstraints : loffset + degree,
+                        nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[
                         :nconstraints, -nconstraints:, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-bottom-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1585,22 +1585,22 @@ class ProblemSolver3D:
                         ] = inputCB.boundaryConstraints["up-bottom-right"][
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
-                            nconstraints : loffset + degree,
+                            nconstraints : degree + loffset
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, : nconstraints - 1, -nconstraints + 1 :
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, :nconstraints, -nconstraints:
                     ] = inputCB.boundaryConstraints["up-bottom-right"][
                         nconstraints : degree + loffset,
                         -degree - loffset : -nconstraints,
-                        nconstraints : loffset + degree,
+                        nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[
                         -nconstraints:, :nconstraints, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-bottom-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1620,22 +1620,22 @@ class ProblemSolver3D:
                         ] = inputCB.boundaryConstraints["up-bottom-left"][
                             -degree - loffset : -nconstraints,
                             -degree - loffset : -nconstraints,
-                            nconstraints : loffset + degree,
+                            nconstraints : degree + loffset
                         ]
                         localAssemblyWeights[
                             : nconstraints - 1, : nconstraints - 1, -nconstraints + 1 :
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, :nconstraints, -nconstraints:
                     ] = inputCB.boundaryConstraints["up-bottom-left"][
                         -degree - loffset : -nconstraints,
                         -degree - loffset : -nconstraints,
-                        nconstraints : loffset + degree,
+                        nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[
                         :nconstraints, :nconstraints, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "up-top-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1652,28 +1652,28 @@ class ProblemSolver3D:
                         initSol[
                             -nconstraints + 1 :,
                             -nconstraints + 1 :,
-                            -nconstraints + 1 :,
+                            -nconstraints + 1 :
                         ] = inputCB.boundaryConstraints["up-top-right"][
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
-                            nconstraints : loffset + degree,
+                            nconstraints : degree + loffset
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :,
                             -nconstraints + 1 :,
-                            -nconstraints + 1 :,
-                        ] += 1.0
+                            -nconstraints + 1 :
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, -nconstraints:, -nconstraints:
                     ] = inputCB.boundaryConstraints["up-top-right"][
                         nconstraints : degree + loffset,
                         nconstraints : degree + loffset,
-                        nconstraints : loffset + degree,
+                        nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[
                         -nconstraints:, -nconstraints:, -nconstraints:
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1688,18 +1688,15 @@ class ProblemSolver3D:
 
                     if nconstraints > 1:
                         assert freeBounds[0] == nconstraints - 1
-                        initSol[
-                            : nconstraints - 1, -nconstraints + 1 :, : nconstraints - 1
-                        ] = 0
                         localAssemblyWeights[
                             : nconstraints - 1, -nconstraints + 1 :, : nconstraints - 1
-                        ] += 1.0
-                        localBCAssembly[
+                        ] = 1.0
+                        initSol[
                             : nconstraints - 1, -nconstraints + 1 :, : nconstraints - 1
-                        ] += inputCB.boundaryConstraints["down-top-left"][
+                        ] = inputCB.boundaryConstraints["down-top-left"][
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
-                            -degree - loffset : -nconstraints,
+                            -degree - loffset : -nconstraints
                         ]
                 else:
                     initSol[
@@ -1707,11 +1704,11 @@ class ProblemSolver3D:
                     ] = inputCB.boundaryConstraints["down-top-left"][
                         -degree - loffset : -nconstraints,
                         nconstraints : degree + loffset,
-                        -degree - loffset : -nconstraints,
+                        -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
                         :nconstraints, -nconstraints:, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-bottom-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1731,22 +1728,22 @@ class ProblemSolver3D:
                         ] = inputCB.boundaryConstraints["down-bottom-right"][
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
-                            -degree - loffset : -nconstraints,
+                            -degree - loffset : -nconstraints
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, : nconstraints - 1, : nconstraints - 1
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, :nconstraints, :nconstraints
                     ] = inputCB.boundaryConstraints["down-bottom-right"][
                         nconstraints : degree + loffset,
                         -degree - loffset : -nconstraints,
-                        -degree - loffset : -nconstraints,
+                        -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
                         -nconstraints:, :nconstraints, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-bottom-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1770,18 +1767,18 @@ class ProblemSolver3D:
                         ]
                         localAssemblyWeights[
                             : nconstraints - 1, : nconstraints - 1, : nconstraints - 1
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, :nconstraints, :nconstraints
                     ] = inputCB.boundaryConstraints["down-bottom-left"][
                         -degree - loffset : -nconstraints,
                         -degree - loffset : -nconstraints,
-                        -degree - loffset : -nconstraints,
+                        -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
                         :nconstraints, :nconstraints, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             if "down-top-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1800,22 +1797,22 @@ class ProblemSolver3D:
                         ] = inputCB.boundaryConstraints["down-top-right"][
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
-                            -degree - loffset : -nconstraints,
+                            -degree - loffset : -nconstraints
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, -nconstraints + 1 :, : nconstraints - 1
-                        ] += 1.0
+                        ] = 1.0
                 else:
                     initSol[
                         -nconstraints:, -nconstraints:, :nconstraints
                     ] = inputCB.boundaryConstraints["down-top-right"][
                         nconstraints : degree + loffset,
                         nconstraints : degree + loffset,
-                        -degree - loffset : -nconstraints,
+                        -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
                         -nconstraints:, -nconstraints:, :nconstraints
-                    ] += 1.0
+                    ] = 1.0
 
             localAssemblyWeights[
                 freeBounds[0] : freeBounds[1],

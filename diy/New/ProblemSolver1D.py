@@ -323,8 +323,8 @@ class ProblemSolver1D:
         self, inputCB, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
-        alpha = 0.5
-        beta = 0.0
+        alpha = 0.5 # Between [0, 1.0]
+        beta = 0.5 # Between [0, 0.5]
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0])]
 
