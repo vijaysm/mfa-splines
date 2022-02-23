@@ -490,7 +490,7 @@ class ProblemSolver2D:
     ):
 
         alpha = 0.5 # Between [0, 1.0]
-        beta = 0.5 # Between [0, 0.5]
+        beta = 0.0 # Between [0, 0.5]
         localAssemblyWeights = np.zeros(initSol.shape)
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0]), 0, len(localBCAssembly[0, :])]

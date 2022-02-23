@@ -11,12 +11,12 @@ from functools import reduce
 
 # from numpy import dtype
 
+import numpy as npo
 import pandas as pd
 
 # Autograd AD impots
 from autograd import elementwise_grad as egrad
 import autograd.numpy as np
-import numpy as npo
 
 # from pymoab import core, types
 # from pymoab.scd import ScdInterface
@@ -520,8 +520,10 @@ elif dimension == 2:
 
     elif problem == 6:
         # A grid of c-values
-        nPoints[0] = 6001  # 2501
-        nPoints[1] = 6001  # 2501
+        nPoints[0] = 6001
+        nPoints[1] = 6001
+        # nPoints[0] = 2501
+        # nPoints[1] = 2501
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
@@ -1112,7 +1114,7 @@ class InputControlBlock:
             plt.plot(
                 coeffs_x,
                 self.controlPointData,
-                marker="o",
+                marker="x",
                 linestyle="",
                 color=["r", "g", "b", "y", "c"][cp.gid() % 5],
                 label="Control-%d" % (cp.gid() + 1),
