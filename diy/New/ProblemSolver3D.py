@@ -14,6 +14,7 @@ class ProblemSolver3D:
         degree,
         augmentSpanSpace=0,
         useDiagonalBlocks=True,
+        verbose=False
     ):
         icBlock.xbounds = [
             xb.min[0],
@@ -54,6 +55,7 @@ class ProblemSolver3D:
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
         self.dimension = 3
+        self.verbose = verbose
 
     def compute_basis(self, constraints=None):
         # self.inputCB.basisFunction['x'].reparam()
@@ -209,16 +211,17 @@ class ProblemSolver3D:
                     + (dir[1] + 1) * self.dimension
                     + (dir[0] + 1)
                 )
-                print(
-                    "sending: ",
-                    cp.gid(),
-                    "to",
-                    target.gid,
-                    "-- Dir = ",
-                    dir,
-                    "Direction = ",
-                    direction,
-                )
+                if self.verbose:
+                    print(
+                        "sending: ",
+                        cp.gid(),
+                        "to",
+                        target.gid,
+                        "-- Dir = ",
+                        dir,
+                        "Direction = ",
+                        direction,
+                    )
 
                 if dir[2] == 0:  # same z-height layer
                     # ONLY consider coupling through faces and not through verties
@@ -528,16 +531,17 @@ class ProblemSolver3D:
                 + (dir[1] + 1) * self.dimension
                 + (dir[0] + 1)
             )
-            print(
-                "receiving: ",
-                cp.gid(),
-                "from",
-                target,
-                "-- Dir = ",
-                dir,
-                "Direction = ",
-                direction,
-            )
+            if self.verbose:
+                print(
+                    "receiving: ",
+                    cp.gid(),
+                    "from",
+                    target,
+                    "-- Dir = ",
+                    dir,
+                    "Direction = ",
+                    direction,
+                )
 
             if dir[2] == 0:  # same z-height layer
                 # ONLY consider coupling through faces and not through verties

@@ -66,8 +66,8 @@ nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
 nControlPointsInputIn = 50
 debugProblem = False
 verbose = False
-showplot = True
-useVTKOutput = True
+showplot = False
+useVTKOutput = False
 useMOABMesh = False
 
 augmentSpanSpace = 1
@@ -2082,7 +2082,6 @@ class InputControlBlock:
         if fullyPinned:
             return
 
-        verbose = False
         postol = 1e-10
         if verbose:
             print(

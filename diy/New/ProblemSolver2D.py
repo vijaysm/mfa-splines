@@ -153,7 +153,6 @@ class ProblemSolver2D:
 
     def send_diy(self, inputCB, cp):
 
-        verbose = False
         oddDegree = self.degree % 2
         nconstraints = self.augmentSpanSpace + (
             int(self.degree / 2.0) if not oddDegree else int((self.degree + 1) / 2.0)
@@ -172,7 +171,7 @@ class ProblemSolver2D:
                 # Hence we only consider 4 neighbor cases, instead of 8.
                 if dir[0] == 0:  # target is coupled in Y-direction
                     if dir[1] > 0:  # target block is above current subdomain
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "%d sending to %d" % (cp.gid(), target.gid),
                                 " Top: ",
@@ -192,7 +191,7 @@ class ProblemSolver2D:
                         )
 
                     else:  # target block is below current subdomain
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "%d sending to %d" % (cp.gid(), target.gid),
                                 " Bottom: ",
@@ -213,7 +212,7 @@ class ProblemSolver2D:
                 # target is coupled in X-direction
                 elif dir[1] == 0:
                     if dir[0] > 0:  # target block is to the right of current subdomain
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "%d sending to %d" % (cp.gid(), target.gid),
                                 "Left: ",
@@ -233,7 +232,7 @@ class ProblemSolver2D:
                         )
 
                     else:  # target block is to the left of current subdomain
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "%d sending to %d" % (cp.gid(), target.gid),
                                 "Right: ",
@@ -261,7 +260,7 @@ class ProblemSolver2D:
                                 target, inputCB.controlPointData[-loffset:, -loffset:]
                             )
                             # cp.enqueue(target, inputCB.controlPointData[-1-self.degree-self.augmentSpanSpace:, -1-self.degree-self.augmentSpanSpace:])
-                            if verbose:
+                            if self.verbose:
                                 print(
                                     "%d sending to %d" % (cp.gid(), target.gid),
                                     " Diagonal = right-top: ",
@@ -278,7 +277,7 @@ class ProblemSolver2D:
                                 target, inputCB.controlPointData[:loffset:, -loffset:]
                             )
                             # cp.enqueue(target, inputCB.controlPointData[: 1 + self.degree + self.augmentSpanSpace, -1:-2-self.degree-self.augmentSpanSpace:-1])
-                            if verbose:
+                            if self.verbose:
                                 print(
                                     "%d sending to %d" % (cp.gid(), target.gid),
                                     " Diagonal = left-top: ",
@@ -297,7 +296,7 @@ class ProblemSolver2D:
                             )
                             # cp.enqueue(target, inputCB.controlPointData[-1-self.degree-self.augmentSpanSpace:, :1+self.degree+self.augmentSpanSpace])
 
-                            if verbose:
+                            if self.verbose:
                                 print(
                                     "%d sending to %d" % (cp.gid(), target.gid),
                                     " Diagonal = left-bottom: ",
@@ -312,7 +311,7 @@ class ProblemSolver2D:
                                 target, inputCB.controlPointData[-loffset:, :loffset]
                             )
                             # cp.enqueue(target, inputCB.controlPointData[:1+self.degree+self.augmentSpanSpace, :1+self.degree+self.augmentSpanSpace])
-                            if verbose:
+                            if self.verbose:
                                 print(
                                     "%d sending to %d" % (cp.gid(), target.gid),
                                     " Diagonal = right-bottom: ",
@@ -330,7 +329,6 @@ class ProblemSolver2D:
 
     def recv_diy(self, inputCB, cp):
 
-        verbose = False
         link = cp.link()
         for i in range(len(link)):
             tgid = link.target(i).gid
@@ -347,7 +345,7 @@ class ProblemSolver2D:
                 if dir[1] > 0:  # target block is above current subdomain
                     inputCB.boundaryConstraints["top"] = cp.dequeue(tgid)
                     inputCB.ghostKnots["top"] = cp.dequeue(tgid)
-                    if verbose:
+                    if self.verbose:
                         print(
                             "Top: %d received from %d: from direction %s"
                             % (cp.gid(), tgid, dir),
@@ -366,7 +364,7 @@ class ProblemSolver2D:
                 else:  # target block is below current subdomain
                     inputCB.boundaryConstraints["bottom"] = cp.dequeue(tgid)
                     inputCB.ghostKnots["bottom"] = cp.dequeue(tgid)
-                    if verbose:
+                    if self.verbose:
                         print(
                             "Bottom: %d received from %d: from direction %s"
                             % (cp.gid(), tgid, dir),
@@ -390,7 +388,7 @@ class ProblemSolver2D:
 
                     inputCB.boundaryConstraints["left"] = cp.dequeue(tgid)
                     inputCB.ghostKnots["left"] = cp.dequeue(tgid)
-                    if verbose:
+                    if self.verbose:
                         print(
                             "Left: %d received from %d: from direction %s"
                             % (cp.gid(), tgid, dir),
@@ -410,7 +408,7 @@ class ProblemSolver2D:
 
                     inputCB.boundaryConstraints["right"] = cp.dequeue(tgid)
                     inputCB.ghostKnots["right"] = cp.dequeue(tgid)
-                    if verbose:
+                    if self.verbose:
                         print(
                             "Right: %d received from %d: from direction %s"
                             % (cp.gid(), tgid, dir),
@@ -433,7 +431,7 @@ class ProblemSolver2D:
                     # sender block is diagonally right top to  current subdomain
                     if dir[0] > 0 and dir[1] > 0:
                         inputCB.boundaryConstraints["top-right"] = cp.dequeue(tgid)
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "Top-right: %d received from %d: from direction %s"
                                 % (cp.gid(), tgid, dir),
@@ -446,7 +444,7 @@ class ProblemSolver2D:
                     # sender block is diagonally left top to current subdomain
                     if dir[0] > 0 and dir[1] < 0:
                         inputCB.boundaryConstraints["bottom-right"] = cp.dequeue(tgid)
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "Bottom-right: %d received from %d: from direction %s"
                                 % (cp.gid(), tgid, dir),
@@ -459,7 +457,7 @@ class ProblemSolver2D:
                     # sender block is diagonally left bottom  current subdomain
                     if dir[0] < 0 and dir[1] < 0:
                         inputCB.boundaryConstraints["bottom-left"] = cp.dequeue(tgid)
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "Bottom-left: %d received from %d: from direction %s"
                                 % (cp.gid(), tgid, dir),
@@ -473,7 +471,7 @@ class ProblemSolver2D:
                     if dir[0] < 0 and dir[1] > 0:
 
                         inputCB.boundaryConstraints["top-left"] = cp.dequeue(tgid)
-                        if verbose:
+                        if self.verbose:
                             print(
                                 "Top-left: %d received from %d: from direction %s"
                                 % (cp.gid(), tgid, dir),

@@ -5,7 +5,7 @@ from scipy import linalg
 
 class ProblemSolver1D:
     def __init__(
-        self, icBlock, coreb, xb, xl, degree, augmentSpanSpace=0, useDiagonalBlocks=True
+        self, icBlock, coreb, xb, xl, degree, augmentSpanSpace=0, useDiagonalBlocks=True, verbose=False
     ):
         icBlock.xbounds = [xb.min[0], xb.max[0]]
         icBlock.corebounds = [[coreb.min[0] - xb.min[0], len(xl)]]
@@ -22,6 +22,7 @@ class ProblemSolver1D:
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
         self.dimension = 1
+        self.verbose = verbose
 
     def compute_basis(self, constraints=None):
         self.inputCB.basisFunction["x"] = sp.BSplineBasis(
@@ -222,7 +223,6 @@ class ProblemSolver1D:
 
     def send_diy(self, inputCB, cp):
 
-        verbose = False
         oddDegree = self.degree % 2
         nconstraints = self.augmentSpanSpace + (
             int(self.degree / 2.0) if not oddDegree else int((self.degree + 1) / 2.0)
@@ -238,7 +238,7 @@ class ProblemSolver1D:
 
                 # target is coupled in X-direction
                 if dir[0] > 0:  # target block is to the right of current subdomain
-                    if verbose:
+                    if self.verbose:
                         print(
                             "%d sending to %d" % (cp.gid(), target.gid),
                             "Left: ",
@@ -279,7 +279,6 @@ class ProblemSolver1D:
 
     def recv_diy(self, inputCB, cp):
 
-        verbose = False
         link = cp.link()
         for i in range(len(link)):
             tgid = link.target(i).gid
@@ -297,7 +296,7 @@ class ProblemSolver1D:
 
                 inputCB.boundaryConstraints["left"] = cp.dequeue(tgid)
                 inputCB.ghostKnots["left"] = cp.dequeue(tgid)
-                if verbose:
+                if self.verbose:
                     print(
                         "Left: %d received from %d: from direction %s"
                         % (cp.gid(), tgid, dir),
@@ -309,7 +308,7 @@ class ProblemSolver1D:
 
                 inputCB.boundaryConstraints["right"] = cp.dequeue(tgid)
                 inputCB.ghostKnots["right"] = cp.dequeue(tgid)
-                if verbose:
+                if self.verbose:
                     print(
                         "Right: %d received from %d: from direction %s"
                         % (cp.gid(), tgid, dir),
