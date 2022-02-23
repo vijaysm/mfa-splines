@@ -367,7 +367,7 @@ elif dimension == 2:
     print("Setting up problem for 2-D")
 
     if problem == 0:
-        nPoints[0] = 1025
+        nPoints[0] = 1049
         nPoints[1] = 2049
         scale = 1
         Dmin = [0.0, 0.0]
@@ -384,8 +384,8 @@ elif dimension == 2:
         debugProblem = True
 
     elif problem == 1:
-        nPoints[0] = 1001  # 9001
-        nPoints[1] = 1001  # 9001
+        nPoints[0] = 9001
+        nPoints[1] = 9001
         scale = 100
         Dmin = [-4.0, -4.0]
         Dmax = [4.0, 4.0]

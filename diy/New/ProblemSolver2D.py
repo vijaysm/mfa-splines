@@ -13,6 +13,7 @@ class ProblemSolver2D:
         degree,
         augmentSpanSpace=0,
         useDiagonalBlocks=True,
+        verbose = True
     ):
         icBlock.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1]]
         icBlock.corebounds = [
@@ -57,6 +58,7 @@ class ProblemSolver2D:
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
         self.dimension = 2
+        self.verbose = verbose
 
     def compute_basis(self, constraints=None):
         # self.inputCB.basisFunction['x'].reparam()
