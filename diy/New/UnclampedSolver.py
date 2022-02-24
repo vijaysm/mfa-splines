@@ -58,19 +58,20 @@ problem = 1
 dimension = 3
 degree = 3
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
-nSubDomains = [1, 1, 2]
+nSubDomains = [2, 2, 2]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
 
+closedFormFunctional = True
 nControlPointsInputIn = 50
 debugProblem = False
 verbose = False
 showplot = False
-useVTKOutput = False
+useVTKOutput = True
 useMOABMesh = False
 
-augmentSpanSpace = 1
+augmentSpanSpace = 0
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -101,6 +102,7 @@ nWynnEWork = 3
 ##################
 # Initialize
 nProblemInputPoints = 0
+solutionRange = 1
 ##################
 
 # Initialize DIY
@@ -228,6 +230,7 @@ if args.dimension != dimension:
 if args.problem != problem:
     problem = args.problem
 
+nProblemInputPoints = args.input_points
 if args.nsubdomains > 0:
     nSubDomainsX = args.nsubdomains
     nSubDomainsY = args.nsubdomains if dimension > 1 else 1
@@ -304,35 +307,41 @@ if dimension == 1:
     if problem == 1:
         Dmin = [-4.0]
         Dmax = [4.0]
-        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], 10001)
+        nPoints[0] = 10001
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         scale = 100
-        solution = scale * (
-            np.sinc(coordinates["x"] - 1) + np.sinc(coordinates["x"] + 1)
+        # solution = lambda x: scale * (
+        #     np.sinc(coordinates["x"] - 1) + np.sinc(coordinates["x"] + 1)
+        # )
+        # solution = lambda x: scale * (np.sinc(x+1) + np.sinc(2*x) + np.sinc(x-1))
+        solution = lambda x: scale * (
+            np.sinc(x)
+            + np.sinc(2 * x - 1)
+            + np.sinc(3 * x + 1.5)
         )
-        # solution = scale * (np.sinc(coordinates["x"]+1) + np.sinc(2*coordinates["x"]) + np.sinc(coordinates["x"]-1))
-        solution = scale * (
-            np.sinc(coordinates["x"])
-            + np.sinc(2 * coordinates["x"] - 1)
-            + np.sinc(3 * coordinates["x"] + 1.5)
-        )
-        # solution = np.zeros(coordinates["x"].shape)
+        # solution = lambda x: np.zeros(x.shape)
         # solution[coordinates["x"] <= 0] = 1
         # solution[coordinates["x"] > 0] = -1
-        # solution = scale * np.sin(math.pi * coordinates["x"]/4)
+        # solution = lambda x: scale * np.sin(math.pi * x/4)
+        solutionRange = scale
     elif problem == 2:
         solution = np.fromfile("data/s3d.raw", dtype=np.float64)
         print("Real data shape: ", solution.shape)
         Dmin = [0.0]
         Dmax = [1.0]
-        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], solution.shape[0])
+        nPoints[0] = solution.shape[0]
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         relEPS = 5e-8
+        closedFormFunctional = False
     elif problem == 3:
         Y = np.fromfile("data/nek5000.raw", dtype=np.float64)
         Y = Y.reshape(200, 200)
         solution = Y[100, :]  # Y[:,150] # Y[110,:]
         Dmin = [0.0]
         Dmax = [1.0]
-        coordinates["x"] = np.linspace(Dmin, Dmax, nPoints)
+        nPoints[0] = solution.shape[0]
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        closedFormFunctional = False
     else:
         """
         Y = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(3600, 1800) #
@@ -363,8 +372,9 @@ if dimension == 1:
         Dmin = [0]
         Dmax = [100.0]
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], solution.shape[0])
+        closedFormFunctional = False
 
-    nPoints[0] = solution.shape[0]
+        nPoints[0] = solution.shape[0]
 
 elif dimension == 2:
     print("Setting up problem for 2-D")
@@ -387,15 +397,16 @@ elif dimension == 2:
         debugProblem = True
 
     elif problem == 1:
-        nPoints[0] = 9001
-        nPoints[1] = 9001
+        nPoints[0] = nProblemInputPoints if nProblemInputPoints else 9001
+        nPoints[1] = nProblemInputPoints if nProblemInputPoints else 9001
         scale = 100
         Dmin = [-4.0, -4.0]
         Dmax = [4.0, 4.0]
+        solutionRange = scale
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
-        X, Y = np.meshgrid(coordinates["x"], coordinates["y"])
+        # X, Y = np.meshgrid(coordinates["x"], coordinates["y"])
 
         # solution = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
         #                                               np.sinc(np.sqrt((X+2)**2 + (Y-2)**2)) -
@@ -407,31 +418,31 @@ elif dimension == 2:
         # noise = np.random.uniform(0, 0.005, X.shape)
         # solution = solution * (1 + noise)
 
-        # solution = scale * X * Y
-        solution = (
+        # solution = lambda x, y: scale * x * y
+        solution = lambda x, y: (
             scale
             * (
-                np.sinc(np.sqrt(X**2 + Y**2))
-                + np.sinc(2 * ((X - 2) ** 2 + (Y + 2) ** 2))
-            ).T
+                np.sinc(np.sqrt(x**2 + y**2))
+                + np.sinc(2 * ((x - 2) ** 2 + (y + 2) ** 2))
+            )
         )
 
-        # solution = scale * (np.sinc(X) + np.sinc(2 *
-        #                     X-1) + np.sinc(3*X+1.5)).T
-        # solution = ((4-X)*(4-Y)).T
+        # solution = lambda x, y: scale * (np.sinc(x) + np.sinc(2 *
+        #                     x-1) + np.sinc(3*x+1.5)).T
+        # solution = lambda x, y: ((4-x)*(4-y)).T
 
         # Test against 1-d solution. Matches correctly
-        # solution = scale * (np.sinc(X-1)+np.sinc(X+1)).T
+        # solution = lambda x, y: scale * (np.sinc(x-1)+np.sinc(x+1)).T
 
-        # solution = scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
-        # solution = X**2 * (DmaxX - Y)**2 + X**2 * Y**2 + 64 * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)))
-        # solution = (3-abs(X))**3 * (1-abs(Y))**5 + (1-abs(X))**3 * (3-abs(Y))**5
-        # solution = (Dmax[0]+X)**5 * (Dmax[1]-Y)**5
-        # solution = solution / np.linalg.norm(solution)
-        # solution = scale * (np.sinc(X) * np.sinc(Y))
+        # solution = lambda x, y: scale * (np.sinc((X+1)**2 + (Y-1)**2) + np.sinc(((X-1)**2 + (Y+1)**2)))
+        # solution = lambda x, y: X**2 * (DmaxX - Y)**2 + X**2 * Y**2 + 64 * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)))
+        # solution = lambda x, y: (3-abs(X))**3 * (1-abs(Y))**5 + (1-abs(X))**3 * (3-abs(Y))**5
+        # solution = lambda x, y: (Dmax[0]+X)**5 * (Dmax[1]-Y)**5
+        # solution = lambda x, y: solution / np.linalg.norm(solution)
+        # solution = lambda x, y: scale * (np.sinc(X) * np.sinc(Y))
         # solution = solution.T
         # (3*degree + 1) #minimum number of control points
-        del X, Y
+        # del X, Y
 
     elif problem == 2:
         nPoints[0] = 501
@@ -445,12 +456,12 @@ elif dimension == 2:
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
-        X, Y = np.meshgrid(coordinates["x"] + shiftX, coordinates["y"] + shiftY)
+        # X, Y = np.meshgrid(coordinates["x"] + shiftX, coordinates["y"] + shiftY)
         # solution = scale * np.sinc(X) * np.sinc(Y)
-        solution = scale * np.cos(X + 1) * np.cos(Y) + scale * np.sin(X - 1) * np.sin(Y)
+        solution = lambda x, y: scale * np.cos(x + 1) * np.cos(y) + scale * np.sin(x - 1) * np.sin(y)
         # solution = scale * X * Y
         # (3*degree + 1) #minimum number of control points
-        del X, Y
+        # del X, Y
 
     elif problem == 3:
         nPoints[0] = 1000
@@ -471,6 +482,7 @@ elif dimension == 2:
                 newY=coordinates["y"],
             )
         print("Nek5000 shape:", solution.shape)
+        closedFormFunctional = False
 
         # (3*degree + 1) #minimum number of control points
         if nControlPointsInputIn == 0:
@@ -499,6 +511,7 @@ elif dimension == 2:
         # z = z[:540,:540]
         # z = zoom(z, 1./binFactor, order=4)
         print("S3D shape:", solution.shape)
+        closedFormFunctional = False
 
     elif problem == 5:
         nPoints[0] = 1800
@@ -520,6 +533,7 @@ elif dimension == 2:
                 newY=coordinates["y"],
             )
         print("CESM data shape: ", solution.shape)
+        closedFormFunctional = False
 
     elif problem == 6:
         # A grid of c-values
@@ -592,6 +606,7 @@ elif dimension == 2:
         # plt.imshow(solution, extent=[Dmin[0], Dmax[0], Dmin[1], Dmax[1]])
         # plt.show()
 
+        closedFormFunctional = False
         if nControlPointsInputIn == 0:
             nControlPointsInputIn = 50
 
@@ -613,9 +628,9 @@ elif dimension == 3:
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
         coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
-        X, Y, Z = np.meshgrid(
-            coordinates["x"], coordinates["y"], coordinates["z"], indexing="ij"
-        )
+        # X, Y, Z = np.meshgrid(
+        #     coordinates["x"], coordinates["y"], coordinates["z"], indexing="ij"
+        # )
 
         # solution = 100 * (1+0.25*np.tanh((X**2+Y**2)/16)) * (np.sinc(np.sqrt((X-2) ** 2 + (Y+2)**2)) +
         #                                               np.sinc(np.sqrt((X+2)**2 + (Y-2)**2)) -
@@ -633,9 +648,9 @@ elif dimension == 3:
         # solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
         #                     np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
 
-        solution = scale * (
-            np.sinc(np.sqrt(X**2 + Y**2 + Z**2))
-            + np.sinc(2 * (X - 2) ** 2 + (Y + 2) ** 2 + (Z - 2) ** 2)
+        solution = lambda x, y, z: scale * (
+            np.sinc(np.sqrt(x**2 + y**2 + z**2))
+            + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
         )
 
         # solution = scale * (np.sinc(X) + np.sinc(2 *
@@ -653,7 +668,7 @@ elif dimension == 3:
         # solution = scale * (np.sinc(X) * np.sinc(Y))
         # solution = solution.T
         # (3*degree + 1) #minimum number of control points
-        del X, Y, Z
+        # del X, Y, Z
 
 nControlPointsInput = np.array([nControlPointsInputIn] * dimension, dtype=np.uint32)
 # if dimension == 2:
@@ -672,10 +687,7 @@ if dimension > 1:
         xyzMin[2] = coordinates["z"].min()
         xyzMax[2] = coordinates["z"].max()
 
-solutionBounds = [solution.min(), solution.max()]
-solutionRange = solutionBounds[1] - solutionBounds[0]
-solutionShape = solution.shape
-
+solutionShape = None
 
 def plot_solution(solVector):
     from uvw import RectilinearGrid, DataArray
@@ -700,7 +712,24 @@ def plot_solution(solVector):
 
 # Store the reference solution
 if useVTKOutput:
-    plot_solution(solution)
+    if dimension > 1:
+        print('Writing out reference output solution')
+        if closedFormFunctional:
+            if dimension == 2:
+                X, Y = np.meshgrid(
+                    coordinates["x"], coordinates["y"], indexing="ij"
+                )
+                solVis = solution(X, Y)
+            else:
+                X, Y, Z = np.meshgrid(
+                    coordinates["x"], coordinates["y"], coordinates["z"], indexing="ij"
+                )
+                solVis = solution(X, Y, Z)
+            print('Redundant solution shape: ', solVis.shape)
+            plot_solution(solVis)
+            del solVis
+        else:
+            plot_solution(solution)
 
 ### Print parameter details ###
 if rank == 0:
@@ -709,13 +738,8 @@ if rank == 0:
     print("==================\n")
     print("dimension = ", dimension)
     print("problem = ", problem, "[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]")
-    print("Total number of input points: ", np.prod(nPoints))
-    print(
-        "nSubDomains = ",
-        nSubDomains,
-        "; Total = ",
-        nSubDomainsX * nSubDomainsY * nSubDomainsZ,
-    )
+    print("Input points = ", nPoints, "; Total = ", np.prod(nPoints))
+    print("nSubDomains = ", nSubDomains, "; Total = ", np.prod(nSubDomains) )
     print("degree = ", degree)
     print("nControlPoints = ", nControlPointsInput)
     print("nASMIterations = ", nASMIterations)
@@ -980,7 +1004,7 @@ class InputControlBlock:
         self.refSolutionLocal = np.copy(pl)
         self.controlPointData = np.zeros(self.nControlPoints)
         self.weightsData = np.ones(self.nControlPoints)
-        self.controlPointBounds = np.array(solutionBounds, copy=True)
+        self.controlPointBounds = np.array([pl.min(), pl.max()], copy=True)
 
         self.solutionDecoded = np.zeros(pl.shape)
         self.solutionDecodedOld = np.zeros(pl.shape)
@@ -1128,7 +1152,7 @@ class InputControlBlock:
                 self.refSolutionLocal.shape[0], 1
             ) - self.pMK.reshape(
                 self.pMK.shape[0], 1
-            )  # / solutionRange
+            )
 
             plt.subplot(212)
             plt.plot(
@@ -2182,21 +2206,6 @@ class InputControlBlock:
                 xyzCP,
             )
 
-        if dimension == 1:
-            self.refSolutionLocal = solution[lboundXYZ[0] : uboundXYZ[0]]
-            self.refSolutionLocal = self.refSolutionLocal.reshape(
-                (len(self.refSolutionLocal), 1)
-            )
-        elif dimension == 2:
-            self.refSolutionLocal = solution[
-                lboundXYZ[0] : uboundXYZ[0], lboundXYZ[1] : uboundXYZ[1]
-            ]
-        else:
-            self.refSolutionLocal = solution[
-                lboundXYZ[0] : uboundXYZ[0],
-                lboundXYZ[1] : uboundXYZ[1],
-                lboundXYZ[2] : uboundXYZ[2],
-            ]
 
         # Store the core indices before augment
         cindicesX = np.array(
@@ -2283,6 +2292,37 @@ class InputControlBlock:
         # self.UVW['x'] = self.xyzCoordLocal['x'][self.corebounds[0][0]:self.corebounds[0][1]] / (self.xyzCoordLocal['x'][self.corebounds[0][1]] - self.xyzCoordLocal['x'][self.corebounds[0][0]])
         # if dimension > 1:
         #     self.UVW['y'] = self.xyzCoordLocal['y'][self.corebounds[1][0]:self.corebounds[1][1]] / (self.xyzCoordLocal['y'][self.corebounds[1][1]] - self.xyzCoordLocal['y'][self.corebounds[1][0]])
+
+        if dimension == 1:
+            if closedFormFunctional:
+                self.refSolutionLocal = solution(self.xyzCoordLocal["x"])
+            else:
+                self.refSolutionLocal = solution[lboundXYZ[0] : uboundXYZ[0]]
+            self.refSolutionLocal = self.refSolutionLocal.reshape(
+                (len(self.refSolutionLocal), 1)
+            )
+        elif dimension == 2:
+            if closedFormFunctional:
+                X, Y = np.meshgrid(
+                        self.xyzCoordLocal["x"], self.xyzCoordLocal["y"], indexing="ij"
+                    )
+                self.refSolutionLocal = solution(X, Y)
+            else:
+                self.refSolutionLocal = solution[
+                    lboundXYZ[0] : uboundXYZ[0], lboundXYZ[1] : uboundXYZ[1]
+            ]
+        else:
+            if closedFormFunctional:
+                X, Y, Z = np.meshgrid(
+                        self.xyzCoordLocal["x"], self.xyzCoordLocal["y"], self.xyzCoordLocal["z"], indexing="ij"
+                    )
+                self.refSolutionLocal = solution(X, Y, Z)
+            else:
+                self.refSolutionLocal = solution[
+                    lboundXYZ[0] : uboundXYZ[0],
+                    lboundXYZ[1] : uboundXYZ[1],
+                    lboundXYZ[2] : uboundXYZ[2],
+                ]
 
         for idir in range(dimension):
             cDirection = directions[idir]
@@ -3336,6 +3376,7 @@ domain_control = diy.DiscreteBounds(
 
 print("")
 
+locSolutionShape = None
 
 def add_input_control_block2(gid, core, bounds, domain, link):
     print("Subdomain %d: " % gid, core, bounds, domain)
@@ -3347,18 +3388,33 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         ylocal = coordinates["y"][minb[1] : maxb[1] + 1]
         if dimension > 2:
             zlocal = coordinates["z"][minb[2] : maxb[2] + 1]
-            sollocal = solution[
-                minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1, minb[2] : maxb[2] + 1
-            ]
+            if closedFormFunctional:
+                X, Y, Z = np.meshgrid(xlocal, ylocal, zlocal, indexing="ij")
+                sollocal = solution(X, Y, Z)
+                del X, Y, Z
+            else:
+                sollocal = solution[
+                    minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1, minb[2] : maxb[2] + 1
+                ]
+
         else:
             zlocal = None
-            sollocal = solution[minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1]
+            if closedFormFunctional:
+                X, Y = np.meshgrid(xlocal, ylocal, indexing="ij")
+                sollocal = solution(X, Y)
+                del X, Y
+            else:
+                sollocal = solution[minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1]
 
     else:
         ylocal = None
         zlocal = None
-        sollocal = solution[minb[0] : maxb[0] + 1]
+        if closedFormFunctional:
+            sollocal = solution(xlocal)
+        else:
+            sollocal = solution[minb[0] : maxb[0] + 1]
         sollocal = sollocal.reshape((len(sollocal), 1))
+
 
     # print("Subdomain %d: " % gid, minb[0], minb[1], maxb[0], maxb[1], z.shape, zlocal.shape)
     masterControl.add(
@@ -3369,6 +3425,12 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         link,
     )
 
+if dimension == 1:
+    solutionShape = [coordinates["x"].shape[0]]
+elif dimension == 2:
+    solutionShape = [coordinates["x"].shape[0], coordinates["y"].shape[0]]
+else:
+    solutionShape = [coordinates["x"].shape[0], coordinates["y"].shape[0], coordinates["z"].shape[0]]
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
 # Store L2, Linf errors as function of iteration
@@ -3391,7 +3453,6 @@ if verbose:
     masterControl.foreach(InputControlBlock.show)
 
 #########
-
 
 def send_receive_all():
 
@@ -3446,7 +3507,9 @@ if useVTKOutput or showplot:
             globalExtentDict = flattenListDict(globalExtentDict)
         print("Global extents consolidated  = ", globalExtentDict)
 
-del coordinates, solution
+del coordinates
+if not closedFormFunctional:
+    del solution
 
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()

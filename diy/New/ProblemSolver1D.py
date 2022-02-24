@@ -257,7 +257,7 @@ class ProblemSolver1D:
                     )
 
                 else:  # target block is to the left of current subdomain
-                    if verbose:
+                    if self.verbose:
                         print(
                             "%d sending to %d" % (cp.gid(), target.gid),
                             "Right: ",
