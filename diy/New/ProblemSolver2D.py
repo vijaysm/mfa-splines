@@ -13,7 +13,7 @@ class ProblemSolver2D:
         degree,
         augmentSpanSpace=0,
         useDiagonalBlocks=True,
-        verbose = True
+        verbose=False
     ):
         icBlock.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1]]
         icBlock.corebounds = [

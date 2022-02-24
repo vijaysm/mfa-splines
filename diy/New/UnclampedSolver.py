@@ -100,7 +100,7 @@ nWynnEWork = 3
 
 ##################
 # Initialize
-Dmin = Dmax = 0
+nProblemInputPoints = 0
 ##################
 
 # Initialize DIY
@@ -122,7 +122,7 @@ argv = sys.argv[1:]
 def usage():
     print(
         sys.argv[0],
-        "-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations> -g <augmentSpanSpace>",
+        "-p <problem> -n <nsubdomains> -x <nsubdomains_x> -y <nsubdomains_y> -d <degree> -c <controlpoints> -o <overlapData> -a <nASMIterations> -g <augmentSpanSpace> -i <input_points>",
     )
     sys.exit(2)
 
@@ -143,6 +143,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--dimension", help="specify problem spatial dimension", type=int, default=dimension
+)
+parser.add_argument(
+    "--input_points", help="specify problem input points", type=int, default=nProblemInputPoints
 )
 parser.add_argument(
     "--problem", help="specify problem identifier", type=int, default=problem

@@ -55,7 +55,7 @@ class ProblemSolver3D:
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
         self.dimension = 3
-        self.verbose = verbose
+        self.verbose = False
 
     def compute_basis(self, constraints=None):
         # self.inputCB.basisFunction['x'].reparam()
