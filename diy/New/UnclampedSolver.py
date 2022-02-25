@@ -68,7 +68,7 @@ nControlPointsInputIn = 50
 debugProblem = False
 verbose = False
 showplot = False
-useVTKOutput = True
+useVTKOutput = False
 useMOABMesh = False
 
 augmentSpanSpace = 0
@@ -736,8 +736,9 @@ if rank == 0:
     print("\n==================")
     print("Parameter details")
     print("==================\n")
-    print("dimension = ", dimension)
-    print("problem = ", problem, "[1 = sinc, 2 = sine, 3 = Nek5000, 4 = S3D, 5 = CESM]")
+    print("Processes = ", nprocs)
+    print("Dimension = ", dimension)
+    print("Problem = ", problem)
     print("Input points = ", nPoints, "; Total = ", np.prod(nPoints))
     print("nSubDomains = ", nSubDomains, "; Total = ", np.prod(nSubDomains) )
     print("degree = ", degree)
@@ -748,8 +749,9 @@ if rank == 0:
     print("enforceBounds = ", enforceBounds)
     print("maxAbsErr = ", maxAbsErr)
     print("maxRelErr = ", maxRelErr)
-    print("solverMaxIter = ", solverMaxIter)
-    print("solverscheme = ", solverScheme)
+    if solverMaxIter > 0:
+        print("solverMaxIter = ", solverMaxIter)
+        print("solverscheme = ", solverScheme)
     print("\n=================\n")
 
 # ------------------------------------
