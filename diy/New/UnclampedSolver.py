@@ -377,7 +377,8 @@ if dimension == 1:
         nPoints[0] = solution.shape[0]
 
 elif dimension == 2:
-    print("Setting up problem for 2-D")
+    if rank == 0:
+        print("Setting up problem for 2-D")
 
     if problem == 0:
         nPoints[0] = 1049
@@ -615,7 +616,8 @@ elif dimension == 2:
         exit(1)
 
 elif dimension == 3:
-    print("Setting up problem for 3-D")
+    if rank == 0:
+        print("Setting up problem for 3-D")
 
     if problem == 1:
         nPoints[0] = 101
@@ -1041,7 +1043,7 @@ class InputControlBlock:
         print(
             "Rank: %d, Subdomain %d:" % (commWorld.rank, cp.gid()),
             " Bounds = ",
-            self.xbounds,
+            self.xbounds
         )
 
     def update_bounds(self, cp):
@@ -1978,7 +1980,7 @@ class InputControlBlock:
                 "augment_spans:",
                 cp.gid(),
                 "Number of control points = ",
-                self.nControlPoints,
+                self.nControlPoints
             )
             if dimension == 1:
                 print(
@@ -1987,7 +1989,17 @@ class InputControlBlock:
                     ": before Shapes: ",
                     self.refSolutionLocal.shape,
                     self.weightsData.shape,
+                    self.knotsAdaptive["x"]
+                )
+            elif dimension == 2:
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": before Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
                     self.knotsAdaptive["x"],
+                    self.knotsAdaptive["y"]
                 )
             else:
                 print(
@@ -1998,6 +2010,7 @@ class InputControlBlock:
                     self.weightsData.shape,
                     self.knotsAdaptive["x"],
                     self.knotsAdaptive["y"],
+                    self.knotsAdaptive["z"]
                 )
 
         if not self.isClamped["left"]:  # Pad knot spans from the left of subdomain
@@ -2054,7 +2067,7 @@ class InputControlBlock:
         if dimension > 2:
             # Pad knot spans from the left of subdomain
             if not self.isClamped["up"]:
-                if verbose or True:
+                if verbose:
                     print(
                         "\tSubdomain -- ",
                         cp.gid() + 1,
@@ -2067,7 +2080,7 @@ class InputControlBlock:
 
             # Pad knot spans from the right of subdomain
             if not self.isClamped["down"]:
-                if verbose or True:
+                if verbose:
                     print(
                         "\tSubdomain -- ",
                         cp.gid() + 1,
@@ -2086,7 +2099,17 @@ class InputControlBlock:
                     ": after Shapes: ",
                     self.refSolutionLocal.shape,
                     self.weightsData.shape,
+                    self.knotsAdaptive["x"]
+                )
+            elif dimension == 2:
+                print(
+                    "Subdomain -- ",
+                    cp.gid() + 1,
+                    ": after Shapes: ",
+                    self.refSolutionLocal.shape,
+                    self.weightsData.shape,
                     self.knotsAdaptive["x"],
+                    self.knotsAdaptive["y"]
                 )
             else:
                 print(
@@ -2097,14 +2120,16 @@ class InputControlBlock:
                     self.weightsData.shape,
                     self.knotsAdaptive["x"],
                     self.knotsAdaptive["y"],
+                    self.knotsAdaptive["z"]
                 )
 
-            print(
-                "augment_spans:",
-                cp.gid(),
-                "Number of control points = ",
-                self.nControlPoints,
-            )
+            if rank == 0:
+                print(
+                    "augment_spans:",
+                    cp.gid(),
+                    "Number of control points = ",
+                    self.nControlPoints,
+                )
 
     def augment_inputdata(self, cp):
 
@@ -2593,9 +2618,10 @@ class InputControlBlock:
         # Now invoke the solver and compute the constrained solution
         if constraints is None and not alwaysSolveConstrained:
             solution = self.lsqFit()
-            print(
-                "LSQFIT solution: min = ", np.min(solution), "max = ", np.max(solution)
-            )
+            if rank == 0 and verbose:
+                print(
+                    "LSQFIT solution: min = ", np.min(solution), "max = ", np.max(solution)
+                )
         else:
 
             if constraints is None and alwaysSolveConstrained:
@@ -3516,12 +3542,19 @@ if not closedFormFunctional:
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 if rank == 0:
-    print("\nTotal setup time for solver = ", elapsed, "\n")
+    print("\n[LOG] Total setup time for solver = ", elapsed, "\n")
 
 commWorld.Barrier()
 start_time = timeit.default_timer()
+first_solve_time = 0
+
+if nprocs == 1 and np.sum(nSubDomains) == 1:
+    nASMIterations = 1
 
 for iterIdx in range(nASMIterations):
+
+    if iterIdx == 0:
+        first_solve_time = timeit.default_timer()
 
     if rank == 0:
         print("\n---- Starting Iteration: %d ----" % iterIdx)
@@ -3537,7 +3570,13 @@ for iterIdx in range(nASMIterations):
         lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
     )
 
-    isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
+    if iterIdx == 0:
+        first_solve_time = timeit.default_timer() - first_solve_time
+
+    if not (nprocs == 1 and np.sum(nSubDomains) == 1):
+        isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
+    else:
+        isASMConverged = nTotalSubDomains
 
     # comm.Barrier()
     sys.stdout.flush()
@@ -3598,7 +3637,8 @@ for iterIdx in range(nASMIterations):
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 if rank == 0:
-    print("\nTotal computational time for solve = ", elapsed, "\n")
+    print("\n[LOG] Computational time for first solve          = ", first_solve_time)
+    print("[LOG] Total computational time for all iterations = ", elapsed)
 
 avgL2err = commWorld.allreduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM)
 avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
@@ -3609,7 +3649,7 @@ minL2err = commWorld.allreduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
     print(
-        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n"
+        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e"
         % (avgL2err, maxL2err, minL2err)
     )
     print("")
