@@ -1785,14 +1785,15 @@ class InputControlBlock:
                     abs(self.Dmaxi[1] - xyzMax[1]) < 1e-12
                     and abs(self.Dmini[1] - xyzMin[1]) < 1e-12
                 ):
-                    print(
-                        "Subdomain: ",
-                        cp.gid(),
-                        " checking top and bottom Y: ",
-                        self.Dmaxi[1],
-                        xyzMax[1],
-                        abs(self.Dmaxi[1] - xyzMax[1]),
-                    )
+                    if verbose:
+                        print(
+                            "Subdomain: ",
+                            cp.gid(),
+                            " checking top and bottom Y: ",
+                            self.Dmaxi[1],
+                            xyzMax[1],
+                            abs(self.Dmaxi[1] - xyzMax[1]),
+                        )
                     self.knotsAdaptive["y"] = np.concatenate(
                         (
                             [self.Dmini[1]] * (degree + 1),
@@ -1804,14 +1805,15 @@ class InputControlBlock:
                 else:
 
                     if abs(self.Dmaxi[1] - xyzMax[1]) < 1e-12:
-                        print(
-                            "Subdomain: ",
-                            cp.gid(),
-                            " checking top Y: ",
-                            self.Dmaxi[1],
-                            xyzMax[1],
-                            abs(self.Dmaxi[1] - xyzMax[1]),
-                        )
+                        if verbose:
+                            print(
+                                "Subdomain: ",
+                                cp.gid(),
+                                " checking top Y: ",
+                                self.Dmaxi[1],
+                                xyzMax[1],
+                                abs(self.Dmaxi[1] - xyzMax[1]),
+                            )
                         self.knotsAdaptive["y"] = np.concatenate(
                             ([self.Dmini[1]] * (1), tv, [self.Dmaxi[1]] * (degree + 1))
                         )
@@ -1852,14 +1854,15 @@ class InputControlBlock:
                     abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12
                     and abs(self.Dmini[2] - xyzMin[2]) < 1e-12
                 ):
-                    print(
-                        "Subdomain: ",
-                        cp.gid(),
-                        " checking top and bottom Y: ",
-                        self.Dmaxi[2],
-                        xyzMax[2],
-                        abs(self.Dmaxi[2] - xyzMax[2]),
-                    )
+                    if verbose:
+                        print(
+                            "Subdomain: ",
+                            cp.gid(),
+                            " checking top and bottom Y: ",
+                            self.Dmaxi[2],
+                            xyzMax[2],
+                            abs(self.Dmaxi[2] - xyzMax[2]),
+                        )
                     self.knotsAdaptive["z"] = np.concatenate(
                         (
                             [self.Dmini[2]] * (degree + 1),
@@ -1871,14 +1874,15 @@ class InputControlBlock:
                 else:
 
                     if abs(self.Dmaxi[2] - xyzMax[2]) < 1e-12:
-                        print(
-                            "Subdomain: ",
-                            cp.gid(),
-                            " checking top Z: ",
-                            self.Dmaxi[2],
-                            xyzMax[2],
-                            abs(self.Dmaxi[2] - xyzMax[2]),
-                        )
+                        if verbose:
+                            print(
+                                "Subdomain: ",
+                                cp.gid(),
+                                " checking top Z: ",
+                                self.Dmaxi[2],
+                                xyzMax[2],
+                                abs(self.Dmaxi[2] - xyzMax[2]),
+                            )
                         self.knotsAdaptive["z"] = np.concatenate(
                             ([self.Dmini[2]] * (1), tw, [self.Dmaxi[2]] * (degree + 1))
                         )
@@ -3574,7 +3578,8 @@ for iterIdx in range(nASMIterations):
         first_solve_time = timeit.default_timer() - first_solve_time
 
     if not (nprocs == 1 and np.sum(nSubDomains) == 1):
-        isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
+        # isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
+        isASMConverged = 0
     else:
         isASMConverged = nTotalSubDomains
 
@@ -3636,23 +3641,24 @@ for iterIdx in range(nASMIterations):
 
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
-if rank == 0:
-    print("\n[LOG] Computational time for first solve          = ", first_solve_time)
-    print("[LOG] Total computational time for all iterations = ", elapsed)
 
-avgL2err = commWorld.allreduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM)
-avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
-maxL2err = commWorld.allreduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX)
-minL2err = commWorld.allreduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN)
+max_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.MAX, root=0)
+max_elapsed = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
+
+avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
+maxL2err = commWorld.reduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX, root=0)
+minL2err = commWorld.reduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN, root=0)
 
 # np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
+    print("\n[LOG] Computational time for first solve          = ", max_first_solve_time)
+    print("[LOG] Total computational time for all iterations = ", max_elapsed)
+    avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
     print(
-        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e"
+        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n"
         % (avgL2err, maxL2err, minL2err)
     )
-    print("")
 
 commWorld.Barrier()
 
