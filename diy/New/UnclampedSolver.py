@@ -3288,6 +3288,12 @@ class InputControlBlock:
 
         # isASMConverged = commWorld.allreduce(self.outerIterationConverged, op=MPI.LAND)
 
+    def setup_subdomain_solve(self, cp):
+        # Compute the basis functions now that we are ready to solve the problem
+        self.compute_basis()
+
+        self.decodeOpXYZ = self.compute_decode_operators()
+
     def subdomain_solve(self, cp):
 
         global isConverged
@@ -3305,11 +3311,6 @@ class InputControlBlock:
             and len(self.controlPointData) > 0
         ) or len(self.controlPointData) == 0:
             newSolve = True
-
-            # Compute the basis functions now that we are ready to solve the problem
-            self.compute_basis()
-
-            self.decodeOpXYZ = self.compute_decode_operators()
 
         print("Subdomain -- ", cp.gid() + 1)
 
@@ -3543,6 +3544,9 @@ del coordinates
 if not closedFormFunctional:
     del solution
 
+## Compute the basis functions and decode operator as needed
+masterControl.foreach(InputControlBlock.setup_subdomain_solve)
+
 elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 if rank == 0:
@@ -3643,6 +3647,7 @@ elapsed = timeit.default_timer() - start_time
 sys.stdout.flush()
 
 max_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.MAX, root=0)
+avg_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.SUM, root=0)
 max_elapsed = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
 
 avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
