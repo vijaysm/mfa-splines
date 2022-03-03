@@ -230,7 +230,8 @@ if args.dimension != dimension:
 if args.problem != problem:
     problem = args.problem
 
-nProblemInputPoints = args.input_points
+if args.input_points > 0:
+    nProblemInputPoints = args.input_points
 if args.nsubdomains > 0:
     nSubDomainsX = args.nsubdomains
     nSubDomainsY = args.nsubdomains if dimension > 1 else 1
@@ -398,8 +399,8 @@ elif dimension == 2:
         debugProblem = True
 
     elif problem == 1:
-        nPoints[0] = nProblemInputPoints if nProblemInputPoints else 9001
-        nPoints[1] = nProblemInputPoints if nProblemInputPoints else 9001
+        nPoints[0] = nProblemInputPoints if nProblemInputPoints > 0 else 9001
+        nPoints[1] = nProblemInputPoints if nProblemInputPoints > 0 else 9001
         scale = 100
         Dmin = [-4.0, -4.0]
         Dmax = [4.0, 4.0]
