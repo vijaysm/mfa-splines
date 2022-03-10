@@ -1,7 +1,8 @@
-import autograd.numpy as np
+# import autograd.numpy as np
+import numpy as np
 import splipy as sp
 from scipy import linalg
-
+from numba import jit
 
 class ProblemSolver1D:
     def __init__(
@@ -51,6 +52,7 @@ class ProblemSolver1D:
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
 
+    @jit
     def lsqFit(self):
         self.inputCB.refSolutionLocal = self.inputCB.refSolutionLocal.reshape(
             self.inputCB.refSolutionLocal.shape[0], 1

@@ -1,6 +1,8 @@
-import autograd.numpy as np
+# import autograd.numpy as np
+import numpy as np
+import scipy.linalg as la
 import splipy as sp
-
+from numba import jit
 
 class ProblemSolver2D:
     def __init__(
@@ -87,27 +89,51 @@ class ProblemSolver2D:
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y"]:
-            RN[dir] = (
+            RN[dir] = np.asmatrix(
                 self.inputCB.NUVW[dir]
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
 
     def decode(self, P, RN):
+
+        # return np.einsum("kj,lj->kl", np.einsum("ki,ij->kj", RN["x"], P, optimize=True), RN["y"], optimize=True)
         return np.matmul(np.matmul(RN["x"], P), RN["y"].T)
 
+        # return np.einsum("ki,il->kl", RN["x"], np.einsum("lj,ij->il", RN["y"], P))
+
+
+        # return np.einsum("kj,jl->kl", RN["y"], np.einsum("ij,li->jl", P, RN["x"]))
+        DD1 = np.matmul(np.matmul(RN["x"], P), RN["y"].T)
+
+        DD2A = np.einsum("ki,ij->kj", RN["x"], P, optimize=True)
+        DD2 = np.einsum("kj,lj->kl", DD2A, RN["y"], optimize=True)
+
+        print(P.shape, RN["x"].shape, RN["y"].shape, DD1.shape)
+        # DD2 = np.einsum("lj,ij->il", RN["y"], P)
+        # DD2 = np.einsum("ki,il->kl", RN["x"], np.einsum("lj,ij->il", RN["y"], P))
+        ### DD2 = np.einsum("kj,lj->kl", RN["y"], np.einsum("li,ij->lj", RN["x"], P))
+        # DD3 = np.einsum("il,ik->lk", np.einsum("ij,jl->il", P, RN["y"]), RN["x"])
+
+        print (np.amax(DD1-DD2))
+
+        return DD1
+
     def lsqFit(self):
+        decodeOpXYZ = self.inputCB.decodeOpXYZ
+        refSolutionLocal = self.inputCB.refSolutionLocal
+
         use_cho = False
         if use_cho:
-            X = linalg.cho_solve(
-                linalg.cho_factor(
+            X = la.cho_solve(
+                la.cho_factor(
                     np.matmul(
                         self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"]
                     )
                 ),
                 self.inputCB.decodeOpXYZ["x"].T,
             )
-            Y = linalg.cho_solve(
-                linalg.cho_factor(
+            Y = la.cho_solve(
+                la.cho_factor(
                     np.matmul(
                         self.inputCB.decodeOpXYZ["y"].T, self.inputCB.decodeOpXYZ["y"]
                     )
@@ -117,19 +143,53 @@ class ProblemSolver2D:
             zY = np.matmul(self.inputCB.refSolutionLocal, Y.T)
             return np.matmul(X, zY)
         else:
+
+            # NTNxInv = la.inv(
+            #     np.matmul(
+            #         decodeOpXYZ["x"].T, decodeOpXYZ["x"]
+            #     )
+            # )
+            NTNyInv = la.inv(
+                np.matmul(
+                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
+                )
+            )
+            XX = np.matmul(
+                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
+                )
+            print ('Max', np.amax(referenceLSQ-res))
+            NxTQNy = np.matmul(
+                decodeOpXYZ["x"].T,
+                np.matmul(refSolutionLocal, decodeOpXYZ["y"]),
+            )
+            # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
+
+            res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
+                            np.matmul(NxTQNy, NTNyInv), assume_a='pos'
+            )
+            # res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
+            #                 la.solve(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]), NxTQNy, assume_a='pos', transposed=False), assume_a='pos'
+            # )
+
+            # print(res[0])
+
+            # print ('Max', np.amax(referenceLSQ-res))
+
+            return res
+
             NTNxInv = np.linalg.inv(
                 np.matmul(
-                    self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"]
+                    decodeOpXYZ["x"].T, decodeOpXYZ["x"]
                 )
             )
             NTNyInv = np.linalg.inv(
                 np.matmul(
-                    self.inputCB.decodeOpXYZ["y"].T, self.inputCB.decodeOpXYZ["y"]
+                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
                 )
             )
             NxTQNy = np.matmul(
-                self.inputCB.decodeOpXYZ["x"].T,
-                np.matmul(self.inputCB.refSolutionLocal, self.inputCB.decodeOpXYZ["y"]),
+                decodeOpXYZ["x"].T,
+                np.matmul(refSolutionLocal, decodeOpXYZ["y"]),
             )
             return np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 

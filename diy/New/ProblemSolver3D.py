@@ -1,4 +1,5 @@
-import autograd.numpy as np
+# import autograd.numpy as np
+import numpy as np
 import splipy as sp
 
 
@@ -91,7 +92,7 @@ class ProblemSolver3D:
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y", "z"]:
-            RN[dir] = (
+            RN[dir] = np.asmatrix(
                 self.inputCB.NUVW[dir]
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
