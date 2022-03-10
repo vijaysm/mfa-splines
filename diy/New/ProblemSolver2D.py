@@ -1,7 +1,11 @@
 # import autograd.numpy as np
 import numpy as np
-import scipy.linalg as la
 import splipy as sp
+
+import scipy.sparse.linalg as la
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import spsolve
+
 from numba import jit
 
 class ProblemSolver2D:
@@ -89,7 +93,7 @@ class ProblemSolver2D:
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y"]:
-            RN[dir] = np.asmatrix(
+            RN[dir] = csc_matrix(
                 self.inputCB.NUVW[dir]
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
@@ -97,7 +101,8 @@ class ProblemSolver2D:
     def decode(self, P, RN):
 
         # return np.einsum("kj,lj->kl", np.einsum("ki,ij->kj", RN["x"], P, optimize=True), RN["y"], optimize=True)
-        return np.matmul(np.matmul(RN["x"], P), RN["y"].T)
+        XX =((RN["x"] * csc_matrix(P)) * RN["y"].T).toarray()
+        return XX
 
         # return np.einsum("ki,il->kl", RN["x"], np.einsum("lj,ij->il", RN["y"], P))
 
@@ -150,23 +155,23 @@ class ProblemSolver2D:
             #     )
             # )
             NTNyInv = la.inv(
-                np.matmul(
-                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
-                )
+
+                    decodeOpXYZ["y"].T * decodeOpXYZ["y"]
+
             )
-            XX = np.matmul(
-                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
-                )
-            print ('Max', np.amax(referenceLSQ-res))
-            NxTQNy = np.matmul(
-                decodeOpXYZ["x"].T,
-                np.matmul(refSolutionLocal, decodeOpXYZ["y"]),
+            # XX = np.matmul(
+            #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
+            #     )
+            # print ('Max', np.amax(referenceLSQ-res))
+            NxTQNy = csc_matrix(
+                decodeOpXYZ["x"].T *
+                refSolutionLocal * decodeOpXYZ["y"],
             )
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
-            res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
-                            np.matmul(NxTQNy, NTNyInv), assume_a='pos'
-            )
+            Aoper = (decodeOpXYZ["x"].T * decodeOpXYZ["x"]).tocsc()
+            Brhs = (NxTQNy * NTNyInv).tocsc()
+            res = spsolve(Aoper, Brhs)
             # res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
             #                 la.solve(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]), NxTQNy, assume_a='pos', transposed=False), assume_a='pos'
             # )
@@ -175,7 +180,7 @@ class ProblemSolver2D:
 
             # print ('Max', np.amax(referenceLSQ-res))
 
-            return res
+            return res.todense()
 
             NTNxInv = np.linalg.inv(
                 np.matmul(

@@ -106,8 +106,8 @@ nWynnEWork = 3
 
 ##################
 # Initialize
-nProblemInputPoints = 10001
-nControlPointsInputIn = 300
+nProblemInputPoints = 101
+nControlPointsInputIn = 20
 solutionRange = 1
 ##################
 
@@ -2571,7 +2571,8 @@ class InputControlBlock:
                 self.corebounds[2][0] : self.corebounds[2][1],
             ].reshape(-1)
         locLinfErr = np.amax(decodedError)
-        locL2Err = np.linalg.norm(decodedError, ord='fro')#np.sqrt(np.sum(decodedError**2) / len(decodedError))
+        #locL2Err = np.linalg.norm(decodedError, ord='fro')
+        locL2Err = np.sqrt(np.sum(decodedError**2) / len(decodedError))
         # locL2Err = 1
 
         self.decodederrors[0] = locL2Err
@@ -2864,9 +2865,11 @@ if showplot:
 s = io.StringIO()
 sortby = SortKey.CUMULATIVE
 ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-ps.print_stats("UnclampedSolver")
-ps.print_stats("ProblemSolver2D")
-ps.print_stats("numpy")
+# ps.print_stats("UnclampedSolver")
+# ps.print_stats("ProblemSolver2D")
+# ps.print_stats("numpy")
+# ps.print_stats("scipy")
+ps.print_stats()
 print(s.getvalue())
 
 # ---------------- END MAIN FUNCTION -----------------
