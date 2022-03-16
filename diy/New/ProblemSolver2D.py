@@ -5,7 +5,7 @@ import splipy as sp
 import scipy.sparse.linalg as la
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
-from scipy.sparse.linalg import cg, gmres, tfqmr, SuperLU
+from scipy.sparse.linalg import cg, SuperLU
 
 import time
 from numba import jit, vectorize
