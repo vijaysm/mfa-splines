@@ -2203,8 +2203,7 @@ class InputControlBlock:
                 np.sum(net_residual_vec**2) / len(net_residual_vec)
             )
 
-            if type(Pin) is not np.numpy_boxes.ArrayBox:
-                print("Residual = ", net_residual_norm)
+            print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
@@ -2413,13 +2412,17 @@ class InputControlBlock:
     def check_convergence(self, cp, iterationNum):
 
         global isConverged, L2err
+
+        self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
+        self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
+        L2err[cp.gid()] = self.decodederrors[0]
+
+        # self.outerIteration = iterationNum+1
+        self.outerIteration += 1
+
+        return
+
         if len(self.solutionDecodedOld):
-
-            self.errorMetricsL2[self.outerIteration] = self.decodederrors[0]
-            self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
-            L2err[cp.gid()] = self.decodederrors[0]
-
-            return
 
             # Let us compute the relative change in the solution between current and previous iteration
             iterateChangeVec = (
@@ -2466,9 +2469,6 @@ class InputControlBlock:
                     errorMetricsSubDomLinf,
                 )
                 isConverged[cp.gid()] = 1
-
-        # self.outerIteration = iterationNum+1
-        self.outerIteration += 1
 
         # isASMConverged = commWorld.allreduce(self.outerIterationConverged, op=MPI.LAND)
 
@@ -2863,7 +2863,7 @@ if showplot:
 
 ####### Print profiling info ############
 s = io.StringIO()
-sortby = SortKey.CUMULATIVE
+sortby = SortKey.TIME
 ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
 # ps.print_stats("UnclampedSolver")
 # ps.print_stats("ProblemSolver2D")

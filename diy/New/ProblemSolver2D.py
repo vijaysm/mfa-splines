@@ -4,8 +4,10 @@ import splipy as sp
 
 import scipy.sparse.linalg as la
 from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import spsolve, splu
+from scipy.sparse.linalg import cg, gmres, tfqmr, SuperLU
 
+import time
 from numba import jit
 
 class ProblemSolver2D:
@@ -79,10 +81,10 @@ class ProblemSolver2D:
                 self.inputCB.basisFunction[dir].evaluate(self.inputCB.UVW[dir])
             )
 
-        print(
-            "Number of basis functions = ",
-            self.inputCB.basisFunction["x"].num_functions(),
-        )
+        # print(
+        #     "Number of basis functions = ",
+        #     self.inputCB.basisFunction["x"].num_functions(),
+        # )
         if constraints is not None:
             for entry in constraints[0]:
                 self.inputCB.NUVW["x"][entry, :] = 0.0
@@ -163,15 +165,22 @@ class ProblemSolver2D:
             #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
             #     )
             # print ('Max', np.amax(referenceLSQ-res))
-            NxTQNy = csc_matrix(
-                decodeOpXYZ["x"].T *
-                refSolutionLocal * decodeOpXYZ["y"],
-            )
+            NxTQNy = decodeOpXYZ["x"].T * refSolutionLocal * decodeOpXYZ["y"]
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
-            Aoper = (decodeOpXYZ["x"].T * decodeOpXYZ["x"]).tocsc()
-            Brhs = (NxTQNy * NTNyInv).tocsc()
-            res = spsolve(Aoper, Brhs)
+            Aoper = (decodeOpXYZ["x"].T * decodeOpXYZ["x"])
+            Brhs = (NxTQNy * NTNyInv)
+
+            # t = time.time()
+            # res = spsolve(Aoper, Brhs)
+            # print("Time to compute res with direct solve: ", time.time() - t)
+
+
+            t = time.time()
+            lu = splu(Aoper)
+            res = lu.solve(Brhs)
+            # print("Time to compute res with iterative solve: ", time.time() - t, np.amax(res-res1))
+
             # res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
             #                 la.solve(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]), NxTQNy, assume_a='pos', transposed=False), assume_a='pos'
             # )
@@ -180,7 +189,7 @@ class ProblemSolver2D:
 
             # print ('Max', np.amax(referenceLSQ-res))
 
-            return res.todense()
+            return res#.todense()
 
             NTNxInv = np.linalg.inv(
                 np.matmul(
