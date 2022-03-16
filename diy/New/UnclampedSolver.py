@@ -5,15 +5,13 @@ import sys
 import math
 import argparse
 import timeit
+from packaging import version
+# from pstats import p
 import cProfile, pstats, io
 from pstats import SortKey
-
 # import numpy as np
 from functools import reduce
 
-# from numpy import dtype
-
-# import numpy as npo
 import pandas as pd
 
 # Autograd AD impots
@@ -2692,13 +2690,12 @@ if verbose:
 
 # pr.disable()
 # s = io.StringIO()
-# sortby = SortKey.TIME
+# if sys.version_info.minor > 6:
+#     sortby = pstats.SortKey.TIME
+# else:
+#     sortby = "tottime"
 # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-# # ps.print_stats("UnclampedSolver")
-# # ps.print_stats("ProblemSolver2D")
-# # ps.print_stats("numpy")
-# # ps.print_stats("scipy")
-# ps.print_stats()
+# ps.print_stats(25)
 # print(s.getvalue())
 
 #########
@@ -2898,13 +2895,16 @@ if showplot:
 
 ####### Print profiling info ############
 s = io.StringIO()
-sortby = SortKey.TIME
+if sys.version_info.minor > 6:
+    sortby = pstats.SortKey.TIME
+else:
+    sortby = "tottime"
 ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
 # ps.print_stats("UnclampedSolver")
 # ps.print_stats("ProblemSolver2D")
 # ps.print_stats("numpy")
 # ps.print_stats("scipy")
-ps.print_stats()
+ps.print_stats(25)
 print(s.getvalue())
 
 # ---------------- END MAIN FUNCTION -----------------
