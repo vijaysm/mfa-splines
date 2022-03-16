@@ -81,7 +81,7 @@ class ProblemSolver2D:
             basisFunction[dir] = sp.BSplineBasis(
                 order=self.degree + 1, knots=knotsAdaptive[dir]
             )
-            NUVW[dir] = np.array(
+            NUVW[dir] = csc_matrix(
                 basisFunction[dir].evaluate(UVW[dir])
             )
 

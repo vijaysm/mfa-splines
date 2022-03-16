@@ -64,7 +64,7 @@ problem = 1
 dimension = 2
 degree = 3
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
-nSubDomains = [1, 1, 1]
+nSubDomains = [2, 2, 1]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -2494,7 +2494,8 @@ class InputControlBlock:
         # Compute the basis functions now that we are ready to solve the problem
         self.compute_basis()
 
-        self.decodeOpXYZ = self.compute_decode_operators()
+        # self.decodeOpXYZ = self.compute_decode_operators()
+        self.decodeOpXYZ = self.NUVW
 
 
     def subdomain_solve(self, cp):
@@ -2728,7 +2729,7 @@ commWorld.Barrier()
 start_time = timeit.default_timer()
 
 if rank == 0:
-    print("\n---- Starting Global Iterative Loop ----")
+    print("\n---- Starting initial problem setup for subdomains ----")
 
 # Before starting the solve, let us exchange the initial conditions
 # including the knot vector locations that need to be used for creating
@@ -2774,6 +2775,9 @@ first_solve_time = 0
 
 if nprocs == 1 and np.sum(nSubDomains) == 1:
     nASMIterations = 1
+
+if rank == 0:
+    print("\n---- Starting Global Iterative Loop ----")
 
 for iterIdx in range(nASMIterations):
 
