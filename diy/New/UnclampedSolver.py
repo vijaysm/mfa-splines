@@ -34,7 +34,7 @@ from scipy import linalg
 from mpi4py import MPI
 import diy
 
-from numba import jit
+from numba import jit, vectorize, guvectorize, float64
 # from line_profiler import LineProfiler
 
 # Plotting imports
@@ -108,7 +108,7 @@ nWynnEWork = 3
 # Initialize
 nProblemInputPoints = 101
 nControlPointsInputIn = 20
-solutionRange = 1
+solutionRange = 1.0
 ##################
 
 # Initialize DIY
@@ -426,13 +426,20 @@ elif dimension == 2:
         # solution = solution * (1 + noise)
 
         # solution = lambda x, y: scale * x * y
-        solution = lambda x, y: (
-            scale
-            * (
+        @vectorize(target="cpu")
+        def solution(x, y):
+            return scale * (
                 np.sinc(np.sqrt(x**2 + y**2))
                 + np.sinc(2 * ((x - 2) ** 2 + (y + 2) ** 2))
             )
-        )
+        test = solution(1.0, 1.0)
+        # solution = lambda x, y: (
+        #     scale
+        #     * (
+        #         np.sinc(np.sqrt(x**2 + y**2))
+        #         + np.sinc(2 * ((x - 2) ** 2 + (y + 2) ** 2))
+        #     )
+        # )
 
         # solution = lambda x, y: scale * (np.sinc(x) + np.sinc(2 *
         #                     x-1) + np.sinc(3*x+1.5)).T
@@ -2187,30 +2194,41 @@ class InputControlBlock:
         # Compute the residual as sum of two components
         # 1. The decoded error evaluated at P
         # 2. A penalized domain boundary constraint component
-        def residual_general(Pin, printVerbose=False):
 
-            P = np.array(Pin.reshape(self.controlPointData.shape), copy=True)
-
-            # Residuals are in the decoded space - so direct way to constrain the boundary data
-            decoded = self.decode(P, self.decodeOpXYZ)
-            residual_decoded = (self.refSolutionLocal - decoded) / solutionRange
+        # @vectorize([float64(float64[:],float64[:])], target="cpu")
+        # @vectorize(target="cpu")
+        def compute_error_norm(refSolutionLocal, decoded):
 
             # residual_encoded = np.matmul(self.decodeOpXYZ['x'].T, np.matmul(
             #     self.decodeOpXYZ['x'].T, np.matmul(residual_decoded, self.decodeOpXYZ['z'])))
 
-            net_residual_vec = residual_decoded.reshape(-1)
-            net_residual_norm = np.sqrt(
-                np.sum(net_residual_vec**2) / len(net_residual_vec)
-            )
+            # net_residual_vec = residual_decoded.reshape(-1)
+            # net_residual_norm = np.linalg.norm(np.subtract(refSolutionLocal, decoded), ord=2)
+            net_residual_norm = np.sqrt(np.sum(np.subtract(refSolutionLocal, decoded)**2))
+
+            return net_residual_norm
+
+        def residual_general(Pin):
+
+            # Residuals are in the decoded space - so direct way to constrain the boundary data
+            decodedErr = self.decode(Pin, self.decodeOpXYZ) - self.refSolutionLocal
+
+            # emat = (self.refSolutionLocal - decoded).reshape(-1)
+            # # net_residual_norm = compute_error_norm(self.refSolutionLocal.reshape(-1), decoded.reshape(-1))
+            # net_residual_norm = np.sqrt(np.sum(emat**2))
+            # net_residual_norm = (net_residual_norm)/np.sqrt(decoded.shape[0]*decoded.shape[1])/solutionRange
+
+            net_residual_norm = np.amax(decodedErr)/solutionRange
 
             print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
+
         residualFunction = residual_general
 
         def print_iterate(P):
-            res = residualFunction(P, printVerbose=True)
+            res = residualFunction(P)
             # print('NLConstrained residual vector norm: ', np.linalg.norm(res, ord=2))
             self.globalIterationNum += 1
             return False
@@ -2269,7 +2287,7 @@ class InputControlBlock:
                     self, initSol, degree, augmentSpanSpace, fullyPinned
                 )
 
-            initialDecodedError = residualFunction(initSol, printVerbose=True)
+            initialDecodedError = residualFunction(initSol)
 
             if solverMaxIter > 0:
                 if enforceBounds:
@@ -2641,6 +2659,8 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         link,
     )
 
+pr = cProfile.Profile()
+
 if dimension == 1:
     solutionShape = [coordinates["x"].shape[0]]
 elif dimension == 2:
@@ -2657,6 +2677,7 @@ share_face = np.ones((dimension, 1)) > 0
 wrap = np.ones((dimension, 1)) < 0
 ghosts = np.zeros((dimension, 1), dtype=np.uint32)
 
+# pr.enable()
 discreteDec = diy.DiscreteDecomposer(
     dimension, domain_control, nTotalSubDomains, share_face, wrap, ghosts, nSubDomains
 )
@@ -2667,6 +2688,17 @@ discreteDec.decompose(rank, contigAssigner, add_input_control_block2)
 
 if verbose:
     masterControl.foreach(InputControlBlock.show)
+
+# pr.disable()
+# s = io.StringIO()
+# sortby = SortKey.TIME
+# ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+# # ps.print_stats("UnclampedSolver")
+# # ps.print_stats("ProblemSolver2D")
+# # ps.print_stats("numpy")
+# # ps.print_stats("scipy")
+# ps.print_stats()
+# print(s.getvalue())
 
 #########
 
@@ -2692,7 +2724,6 @@ def send_receive_all():
 
 
 sys.stdout.flush()
-pr = cProfile.Profile()
 commWorld.Barrier()
 start_time = timeit.default_timer()
 

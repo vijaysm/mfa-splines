@@ -4,11 +4,11 @@ import splipy as sp
 
 import scipy.sparse.linalg as la
 from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import spsolve, splu
+from scipy.sparse.linalg import splu
 from scipy.sparse.linalg import cg, gmres, tfqmr, SuperLU
 
 import time
-from numba import jit
+from numba import jit, vectorize
 
 class ProblemSolver2D:
     def __init__(
@@ -69,16 +69,20 @@ class ProblemSolver2D:
         self.verbose = verbose
 
     def compute_basis(self, constraints=None):
+        basisFunction = self.inputCB.basisFunction
+        knotsAdaptive = self.inputCB.knotsAdaptive
+        UVW = self.inputCB.UVW
+        NUVW = self.inputCB.NUVW
         # self.inputCB.basisFunction['x'].reparam()
         # self.inputCB.basisFunction['y'].reparam()
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
         # print("TV = ", self.inputCB.knotsAdaptive['y'], self.inputCB.UVW['y'][0], self.inputCB.UVW['y'][-1], self.inputCB.basisFunction['y'].greville())
         for dir in ["x", "y"]:
-            self.inputCB.basisFunction[dir] = sp.BSplineBasis(
-                order=self.degree + 1, knots=self.inputCB.knotsAdaptive[dir]
+            basisFunction[dir] = sp.BSplineBasis(
+                order=self.degree + 1, knots=knotsAdaptive[dir]
             )
-            self.inputCB.NUVW[dir] = np.array(
-                self.inputCB.basisFunction[dir].evaluate(self.inputCB.UVW[dir])
+            NUVW[dir] = np.array(
+                basisFunction[dir].evaluate(UVW[dir])
             )
 
         # print(
@@ -87,11 +91,11 @@ class ProblemSolver2D:
         # )
         if constraints is not None:
             for entry in constraints[0]:
-                self.inputCB.NUVW["x"][entry, :] = 0.0
-                self.inputCB.NUVW["x"][entry, entry] = 1.0
+                NUVW["x"][entry, :] = 0.0
+                NUVW["x"][entry, entry] = 1.0
             for entry in constraints[1]:
-                self.inputCB.NUVW["y"][entry, :] = 0.0
-                self.inputCB.NUVW["y"][entry, entry] = 1.0
+                NUVW["y"][entry, :] = 0.0
+                NUVW["y"][entry, entry] = 1.0
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y"]:
@@ -100,10 +104,11 @@ class ProblemSolver2D:
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
 
+
     def decode(self, P, RN):
 
         # return np.einsum("kj,lj->kl", np.einsum("ki,ij->kj", RN["x"], P, optimize=True), RN["y"], optimize=True)
-        XX =((RN["x"] * csc_matrix(P)) * RN["y"].T).toarray()
+        XX = (RN["x"] @ P) @ RN["y"].T
         return XX
 
         # return np.einsum("ki,il->kl", RN["x"], np.einsum("lj,ij->il", RN["y"], P))
@@ -176,7 +181,7 @@ class ProblemSolver2D:
             # print("Time to compute res with direct solve: ", time.time() - t)
 
 
-            t = time.time()
+            # t = time.time()
             lu = splu(Aoper)
             res = lu.solve(Brhs)
             # print("Time to compute res with iterative solve: ", time.time() - t, np.amax(res-res1))
