@@ -2758,15 +2758,20 @@ if not closedFormFunctional:
     del solution
 
 ## Compute the basis functions and decode operator as needed
+print("Setting up solve")
 masterControl.foreach(InputControlBlock.setup_subdomain_solve)
+print("Setting up solve done...")
 
 elapsed = timeit.default_timer() - start_time
-setup_time = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
-sys.stdout.flush()
+if nprocs > 1:
+    setup_time = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
+else:
+    setup_time = elapsed
 if rank == 0:
     print("\n[LOG] Total setup time for solver = ", setup_time, "\n")
+sys.stdout.flush()
 
-commWorld.Barrier()
+if nprocs > 1: commWorld.Barrier()
 start_time = timeit.default_timer()
 first_solve_time = 0
 
