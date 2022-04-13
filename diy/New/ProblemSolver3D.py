@@ -2,7 +2,6 @@
 import numpy as np
 import splipy as sp
 
-
 class ProblemSolver3D:
     def __init__(
         self,

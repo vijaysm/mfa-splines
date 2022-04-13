@@ -7,6 +7,9 @@ from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
 from scipy.sparse.linalg import cg, SuperLU
 
+import timeit
+from scipy.interpolate import BSpline
+
 import time
 from numba import jit, vectorize
 
@@ -77,13 +80,27 @@ class ProblemSolver2D:
         # self.inputCB.basisFunction['y'].reparam()
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
         # print("TV = ", self.inputCB.knotsAdaptive['y'], self.inputCB.UVW['y'][0], self.inputCB.UVW['y'][-1], self.inputCB.basisFunction['y'].greville())
+        method = 2
         for dir in ["x", "y"]:
-            basisFunction[dir] = sp.BSplineBasis(
-                order=self.degree + 1, knots=knotsAdaptive[dir]
-            )
-            NUVW[dir] = csc_matrix(
-                basisFunction[dir].evaluate(UVW[dir])
-            )
+            start_time = timeit.default_timer()
+            if method == 1:
+                basisFunction[dir] = sp.BSplineBasis(
+                    order=self.degree + 1, knots=knotsAdaptive[dir]
+                )
+                NUVW[dir] = csc_matrix(
+                    basisFunction[dir].evaluate(UVW[dir], sparse=True)
+                )
+            else:
+                if dir == "x":
+                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[:,0], k=self.degree)
+                else:
+                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,:], k=self.degree)
+                # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
+                NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree)
+                print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
+
+                # print("Basis for dir = ", dir, "; shapes = ", design_matrix.shape,  NUVW[dir].shape)
+                # print("Basis for dir = ", dir, "; error = ", np.amax(design_matrix - NUVW[dir]))
 
         # print(
         #     "Number of basis functions = ",
@@ -99,10 +116,11 @@ class ProblemSolver2D:
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y"]:
-            RN[dir] = csc_matrix(
-                self.inputCB.NUVW[dir]
-                / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
-            )
+            # RN[dir] = csc_matrix(
+            #     self.inputCB.NUVW[dir]
+            #     / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
+            # )
+            RN[dir] = self.inputCB.NUVW[dir]
 
 
     def decode(self, P, RN):
@@ -163,18 +181,18 @@ class ProblemSolver2D:
             # )
             NTNyInv = la.inv(
 
-                    decodeOpXYZ["y"].T * decodeOpXYZ["y"]
+                    decodeOpXYZ["y"].T @ decodeOpXYZ["y"]
 
             )
             # XX = np.matmul(
             #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
             #     )
             # print ('Max', np.amax(referenceLSQ-res))
-            NxTQNy = decodeOpXYZ["x"].T * refSolutionLocal * decodeOpXYZ["y"]
+            NxTQNy = decodeOpXYZ["x"].T @ refSolutionLocal @ decodeOpXYZ["y"]
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
-            Aoper = (decodeOpXYZ["x"].T * decodeOpXYZ["x"])
-            Brhs = (NxTQNy * NTNyInv)
+            Aoper = (decodeOpXYZ["x"].T @ decodeOpXYZ["x"])
+            Brhs = (NxTQNy @ NTNyInv)
 
             # t = time.time()
             # res = spsolve(Aoper, Brhs)
