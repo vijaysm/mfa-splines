@@ -14,6 +14,8 @@ from functools import reduce
 
 import pandas as pd
 
+## TODO: Add an option to turn off
+
 # Autograd AD impots
 # from autograd import elementwise_grad as egrad
 # import autograd.numpy as np
@@ -59,10 +61,10 @@ plt.rcParams.update(params)
 directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
 problem = 1
-dimension = 2
+dimension = 3
 degree = 3
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
-nSubDomains = [2, 2, 1]
+nSubDomains = [1, 1, 2]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -631,9 +633,9 @@ elif dimension == 3:
         print("Setting up problem for 3-D")
 
     if problem == 1:
-        nPoints[0] = 101
-        nPoints[1] = 101
-        nPoints[2] = 101
+        nPoints[0] = nProblemInputPoints if nProblemInputPoints else 101
+        nPoints[1] = nProblemInputPoints if nProblemInputPoints else 101
+        nPoints[2] = nProblemInputPoints if nProblemInputPoints else 101
         scale = 100
         Dmin = [-4.0, -4.0, -4.0]
         Dmax = [4.0, 4.0, 4.0]

@@ -97,7 +97,7 @@ class ProblemSolver2D:
                     bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,:], k=self.degree)
                 # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
                 NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree)
-                print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
+            print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
 
                 # print("Basis for dir = ", dir, "; shapes = ", design_matrix.shape,  NUVW[dir].shape)
                 # print("Basis for dir = ", dir, "; error = ", np.amax(design_matrix - NUVW[dir]))

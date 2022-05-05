@@ -1,6 +1,8 @@
 # import autograd.numpy as np
 import numpy as np
 import splipy as sp
+import timeit
+from scipy.interpolate import BSpline
 
 class ProblemSolver3D:
     def __init__(
@@ -58,36 +60,53 @@ class ProblemSolver3D:
         self.verbose = False
 
     def compute_basis(self, constraints=None):
+        basisFunction = self.inputCB.basisFunction
+        knotsAdaptive = self.inputCB.knotsAdaptive
+        UVW = self.inputCB.UVW
+        NUVW = self.inputCB.NUVW
         # self.inputCB.basisFunction['x'].reparam()
         # self.inputCB.basisFunction['y'].reparam()
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
         # print("TV = ", self.inputCB.knotsAdaptive['y'], self.inputCB.UVW['y'][0], self.inputCB.UVW['y'][-1], self.inputCB.basisFunction['y'].greville())
+        method = 1
         for dir in ["x", "y", "z"]:
-            self.inputCB.basisFunction[dir] = sp.BSplineBasis(
-                order=self.degree + 1, knots=self.inputCB.knotsAdaptive[dir]
-            )
-            self.inputCB.NUVW[dir] = np.array(
-                self.inputCB.basisFunction[dir].evaluate(self.inputCB.UVW[dir])
-            )
+            start_time = timeit.default_timer()
+            if method == 1:
+                self.inputCB.basisFunction[dir] = sp.BSplineBasis(
+                    order=self.degree + 1, knots=self.inputCB.knotsAdaptive[dir]
+                )
+                self.inputCB.NUVW[dir] = np.array(
+                    self.inputCB.basisFunction[dir].evaluate(self.inputCB.UVW[dir])
+                )
+            else:
+                if dir == "x":
+                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[:,0,0], k=self.degree)
+                elif dir == "y":
+                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,:,0], k=self.degree)
+                else:
+                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,0,:], k=self.degree)
+                # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
+                NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree).todense()
+            print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
 
-        print(
-            "Number of basis functions = (%d, %d, %d)".format(
-                self.inputCB.basisFunction["x"].num_functions(),
-                self.inputCB.basisFunction["y"].num_functions(),
-                self.inputCB.basisFunction["z"].num_functions(),
-            )
-        )
+        # print(
+        #     "Number of basis functions = ({0}, {1}, {2})".format(
+        #         basisFunction["x"].num_functions(),
+        #         basisFunction["y"].num_functions(),
+        #         basisFunction["z"].num_functions(),
+        #     )
+        # )
 
         if constraints is not None:
             for entry in constraints[0]:
-                self.inputCB.NUVW["x"][entry, :] = 0.0
-                self.inputCB.NUVW["x"][entry, entry] = 1.0
+                NUVW["x"][entry, :] = 0.0
+                NUVW["x"][entry, entry] = 1.0
             for entry in constraints[1]:
-                self.inputCB.NUVW["y"][entry, :] = 0.0
-                self.inputCB.NUVW["y"][entry, entry] = 1.0
+                NUVW["y"][entry, :] = 0.0
+                NUVW["y"][entry, entry] = 1.0
             for entry in constraints[2]:
-                self.inputCB.NUVW["z"][entry, :] = 0.0
-                self.inputCB.NUVW["z"][entry, entry] = 1.0
+                NUVW["z"][entry, :] = 0.0
+                NUVW["z"][entry, entry] = 1.0
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y", "z"]:
