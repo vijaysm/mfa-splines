@@ -668,6 +668,11 @@ elif dimension == 3:
             + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
         )
 
+        solution2 = lambda x, y, z: scale * (
+            np.sinc(np.sqrt(x**2 + y**2 + z**2))
+            + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
+        )
+
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
         # solution = ((4-X)*(4-Y)).T
@@ -2613,6 +2618,10 @@ print("")
 
 locSolutionShape = None
 
+def ndmesh(*args):
+   args = map(np.asarray,args)
+   return np.broadcast_arrays(*[x[(slice(None),)+(None,)*i] for i, x in enumerate(args)])
+
 def add_input_control_block2(gid, core, bounds, domain, link):
     print("Subdomain %d: " % gid, core, bounds, domain)
     minb = bounds.min
@@ -2624,8 +2633,10 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         if dimension > 2:
             zlocal = coordinates["z"][minb[2] : maxb[2] + 1]
             if closedFormFunctional:
-                X, Y, Z = np.meshgrid(xlocal, ylocal, zlocal, indexing="ij")
+                X, Y, Z = np.meshgrid(xlocal, ylocal, zlocal, indexing="ij", sparse=True)
                 sollocal = solution(X, Y, Z)
+                # X1, Y1, Z1 = ndmesh(xlocal, ylocal, zlocal)
+                # sollocal2 = solution2(np.broadcast_arrays(*[xlocal[(slice(None),)]]), np.broadcast_arrays(*[ylocal[(slice(None),)+(None,)]]), np.broadcast_arrays(*[zlocal[(slice(None),)+(None,)*2]]))
                 del X, Y, Z
             else:
                 sollocal = solution[
@@ -2635,7 +2646,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         else:
             zlocal = None
             if closedFormFunctional:
-                X, Y = np.meshgrid(xlocal, ylocal, indexing="ij")
+                X, Y = np.meshgrid(xlocal, ylocal, indexing="ij", sparse=True)
                 sollocal = solution(X, Y)
                 del X, Y
             else:
