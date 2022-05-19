@@ -63,6 +63,7 @@ directions = ["x", "y", "z"]
 problem = 1
 dimension = 3
 degree = 3
+scalingstudy = False
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
 nSubDomains = [1, 1, 2]
 nSubDomainsX = nSubDomains[0]
@@ -2455,6 +2456,20 @@ class InputControlBlock:
         self.errorMetricsLinf[self.outerIteration] = self.decodederrors[1]
         L2err[cp.gid()] = self.decodederrors[0]
 
+        if ( np.abs(
+                    self.errorMetricsL2[self.outerIteration]
+                    - self.errorMetricsL2[self.outerIteration - 1]
+                )
+                < 1e-12
+            ):
+                print(
+                    "Subdomain ",
+                    cp.gid() + 1,
+                    " has converged to its final solution with error = ",
+                    self.decodederrors[0],
+                )
+                isConverged[cp.gid()] = 1
+
         # self.outerIteration = iterationNum+1
         self.outerIteration += 1
 
@@ -2826,16 +2841,19 @@ for iterIdx in range(nASMIterations):
     pr.disable()
 
     # check if we have locally converged within criteria
-    masterControl.foreach(
-        lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
-    )
+    if not scalingstudy:
+        masterControl.foreach(
+            lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
+        )
 
     if iterIdx == 0:
         first_solve_time = timeit.default_timer() - first_solve_time
 
     if not (nprocs == 1 and np.sum(nSubDomains) == 1):
-        # isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
-        isASMConverged = 0
+        if scalingstudy:
+            isASMConverged = 0
+        else:
+            isASMConverged = commWorld.allreduce(np.sum(isConverged), op=MPI.SUM)
     else:
         isASMConverged = nTotalSubDomains
 
