@@ -1564,9 +1564,7 @@ class ProblemSolver3D:
                         assert freeBounds[0] == nconstraints - 1
                         # initSol[: nconstraints -
                         #         1, -nconstraints + 1:, -nconstraints + 1:] = 0
-                        localAssemblyWeights[
-                            : nconstraints - 1, -nconstraints + 1 :, -nconstraints + 1 :
-                        ] = 1.0
+
                         initSol[
                             : nconstraints - 1, -nconstraints + 1 :, -nconstraints + 1 :
                         ] = inputCB.boundaryConstraints["up-top-left"][
@@ -1574,6 +1572,9 @@ class ProblemSolver3D:
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset
                         ]
+                        localAssemblyWeights[
+                            : nconstraints - 1, -nconstraints + 1 :, -nconstraints + 1 :
+                        ] = 1.0
                 else:
                     initSol[
                         :nconstraints, -nconstraints:, -nconstraints:
