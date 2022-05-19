@@ -73,7 +73,7 @@ closedFormFunctional = True
 debugProblem = False
 verbose = False
 showplot = False
-useVTKOutput = False
+useVTKOutput = True
 useMOABMesh = False
 
 augmentSpanSpace = 0
@@ -146,6 +146,13 @@ parser.add_argument(
     "-v",
     "--verbose",
     help="increase output verbosity",
+    default=False,
+    action="store_true",
+)
+parser.add_argument(
+    "-p",
+    "--showplot",
+    help="dump out vtk or plot solutions",
     default=False,
     action="store_true",
 )
@@ -248,6 +255,7 @@ if args.ny != nSubDomainsY:
 if args.nz != nSubDomainsZ:
     nSubDomainsZ = args.nz
 
+showplot = args.showplot
 if args.degree != degree:
     degree = args.degree
 if args.controlpoints != nControlPointsInputIn:
@@ -731,7 +739,7 @@ def plot_solution(solVector):
 
 
 # Store the reference solution
-if useVTKOutput:
+if showplot and useVTKOutput:
     if dimension > 1:
         print('Writing out reference output solution')
         if closedFormFunctional:
@@ -1284,10 +1292,17 @@ class InputControlBlock:
                 rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
                 rect.addCellData(DataArray(proc, range(dimension), "process"))
 
-        cpx = np.array(self.basisFunction["x"].greville())
-        cpy = np.array(self.basisFunction["y"].greville())
+        def compute_greville(knots):
+            """Return the Greville abscissae of the basis"""
+            return np.array([1. / degree * sum(knots[k + 1:k + degree + 1]) for k in range(len(knots) - degree - 1)])
+
+        # cpx = np.array(self.basisFunction["x"].greville())
+        # cpy = np.array(self.basisFunction["y"].greville())
+        cpx = compute_greville(self.knotsAdaptive["x"])
+        if dimension > 1: cpy = compute_greville(self.knotsAdaptive["y"])
         if dimension > 2:
-            cpz = np.array(self.basisFunction["z"].greville())
+            # cpz = np.array(self.basisFunction["z"].greville())
+            cpz = compute_greville(self.knotsAdaptive["z"])
             with RectilinearGrid(
                 "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz)
             ) as rectc:
@@ -2754,7 +2769,7 @@ if not fullyPinned:
     if augmentSpanSpace > 0:
         masterControl.foreach(InputControlBlock.augment_inputdata)
 
-if useVTKOutput or showplot:
+if showplot:
     masterControl.foreach(InputControlBlock.update_bounds)
     # globalExtentDict = np.array(commWorld.gather(localExtents, root=0)[0])
     print(rank, " - localExtents = ", localExtents)
@@ -2827,7 +2842,7 @@ for iterIdx in range(nASMIterations):
     # comm.Barrier()
     sys.stdout.flush()
 
-    if useVTKOutput or showplot:
+    if showplot:
 
         if dimension == 1:
 
