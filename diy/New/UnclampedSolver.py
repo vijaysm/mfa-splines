@@ -63,7 +63,7 @@ directions = ["x", "y", "z"]
 problem = 1
 dimension = 3
 degree = 3
-scalingstudy = False
+scalingstudy = True
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
 nSubDomains = [1, 1, 2]
 nSubDomainsX = nSubDomains[0]
@@ -74,7 +74,7 @@ closedFormFunctional = True
 debugProblem = False
 verbose = False
 showplot = False
-useVTKOutput = True
+useVTKOutput = not scalingstudy
 useMOABMesh = False
 
 augmentSpanSpace = 0
@@ -2920,9 +2920,10 @@ max_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.MAX, root=0)
 avg_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.SUM, root=0)
 max_elapsed = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
 
-avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
-maxL2err = commWorld.reduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX, root=0)
-minL2err = commWorld.reduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN, root=0)
+if not scalingstudy:
+    avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
+    maxL2err = commWorld.reduce(np.max(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MAX, root=0)
+    minL2err = commWorld.reduce(np.min(np.abs(L2err[np.nonzero(L2err)])), op=MPI.MIN, root=0)
 
 # np.set_printoptions(formatter={'float': '{: 5.12e}'.format})
 # mc.foreach(InputControlBlock.print_error_metrics)
@@ -2930,16 +2931,18 @@ if rank == 0:
     avg_first_solve_time /= commWorld.size
     print("\n[LOG] Computational time for first solve          = ", max_first_solve_time, " average = ", avg_first_solve_time)
     print("[LOG] Total computational time for all iterations = ", max_elapsed)
-    avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
-    print(
-        "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n"
-        % (avgL2err, maxL2err, minL2err)
-    )
+    if not scalingstudy:
+        avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
+        print(
+            "\nError metrics: L2 average = %6.12e, L2 maxima = %6.12e, L2 minima = %6.12e\n"
+            % (avgL2err, maxL2err, minL2err)
+        )
 
 commWorld.Barrier()
 
-np.set_printoptions(formatter={"float": "{: 5.12e}".format})
-masterControl.foreach(InputControlBlock.print_error_metrics)
+if not scalingstudy:
+    np.set_printoptions(formatter={"float": "{: 5.12e}".format})
+    masterControl.foreach(InputControlBlock.print_error_metrics)
 
 if showplot:
     plt.show()
