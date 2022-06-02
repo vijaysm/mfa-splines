@@ -583,11 +583,13 @@ class ProblemSolver2D:
         return
 
     def initialize_solution(
-        self, inputCB, initSol, degree, augmentSpanSpace, fullyPinned
+        self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
+        print("initSol: ", initSol)
+
         alpha = 0.5 # Between [0, 1.0]
-        beta = 0.0 # Between [0, 0.5]
+        beta = 0 # Between [0, 0.5]
         localAssemblyWeights = np.zeros(initSol.shape)
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0]), 0, len(localBCAssembly[0, :])]
@@ -620,6 +622,7 @@ class ProblemSolver2D:
 
         else:
 
+            useDiagAddConstraints = True
             oddDegree = degree % 2
             nconstraints = augmentSpanSpace + (
                 int(degree / 2.0) if not oddDegree else int((degree + 1) / 2.0)
@@ -650,6 +653,11 @@ class ProblemSolver2D:
                 - (nconstraints - 1 if oddDegree else nconstraints)
             )
 
+            initSol[: freeBounds[0], :] = 0.0
+            initSol[freeBounds[1]:, :] = 0.0
+            initSol[:, : freeBounds[2]] = 0.0
+            initSol[:, freeBounds[3]:] = 0.0
+
             # First update hte control point vector with constraints for supporting points
             if "left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -663,10 +671,9 @@ class ProblemSolver2D:
                     ] += 1.0
 
                     if nconstraints > 1:
-                        initSol[
+                        localBCAssembly[
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
-                        ] = beta * initSol[
-                            : nconstraints - 1, freeBounds[2] : freeBounds[3] ] + (1 - beta) * inputCB.boundaryConstraints["left"][
+                        ] = inputCB.boundaryConstraints["left"][
                             -degree - loffset : -nconstraints,
                             freeBounds[2] : freeBounds[3] ]
 
@@ -674,14 +681,13 @@ class ProblemSolver2D:
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
                         ] += 1.0
                 else:
+                    initSol[
+                        :nconstraints, freeBounds[2] : freeBounds[3]
+                    ] = inputCB.boundaryConstraints["left"][
+                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3] ]
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3]
                     ] += 1.0
-                    initSol[
-                        :nconstraints, freeBounds[2] : freeBounds[3]
-                    ] = beta * initSol[
-                        :nconstraints, freeBounds[2] : freeBounds[3]] + (1 - beta) * inputCB.boundaryConstraints["left"][
-                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3] ]
 
             if "right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -695,10 +701,9 @@ class ProblemSolver2D:
                     ] += 1.0
 
                     if nconstraints > 1:
-                        initSol[
+                        localBCAssembly[
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
-                        ] = beta * initSol[
-                            -nconstraints + 1 :, freeBounds[2] : freeBounds[3] ] + (1-beta) * inputCB.boundaryConstraints["right"][
+                        ] = inputCB.boundaryConstraints["right"][
                             nconstraints : degree + loffset,
                             freeBounds[2] : freeBounds[3]
                         ]
@@ -706,15 +711,14 @@ class ProblemSolver2D:
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
                         ] += 1.0
                 else:
+                    initSol[
+                        -nconstraints:, freeBounds[2] : freeBounds[3]
+                    ] = inputCB.boundaryConstraints["right"][
+                        nconstraints : degree + loffset, freeBounds[2] : freeBounds[3]
+                    ]
                     localAssemblyWeights[
                         -nconstraints:, freeBounds[2] : freeBounds[3]
                     ] += 1.0
-                    initSol[
-                        -nconstraints:, freeBounds[2] : freeBounds[3]
-                    ] = beta * initSol[
-                            -nconstraints:, freeBounds[2] : freeBounds[3] ] + (1-beta) * inputCB.boundaryConstraints["right"][
-                        nconstraints : degree + loffset, freeBounds[2] : freeBounds[3]
-                    ]
 
             if "top" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -728,10 +732,9 @@ class ProblemSolver2D:
                     ] += 1.0
 
                     if nconstraints > 1:
-                        initSol[
+                        localBCAssembly[
                             freeBounds[0] : freeBounds[1], -nconstraints + 1 :
-                        ] = beta * initSol[
-                            freeBounds[0] : freeBounds[1], -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top"][
+                        ] = inputCB.boundaryConstraints["top"][
                             freeBounds[0] : freeBounds[1],
                             nconstraints : loffset + degree,
                         ]
@@ -741,8 +744,7 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], -nconstraints:
-                    ] = beta * initSol[
-                            freeBounds[0] : freeBounds[1], -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top"][
+                    ] = inputCB.boundaryConstraints["top"][
                         freeBounds[0] : freeBounds[1], nconstraints : loffset + degree
                     ]
                     localAssemblyWeights[
@@ -761,10 +763,9 @@ class ProblemSolver2D:
                     ] += 1.0
 
                     if nconstraints > 1:
-                        initSol[
+                        localBCAssembly[
                             freeBounds[0] : freeBounds[1], : nconstraints - 1
-                        ] = beta * initSol[
-                            freeBounds[0] : freeBounds[1], : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom"][
+                        ] = inputCB.boundaryConstraints["bottom"][
                             freeBounds[0] : freeBounds[1],
                             -degree - loffset : -nconstraints,
                         ]
@@ -774,8 +775,7 @@ class ProblemSolver2D:
                 else:
                     initSol[
                         freeBounds[0] : freeBounds[1], :nconstraints
-                    ] = beta * initSol[
-                            freeBounds[0] : freeBounds[1], :nconstraints ] + (1-beta) * inputCB.boundaryConstraints["bottom"][
+                    ] = inputCB.boundaryConstraints["bottom"][
                         freeBounds[0] : freeBounds[1], -degree - loffset : -nconstraints
                     ]
                     localAssemblyWeights[
@@ -795,21 +795,49 @@ class ProblemSolver2D:
                         assert freeBounds[0] == nconstraints - 1
                         # initSol[: nconstraints -
                         #         1, -nconstraints + 1:] = 0
-                        localAssemblyWeights[
+                        localBCAssembly[
                             : nconstraints - 1, -nconstraints + 1 :
-                        ] += 1.0
-                        initSol[
-                            : nconstraints - 1, -nconstraints + 1 :
-                        ] = beta * initSol[
-                            : nconstraints - 1, -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top-left"][
+                        ] = inputCB.boundaryConstraints["top-left"][
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
                         ]
+                        localAssemblyWeights[
+                            : nconstraints - 1, -nconstraints + 1 :
+                        ] += 1.0
+
+                        if useDiagAddConstraints:
+                            if "left" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    nconstraints - 1, -nconstraints + 1 :
+                                ] = (inputCB.boundaryConstraints["left"][
+                                    -nconstraints,
+                                    -nconstraints + 1 :
+                                ] + inputCB.boundaryConstraints["top-left"][
+                                    -nconstraints,
+                                    : nconstraints - 1
+                                ])
+                                localAssemblyWeights[
+                                    nconstraints - 1, -nconstraints + 1 :
+                                ] += 1
+
+                            if "top" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    : nconstraints - 1, -nconstraints
+                                ] = (inputCB.boundaryConstraints["top"][
+                                    : nconstraints - 1,
+                                    nconstraints - 1
+                                ] + inputCB.boundaryConstraints["top-left"][
+                                    -nconstraints + 1 :,
+                                    nconstraints - 1
+                                ])
+                                localAssemblyWeights[
+                                    : nconstraints - 1, -nconstraints
+                                ] += 1
+
                 else:
                     initSol[
                         :nconstraints, -nconstraints:
-                    ] = beta * initSol[
-                            :nconstraints, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-left"][
+                    ] = inputCB.boundaryConstraints["top-left"][
                         -degree - loffset : -nconstraints,
                         nconstraints : degree + loffset,
                     ]
@@ -826,21 +854,49 @@ class ProblemSolver2D:
 
                     if nconstraints > 1:
                         assert freeBounds[2] == nconstraints - 1
-                        initSol[
+                        localBCAssembly[
                             -nconstraints + 1 :, : nconstraints - 1
-                        ] = beta * initSol[
-                            -nconstraints + 1 :, : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom-right"][
+                        ] = inputCB.boundaryConstraints["bottom-right"][
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, : nconstraints - 1
                         ] += 1.0
+
+                        if useDiagAddConstraints:
+                            if "right" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    -nconstraints, : nconstraints - 1
+                                ] = (inputCB.boundaryConstraints["right"][
+                                    nconstraints - 1,
+                                    : nconstraints - 1
+                                ] + inputCB.boundaryConstraints["bottom-right"][
+                                    nconstraints - 1,
+                                    -nconstraints + 1 :
+                                ])
+                                localAssemblyWeights[
+                                    -nconstraints, : nconstraints - 1
+                                ] += 1
+
+                            if "bottom" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    -nconstraints + 1:, nconstraints - 1
+                                ] = (inputCB.boundaryConstraints["bottom"][
+                                    -nconstraints + 1 :,
+                                    -nconstraints
+                                ] + inputCB.boundaryConstraints["bottom-right"][
+                                    : nconstraints - 1,
+                                    -nconstraints
+                                ])
+                                localAssemblyWeights[
+                                    -nconstraints + 1:, nconstraints - 1
+                                ] += 1
+
                 else:
                     initSol[
                         -nconstraints:, :nconstraints
-                    ] = beta * initSol[
-                            -nconstraints:, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints["bottom-right"][
+                    ] = inputCB.boundaryConstraints["bottom-right"][
                         nconstraints : degree + loffset,
                         -degree - loffset : -nconstraints,
                     ]
@@ -857,19 +913,47 @@ class ProblemSolver2D:
 
                     if nconstraints > 1:
                         assert freeBounds[0] == nconstraints - 1
-                        initSol[
+                        localBCAssembly[
                             : nconstraints - 1, : nconstraints - 1
-                        ] = beta * initSol[
-                            : nconstraints - 1, : nconstraints - 1 ] + (1-beta) * inputCB.boundaryConstraints["bottom-left"][
+                        ] = inputCB.boundaryConstraints["bottom-left"][
                             -degree - loffset : -nconstraints,
                             -degree - loffset : -nconstraints,
                         ]
                         localAssemblyWeights[
                             : nconstraints - 1, : nconstraints - 1
                         ] += 1.0
+
+                        if useDiagAddConstraints:
+                            if "left" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    nconstraints - 1, : nconstraints - 1
+                                ] = (inputCB.boundaryConstraints["left"][
+                                    -nconstraints,
+                                    : nconstraints - 1
+                                ] + inputCB.boundaryConstraints["bottom-left"][
+                                    -nconstraints,
+                                    -nconstraints + 1 :
+                                ])
+                                localAssemblyWeights[
+                                    nconstraints - 1, : nconstraints - 1
+                                ] += 1
+
+                            if "bottom" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    : nconstraints - 1, nconstraints - 1
+                                ] = (inputCB.boundaryConstraints["bottom"][
+                                    : nconstraints - 1,
+                                    -nconstraints
+                                ] + inputCB.boundaryConstraints["bottom-left"][
+                                    -nconstraints + 1 :,
+                                    -nconstraints
+                                ])
+                                localAssemblyWeights[
+                                    : nconstraints - 1, nconstraints - 1
+                                ] += 1
+
                 else:
-                    initSol[:nconstraints, :nconstraints] = beta * initSol[
-                            :nconstraints, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints[
+                    initSol[:nconstraints, :nconstraints] = inputCB.boundaryConstraints[
                         "bottom-left"
                     ][
                         -degree - loffset : -nconstraints,
@@ -887,25 +971,268 @@ class ProblemSolver2D:
                     localAssemblyWeights[-nconstraints, -nconstraints] += 1.0
 
                     if nconstraints > 1:
-                        initSol[
+                        localBCAssembly[
                             -nconstraints + 1 :, -nconstraints + 1 :
-                        ] = beta * initSol[
-                            -nconstraints + 1 :, -nconstraints + 1 : ] + (1-beta) * inputCB.boundaryConstraints["top-right"][
+                        ] = inputCB.boundaryConstraints["top-right"][
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, -nconstraints + 1 :
                         ] += 1.0
+
+                        if useDiagAddConstraints:
+                            if "right" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    -nconstraints, -nconstraints + 1 :
+                                ] = (inputCB.boundaryConstraints["right"][
+                                    nconstraints - 1,
+                                    -nconstraints + 1 :
+                                ] + inputCB.boundaryConstraints["top-right"][
+                                    nconstraints - 1,
+                                    : nconstraints - 1
+                                ])
+                                localAssemblyWeights[
+                                    -nconstraints, -nconstraints + 1 :
+                                ] += 1
+
+                            if "top" in inputCB.boundaryConstraints:
+                                localBCAssembly[
+                                    -nconstraints + 1 :, -nconstraints
+                                ] = (inputCB.boundaryConstraints["top"][
+                                    -nconstraints + 1 :,
+                                    nconstraints - 1
+                                ] + inputCB.boundaryConstraints["top-right"][
+                                    : nconstraints - 1,
+                                    nconstraints - 1
+                                ])
+                                localAssemblyWeights[
+                                    -nconstraints + 1 :, -nconstraints
+                                ] += 1
+
                 else:
                     initSol[
                         -nconstraints:, -nconstraints:
-                    ] = beta * initSol[
-                            -nconstraints:, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-right"][
+                    ] = inputCB.boundaryConstraints["top-right"][
                         nconstraints : degree + loffset, nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[-nconstraints:, -nconstraints:] += 1.0
 
+
+
+            # if "top-left" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             nconstraints - 1, -nconstraints
+            #         ] += inputCB.boundaryConstraints["top-left"][
+            #             -nconstraints, nconstraints - 1
+            #         ]
+            #         localAssemblyWeights[nconstraints - 1, -nconstraints] += 1.0
+
+            #         if nconstraints > 1:
+            #             assert freeBounds[0] == nconstraints - 1
+            #             # initSol[: nconstraints -
+            #             #         1, -nconstraints + 1:] = 0
+            #             localBCAssembly[
+            #                 : nconstraints - 1, -nconstraints + 1 :
+            #             ] += inputCB.boundaryConstraints["top-left"][
+            #                 -degree - loffset : -nconstraints,
+            #                 nconstraints : degree + loffset,
+            #             ]
+            #             localAssemblyWeights[
+            #                 : nconstraints - 1, -nconstraints + 1 :
+            #             ] += 1.0
+
+            #             if useDiagAddConstraints:
+
+            #                 if "top" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         : nconstraints - 1, -nconstraints + 1 :
+            #                     ] += inputCB.boundaryConstraints["top"][
+            #                         : nconstraints - 1,
+            #                         : nconstraints - 1,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         : nconstraints - 1, -nconstraints + 1 :
+            #                     ] += 1.0
+            #                 if "left" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         : nconstraints - 1, -nconstraints + 1 :
+            #                     ] += inputCB.boundaryConstraints["left"][
+            #                         -nconstraints + 1 :,
+            #                         -nconstraints + 1 :,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         : nconstraints - 1, -nconstraints + 1 :
+            #                     ] += 1.0
+            #     else:
+            #         initSol[
+            #             :nconstraints, -nconstraints:
+            #         ] = beta * initSol[
+            #                 :nconstraints, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-left"][
+            #             -degree - loffset : -nconstraints,
+            #             nconstraints : degree + loffset,
+            #         ]
+            #         localAssemblyWeights[:nconstraints, -nconstraints:] += 1.0
+
+            # if "bottom-right" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             -nconstraints, nconstraints - 1
+            #         ] += inputCB.boundaryConstraints["bottom-right"][
+            #             nconstraints - 1, -nconstraints
+            #         ]
+            #         localAssemblyWeights[-nconstraints, nconstraints - 1] += 1.0
+
+            #         if nconstraints > 1:
+            #             assert freeBounds[2] == nconstraints - 1
+            #             localBCAssembly[
+            #                 -nconstraints + 1 :, : nconstraints - 1
+            #             ] += inputCB.boundaryConstraints["bottom-right"][
+            #                 nconstraints : degree + loffset,
+            #                 -degree - loffset : -nconstraints,
+            #             ]
+            #             localAssemblyWeights[
+            #                 -nconstraints + 1 :, : nconstraints - 1
+            #             ] += 1.0
+
+            #             if useDiagAddConstraints:
+
+            #                 if "bottom" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         -nconstraints + 1 :, : nconstraints - 1
+            #                     ] += inputCB.boundaryConstraints["bottom"][
+            #                         -nconstraints + 1 :,
+            #                         -nconstraints + 1 :
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         -nconstraints + 1 :, : nconstraints - 1
+            #                     ] += 1.0
+            #                 if "right" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         -nconstraints + 1 :, : nconstraints - 1
+            #                     ] += inputCB.boundaryConstraints["right"][
+            #                         : nconstraints - 1,
+            #                         : nconstraints - 1,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         -nconstraints + 1 :, : nconstraints - 1
+            #                     ] += 1.0
+            #     else:
+            #         initSol[
+            #             -nconstraints:, :nconstraints
+            #         ] = beta * initSol[
+            #                 -nconstraints:, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints["bottom-right"][
+            #             nconstraints : degree + loffset,
+            #             -degree - loffset : -nconstraints,
+            #         ]
+            #         localAssemblyWeights[-nconstraints:, :nconstraints] += 1.0
+
+            # if "bottom-left" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             nconstraints - 1, nconstraints - 1
+            #         ] += inputCB.boundaryConstraints["bottom-left"][
+            #             -nconstraints, -nconstraints
+            #         ]
+            #         localAssemblyWeights[nconstraints - 1, nconstraints - 1] += 1.0
+
+            #         if nconstraints > 1:
+            #             assert freeBounds[0] == nconstraints - 1
+            #             localBCAssembly[
+            #                 : nconstraints - 1, : nconstraints - 1
+            #             ] += inputCB.boundaryConstraints["bottom-left"][
+            #                 -degree - loffset : -nconstraints,
+            #                 -degree - loffset : -nconstraints,
+            #             ]
+            #             localAssemblyWeights[
+            #                 : nconstraints - 1, : nconstraints - 1
+            #             ] += 1.0
+
+            #             if useDiagAddConstraints:
+
+            #                 if "bottom" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         : nconstraints - 1, : nconstraints - 1
+            #                     ] += inputCB.boundaryConstraints["bottom"][
+            #                         -nconstraints + 1 :,
+            #                         -nconstraints + 1 :
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         : nconstraints - 1, : nconstraints - 1
+            #                     ] += 1.0
+            #                 if "left" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         : nconstraints - 1, : nconstraints - 1
+            #                     ] += inputCB.boundaryConstraints["left"][
+            #                         -nconstraints + 1 :,
+            #                         -nconstraints + 1 :,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         : nconstraints - 1, : nconstraints - 1
+            #                     ] += 1.0
+            #     else:
+            #         initSol[:nconstraints, :nconstraints] = beta * initSol[
+            #                 :nconstraints, :nconstraints ] + (1-beta) * inputCB.boundaryConstraints[
+            #             "bottom-left"
+            #         ][
+            #             -degree - loffset : -nconstraints,
+            #             -degree - loffset : -nconstraints,
+            #         ]
+            #         localAssemblyWeights[:nconstraints, :nconstraints] += 1.0
+
+            # if "top-right" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             -nconstraints, -nconstraints
+            #         ] += inputCB.boundaryConstraints["top-right"][
+            #             nconstraints - 1, nconstraints - 1
+            #         ]
+            #         localAssemblyWeights[-nconstraints, -nconstraints] += 1.0
+
+            #         if nconstraints > 1:
+            #             localBCAssembly[
+            #                 -nconstraints + 1 :, -nconstraints + 1 :
+            #             ] += inputCB.boundaryConstraints["top-right"][
+            #                 nconstraints : degree + loffset,
+            #                 nconstraints : degree + loffset,
+            #             ]
+            #             localAssemblyWeights[
+            #                 -nconstraints + 1 :, -nconstraints + 1 :
+            #             ] += 1.0
+
+            #             if useDiagAddConstraints:
+
+            #                 if "right" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         -nconstraints + 1 :, -nconstraints + 1 :
+            #                     ] += inputCB.boundaryConstraints["right"][
+            #                         : nconstraints - 1,
+            #                         : nconstraints - 1,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         -nconstraints + 1 :, -nconstraints + 1 :
+            #                     ] += 1.0
+            #                 if "top" in inputCB.boundaryConstraints:
+            #                     localBCAssembly[
+            #                         -nconstraints + 1 :, -nconstraints + 1 :
+            #                     ] += inputCB.boundaryConstraints["top"][
+            #                         : nconstraints - 1,
+            #                         : nconstraints - 1,
+            #                     ]
+            #                     localAssemblyWeights[
+            #                         -nconstraints + 1 :, -nconstraints + 1 :
+            #                     ] += 1.0
+            #     else:
+            #         initSol[
+            #             -nconstraints:, -nconstraints:
+            #         ] = beta * initSol[
+            #                 -nconstraints:, -nconstraints: ] + (1-beta) * inputCB.boundaryConstraints["top-right"][
+            #             nconstraints : degree + loffset, nconstraints : degree + loffset
+            #         ]
+            #         localAssemblyWeights[-nconstraints:, -nconstraints:] += 1.0
+
+            # localAssemblyWeights += 1
             localAssemblyWeights[
                 freeBounds[0] : freeBounds[1], freeBounds[2] : freeBounds[3]
             ] += 1.0
