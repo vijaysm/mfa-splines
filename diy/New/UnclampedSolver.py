@@ -2826,7 +2826,7 @@ if nprocs == 1 and np.sum(nSubDomains) == 1:
 if rank == 0:
     print("\n---- Starting Global Iterative Loop ----")
 
-totalConvergedIteration = 0
+totalConvergedIteration = 1
 sendrecv_time = 0
 for iterIdx in range(nASMIterations):
 
@@ -2937,12 +2937,12 @@ if not scalingstudy:
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
     avg_first_solve_time /= commWorld.size
-    if totalConvergedIteration < (nASMIterations + 1):
-        print("\n[LOG] ASM solver converged after %d iterations" % (iterIdx + 1))
-    print("[LOG] Computational time for first solve          = ", max_first_solve_time, " average = ", avg_first_solve_time)
-    print("[LOG] Maximum Communication time per process      = ", max_sendrecv)
-    print("[LOG] Total time for decode and convergence check = ", max_elapsed - sendrecv_time)
-    print("[LOG] Total computational time for all iterations = ", max_elapsed)
+    if totalConvergedIteration < nASMIterations:
+        print("\n[LOG] ASM solver converged after %d iterations" % totalConvergedIteration)
+    print("[LOG] Computational time for first solve            = ", max_first_solve_time, " average = ", avg_first_solve_time)
+    print("[LOG] Maximum Communication time per process        = ", max_sendrecv)
+    print("[LOG] Average time for decode and convergence check = ", (max_elapsed - sendrecv_time - max_first_solve_time)/totalConvergedIteration)
+    print("[LOG] Total computational time for all iterations   = ", max_elapsed)
     if not scalingstudy:
         avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
         print(
