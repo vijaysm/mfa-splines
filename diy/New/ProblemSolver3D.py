@@ -87,7 +87,7 @@ class ProblemSolver3D:
                     bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,0,:], k=self.degree)
                 # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
                 NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree).todense()
-            print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
+            # print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
 
         # print(
         #     "Number of basis functions = ({0}, {1}, {2})".format(
@@ -724,7 +724,7 @@ class ProblemSolver3D:
         return
 
     def initialize_solution(
-        self, inputCB, initSol, degree, augmentSpanSpace, fullyPinned
+        self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
         alpha = 0.5

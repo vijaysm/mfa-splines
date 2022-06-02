@@ -321,7 +321,7 @@ class ProblemSolver1D:
         return
 
     def initialize_solution(
-        self, inputCB, initSol, degree, augmentSpanSpace, fullyPinned
+        self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
         alpha = 0.5 # Between [0, 1.0]

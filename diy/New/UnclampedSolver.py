@@ -61,11 +61,11 @@ plt.rcParams.update(params)
 directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
 problem = 1
-dimension = 3
+dimension = 2
 degree = 3
-scalingstudy = True
+scalingstudy = False
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
-nSubDomains = [1, 1, 2]
+nSubDomains = [2, 2, 1]
 nSubDomainsX = nSubDomains[0]
 nSubDomainsY = nSubDomains[1] if dimension > 1 else 1
 nSubDomainsZ = nSubDomains[2] if dimension > 2 else 1
@@ -107,8 +107,8 @@ nWynnEWork = 3
 
 ##################
 # Initialize
-nProblemInputPoints = 101
-nControlPointsInputIn = 20
+nProblemInputPoints = 50
+nControlPointsInputIn = 5
 solutionRange = 1.0
 ##################
 
@@ -1279,11 +1279,15 @@ class InputControlBlock:
             coreData = self.pMK
 
         if dimension == 2:
+            iterateChangeVec = (
+                self.solutionDecoded - self.solutionDecodedOld
+            )
             with RectilinearGrid(
                 "./structured-%s.vtr" % (self.figSuffix), (locX, locY)
             ) as rect:
                 rect.addPointData(DataArray(coreData, range(dimension), "solution"))
                 rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
+                rect.addPointData(DataArray(iterateChangeVec, range(dimension), "errorchange"))
                 rect.addCellData(DataArray(proc, range(dimension), "process"))
         else:
             with RectilinearGrid(
@@ -2184,7 +2188,10 @@ class InputControlBlock:
         self.controlPointData = np.zeros(self.nControlPoints)
         self.weightsData = np.ones(self.nControlPoints)
         self.solutionDecoded = np.zeros(self.refSolutionLocal.shape)
-        self.solutionDecodedOld = np.zeros(self.refSolutionLocal.shape)
+        if useVTKOutput:
+            self.solutionDecodedOld = np.zeros(self.refSolutionLocal.shape)
+        else:
+            self.solutionDecodedOld = []
 
         print(
             "augment_inputdata:",
@@ -2305,7 +2312,7 @@ class InputControlBlock:
             if constraints is not None and len(constraints) > 0:
 
                 initSol = self.problemInterface.initialize_solution(
-                    self, initSol, degree, augmentSpanSpace, fullyPinned
+                    self, idom, initSol, degree, augmentSpanSpace, fullyPinned
                 )
 
             initialDecodedError = residualFunction(initSol)
@@ -2559,10 +2566,6 @@ class InputControlBlock:
         # Invoke the adaptive fitting routine for this subdomain
         iSubDom = cp.gid() + 1
 
-        # VSM: Temporary
-        # self.solutionDecodedOld = np.copy(self.solutionDecoded)
-
-
         # self.globalTolerance = 1e-3 * 1e-3**self.adaptiveIterationNum
 
         if newSolve and self.outerIteration == 0:
@@ -2582,6 +2585,9 @@ class InputControlBlock:
             self.controlPointBounds = np.array(
                 [np.min(self.controlPointData), np.max(self.controlPointData)]
             )
+
+        # VSM: Temporary
+        if useVTKOutput: self.solutionDecodedOld = np.copy(self.solutionDecoded)
 
         # Update the local decoded data
         self.solutionDecoded = self.decode(self.controlPointData, self.decodeOpXYZ)
@@ -2644,8 +2650,6 @@ domain_control = diy.DiscreteBounds(
 
 # Routine to recursively add a block and associated data to it
 
-print("")
-
 locSolutionShape = None
 
 def ndmesh(*args):
@@ -2653,7 +2657,7 @@ def ndmesh(*args):
    return np.broadcast_arrays(*[x[(slice(None),)+(None,)*i] for i, x in enumerate(args)])
 
 def add_input_control_block2(gid, core, bounds, domain, link):
-    print("Subdomain %d: " % gid, core, bounds, domain)
+    # print("Subdomain %d: " % gid, core, bounds, domain)
     minb = bounds.min
     maxb = bounds.max
 
@@ -2787,23 +2791,21 @@ if not fullyPinned:
 if showplot:
     masterControl.foreach(InputControlBlock.update_bounds)
     # globalExtentDict = np.array(commWorld.gather(localExtents, root=0)[0])
-    print(rank, " - localExtents = ", localExtents)
+    # print(rank, " - localExtents = ", localExtents)
     globalExtentDict = commWorld.gather(flattenDict(localExtents), root=0)
     if rank == 0:
         if nprocs == 1:
             globalExtentDict = globalExtentDict[0]
         else:
             globalExtentDict = flattenListDict(globalExtentDict)
-        print("Global extents consolidated  = ", globalExtentDict)
+        # print("Global extents consolidated  = ", globalExtentDict)
 
 del coordinates
 if not closedFormFunctional:
     del solution
 
 ## Compute the basis functions and decode operator as needed
-print("Setting up solve")
 masterControl.foreach(InputControlBlock.setup_subdomain_solve)
-print("Setting up solve done...")
 
 elapsed = timeit.default_timer() - start_time
 if nprocs > 1:
@@ -2811,7 +2813,7 @@ if nprocs > 1:
 else:
     setup_time = elapsed
 if rank == 0:
-    print("\n[LOG] Total setup time for solver = ", setup_time, "\n")
+    print("\n[LOG] Total setup time for solver = ", setup_time)
 sys.stdout.flush()
 
 if nprocs > 1: commWorld.Barrier()
@@ -2824,11 +2826,15 @@ if nprocs == 1 and np.sum(nSubDomains) == 1:
 if rank == 0:
     print("\n---- Starting Global Iterative Loop ----")
 
+totalConvergedIteration = 0
+sendrecv_time = 0
 for iterIdx in range(nASMIterations):
 
     if iterIdx == 0:
+        if nprocs > 1: commWorld.Barrier()
         first_solve_time = timeit.default_timer()
 
+    totalConvergedIteration = (iterIdx + 1)
     if rank == 0:
         print("\n---- Starting Iteration: %d ----" % iterIdx)
 
@@ -2896,8 +2902,6 @@ for iterIdx in range(nASMIterations):
                     WritePVTKControlFile(iterIdx)
 
     if isASMConverged == nTotalSubDomains:
-        if rank == 0:
-            print("\n\nASM solver converged after %d iterations\n\n" % (iterIdx + 1))
         break
 
     else:
@@ -2906,9 +2910,12 @@ for iterIdx in range(nASMIterations):
                 lambda icb, cp: InputControlBlock.extrapolate_guess(icb, cp, iterIdx)
             )
 
+        if nprocs > 1: commWorld.Barrier()
+        loc_sendrecv_time = timeit.default_timer()
         # Now let us perform send-receive to get the data on the interface boundaries from
         # adjacent nearest-neighbor subdomains
         send_receive_all()
+        sendrecv_time += timeit.default_timer() - loc_sendrecv_time
 
 
 # masterControl.foreach(InputControlBlock.print_solution)
@@ -2919,6 +2926,7 @@ sys.stdout.flush()
 max_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.MAX, root=0)
 avg_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.SUM, root=0)
 max_elapsed = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
+max_sendrecv = commWorld.reduce(sendrecv_time/totalConvergedIteration, op=MPI.MAX, root=0)
 
 if not scalingstudy:
     avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
@@ -2929,7 +2937,11 @@ if not scalingstudy:
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
     avg_first_solve_time /= commWorld.size
-    print("\n[LOG] Computational time for first solve          = ", max_first_solve_time, " average = ", avg_first_solve_time)
+    if totalConvergedIteration < (nASMIterations + 1):
+        print("\n[LOG] ASM solver converged after %d iterations" % (iterIdx + 1))
+    print("[LOG] Computational time for first solve          = ", max_first_solve_time, " average = ", avg_first_solve_time)
+    print("[LOG] Maximum Communication time per process      = ", max_sendrecv)
+    print("[LOG] Total time for decode and convergence check = ", max_elapsed - sendrecv_time)
     print("[LOG] Total computational time for all iterations = ", max_elapsed)
     if not scalingstudy:
         avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
