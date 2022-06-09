@@ -2954,6 +2954,7 @@ if rank == 0:
     avg_first_solve_time /= commWorld.size
     if totalConvergedIteration < nASMIterations-1:
         print("\n[LOG] ASM solver converged after %d iterations" % totalConvergedIteration)
+    else: print("")
     print("[LOG] Computational time for first solve             = ", max_first_solve_time, " average = ", avg_first_solve_time)
     print("[LOG] Maximum Communication time per process         = ", max_sendrecv)
     print("[LOG] Maximum time for decoding data per process     = ", max_decode_time)
@@ -2976,7 +2977,7 @@ if showplot:
     plt.show()
 
 ####### Print profiling info ############
-if rank == 0:
+if not scalingstudy and rank == 0:
     s = io.StringIO()
     if sys.version_info.minor > 6:
         sortby = pstats.SortKey.TIME
