@@ -63,7 +63,7 @@ directions = ["x", "y", "z"]
 problem = 1
 dimension = 2
 degree = 3
-scalingstudy = False
+scalingstudy = True
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
 nSubDomains = [2, 2, 1]
 nSubDomainsX = nSubDomains[0]
@@ -643,8 +643,8 @@ elif dimension == 3:
 
     if problem == 1:
         nPoints[0] = nProblemInputPoints if nProblemInputPoints else 101
-        nPoints[1] = nProblemInputPoints if nProblemInputPoints else 101
-        nPoints[2] = nProblemInputPoints if nProblemInputPoints else 101
+        nPoints[1] = nProblemInputPoints if nProblemInputPoints else 105
+        nPoints[2] = nProblemInputPoints if nProblemInputPoints else 111
         scale = 100
         Dmin = [-4.0, -4.0, -4.0]
         Dmax = [4.0, 4.0, 4.0]
@@ -682,6 +682,7 @@ elif dimension == 3:
             + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
         )
 
+        solution = lambda x, y, z: scale * (z**4)
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
         # solution = ((4-X)*(4-Y)).T
@@ -700,6 +701,7 @@ elif dimension == 3:
         # del X, Y, Z
 
 nControlPointsInput = np.array([nControlPointsInputIn] * dimension, dtype=np.uint32)
+# nControlPointsInput = np.array([10, 12, 15], dtype=np.uint32)
 # if dimension == 2:
 #     nControlPointsInput = np.array([10, 10], dtype=np.uint32)
 
@@ -880,7 +882,7 @@ def WritePVTKFile(iteration):
 def WritePVTKControlFile(iteration):
     nconstraints = int(degree / 2.0) if not degree % 2 else int((degree + 1) / 2.0)
     # nconstraints=1
-    print("Nconstraints = ", nconstraints)
+    # print("Nconstraints = ", nconstraints)
     pvtkfile = open("pstructured-control-mfa-%d.pvtr" % (iteration), "w")
 
     pvtkfile.write('<?xml version="1.0"?>\n')
@@ -1278,10 +1280,10 @@ class InputControlBlock:
                 proc = np.ones((locX.size - 1, locY.size - 1)) * commWorld.Get_rank()
             coreData = self.pMK
 
+        iterateChangeVec = (
+            self.solutionDecoded - self.solutionDecodedOld
+        )
         if dimension == 2:
-            iterateChangeVec = (
-                self.solutionDecoded - self.solutionDecodedOld
-            )
             with RectilinearGrid(
                 "./structured-%s.vtr" % (self.figSuffix), (locX, locY)
             ) as rect:
@@ -1295,6 +1297,7 @@ class InputControlBlock:
             ) as rect:
                 rect.addPointData(DataArray(coreData, range(dimension), "solution"))
                 rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
+                rect.addPointData(DataArray(iterateChangeVec, range(dimension), "errorchange"))
                 rect.addCellData(DataArray(proc, range(dimension), "process"))
 
         def compute_greville(knots):
@@ -2586,6 +2589,8 @@ class InputControlBlock:
                 [np.min(self.controlPointData), np.max(self.controlPointData)]
             )
 
+    def subdomain_decode(self, cp):
+
         # VSM: Temporary
         if useVTKOutput: self.solutionDecodedOld = np.copy(self.solutionDecoded)
 
@@ -2606,6 +2611,7 @@ class InputControlBlock:
                     )
                 )
 
+        iSubDom = cp.gid() + 1
         # E = (self.solutionDecoded[self.corebounds[0]:self.corebounds[1]] - self.controlPointData[self.corebounds[0]:self.corebounds[1]])/solutionRange
         if dimension == 1:
             decodedError = (
@@ -2621,7 +2627,7 @@ class InputControlBlock:
                 self.corebounds[1][0] : self.corebounds[1][1],
             ].reshape(-1)
         elif dimension == 3:
-            print("Shapes: ", self.refSolutionLocal.shape, self.solutionDecoded.shape)
+            # print("Shapes: ", self.refSolutionLocal.shape, self.solutionDecoded.shape)
             decodedErrorT = (
                 self.refSolutionLocal - self.solutionDecoded
             ) / solutionRange
@@ -2644,12 +2650,7 @@ class InputControlBlock:
 
 
 #########
-domain_control = diy.DiscreteBounds(
-    np.zeros((dimension, 1), dtype=np.uint32), nPoints - 1
-)
-
 # Routine to recursively add a block and associated data to it
-
 locSolutionShape = None
 
 def ndmesh(*args):
@@ -2706,6 +2707,10 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     )
 
 pr = cProfile.Profile()
+
+domain_control = diy.DiscreteBounds(
+    np.zeros((dimension, 1), dtype=np.uint32), nPoints - 1
+)
 
 if dimension == 1:
     solutionShape = [coordinates["x"].shape[0]]
@@ -2816,8 +2821,6 @@ if rank == 0:
     print("\n[LOG] Total setup time for solver = ", setup_time)
 sys.stdout.flush()
 
-if nprocs > 1: commWorld.Barrier()
-start_time = timeit.default_timer()
 first_solve_time = 0
 
 if nprocs == 1 and np.sum(nSubDomains) == 1:
@@ -2827,12 +2830,12 @@ if rank == 0:
     print("\n---- Starting Global Iterative Loop ----")
 
 totalConvergedIteration = 1
-sendrecv_time = 0
+total_decode_time = 0
+total_convcheck_time = 0
+total_sendrecv_time = 0
+if nprocs > 1: commWorld.Barrier()
+start_time = timeit.default_timer()
 for iterIdx in range(nASMIterations):
-
-    if iterIdx == 0:
-        if nprocs > 1: commWorld.Barrier()
-        first_solve_time = timeit.default_timer()
 
     totalConvergedIteration = (iterIdx + 1)
     if rank == 0:
@@ -2841,19 +2844,30 @@ for iterIdx in range(nASMIterations):
     if iterIdx > 0 and rank == 0:
         print("")
 
+    if iterIdx == 0:
+        if nprocs > 1: commWorld.Barrier()
+        first_solve_time = timeit.default_timer()
+
     # run our local subdomain solver
-    pr.enable()
+    if not scalingstudy: pr.enable()
     masterControl.foreach(InputControlBlock.subdomain_solve)
-    pr.disable()
+    if not scalingstudy: pr.disable()
+
+    if iterIdx == 0: first_solve_time = timeit.default_timer() - first_solve_time
+
+    if nprocs > 1: commWorld.Barrier()
+    loc_decode_time = timeit.default_timer()
+    masterControl.foreach(InputControlBlock.subdomain_decode)
+    total_decode_time += timeit.default_timer() - loc_decode_time
 
     # check if we have locally converged within criteria
     if not scalingstudy:
+        if nprocs > 1: commWorld.Barrier()
+        loc_convcheck_time = timeit.default_timer()
         masterControl.foreach(
             lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
         )
-
-    if iterIdx == 0:
-        first_solve_time = timeit.default_timer() - first_solve_time
+        total_convcheck_time += timeit.default_timer() - loc_convcheck_time
 
     if not (nprocs == 1 and np.sum(nSubDomains) == 1):
         if scalingstudy:
@@ -2863,7 +2877,6 @@ for iterIdx in range(nASMIterations):
     else:
         isASMConverged = nTotalSubDomains
 
-    # comm.Barrier()
     sys.stdout.flush()
 
     if showplot:
@@ -2915,7 +2928,7 @@ for iterIdx in range(nASMIterations):
         # Now let us perform send-receive to get the data on the interface boundaries from
         # adjacent nearest-neighbor subdomains
         send_receive_all()
-        sendrecv_time += timeit.default_timer() - loc_sendrecv_time
+        total_sendrecv_time += timeit.default_timer() - loc_sendrecv_time
 
 
 # masterControl.foreach(InputControlBlock.print_solution)
@@ -2925,8 +2938,10 @@ sys.stdout.flush()
 
 max_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.MAX, root=0)
 avg_first_solve_time = commWorld.reduce(first_solve_time, op=MPI.SUM, root=0)
+max_decode_time = commWorld.reduce(total_decode_time, op=MPI.MAX, root=0)
+max_convcheck_time = commWorld.reduce(total_convcheck_time, op=MPI.MAX, root=0)
+max_sendrecv = commWorld.reduce(total_sendrecv_time, op=MPI.MAX, root=0)
 max_elapsed = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
-max_sendrecv = commWorld.reduce(sendrecv_time/totalConvergedIteration, op=MPI.MAX, root=0)
 
 if not scalingstudy:
     avgL2err = commWorld.reduce(np.sum(L2err[np.nonzero(L2err)] ** 2), op=MPI.SUM, root=0)
@@ -2937,12 +2952,13 @@ if not scalingstudy:
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
     avg_first_solve_time /= commWorld.size
-    if totalConvergedIteration < nASMIterations:
+    if totalConvergedIteration < nASMIterations-1:
         print("\n[LOG] ASM solver converged after %d iterations" % totalConvergedIteration)
-    print("[LOG] Computational time for first solve            = ", max_first_solve_time, " average = ", avg_first_solve_time)
-    print("[LOG] Maximum Communication time per process        = ", max_sendrecv)
-    print("[LOG] Average time for decode and convergence check = ", (max_elapsed - sendrecv_time - max_first_solve_time)/totalConvergedIteration)
-    print("[LOG] Total computational time for all iterations   = ", max_elapsed)
+    print("[LOG] Computational time for first solve             = ", max_first_solve_time, " average = ", avg_first_solve_time)
+    print("[LOG] Maximum Communication time per process         = ", max_sendrecv)
+    print("[LOG] Maximum time for decoding data per process     = ", max_decode_time)
+    print("[LOG] Maximum time for convergence check per process = ", max_convcheck_time)
+    print("[LOG] Total computational time for all iterations    = ", max_elapsed)
     if not scalingstudy:
         avgL2err = np.sqrt(avgL2err / nTotalSubDomains)
         print(
@@ -2960,17 +2976,20 @@ if showplot:
     plt.show()
 
 ####### Print profiling info ############
-s = io.StringIO()
-if sys.version_info.minor > 6:
-    sortby = pstats.SortKey.TIME
-else:
-    sortby = "tottime"
-ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-# ps.print_stats("UnclampedSolver")
-# ps.print_stats("ProblemSolver2D")
-# ps.print_stats("numpy")
-# ps.print_stats("scipy")
-ps.print_stats(25)
-print(s.getvalue())
+if rank == 0:
+    s = io.StringIO()
+    if sys.version_info.minor > 6:
+        sortby = pstats.SortKey.TIME
+    else:
+        sortby = "tottime"
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    # ps.print_stats("UnclampedSolver")
+    # ps.print_stats("ProblemSolver2D")
+    # ps.print_stats("numpy")
+    # ps.print_stats("scipy")
+    ps.print_stats(25)
+    print(s.getvalue())
+
+commWorld.Barrier()
 
 # ---------------- END MAIN FUNCTION -----------------

@@ -778,7 +778,7 @@ class ProblemSolver3D:
                 int(degree / 2.0) if not oddDegree else int((degree + 1) / 2.0)
             )
             loffset = 2 * augmentSpanSpace
-            print("Nconstraints = ", nconstraints, "loffset = ", loffset)
+            # print("Nconstraints = ", nconstraints, "loffset = ", loffset)
 
             freeBounds[0] = (
                 0
@@ -1103,6 +1103,7 @@ class ProblemSolver3D:
                         freeBounds[2] : freeBounds[3],
                         -nconstraints:
                     ] = 1.0
+
 
             if "top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1695,6 +1696,7 @@ class ProblemSolver3D:
                         -nconstraints:, -nconstraints:, -nconstraints:
                     ] = 1.0
 
+
             if "down-top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
                     localBCAssembly[
@@ -1839,6 +1841,8 @@ class ProblemSolver3D:
                 freeBounds[2] : freeBounds[3],
                 freeBounds[4] : freeBounds[5],
             ] += 1.0
+            # print("Weights: ", localAssemblyWeights)
+            # print("initSol: ", initSol)
             initSol = np.divide(initSol + localBCAssembly, localAssemblyWeights)
 
             # Rotate it back

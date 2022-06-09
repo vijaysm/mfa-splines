@@ -68,6 +68,7 @@ class ProblemSolver2D:
         self.degree = degree
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
+        self.useDiagAddConstraints = False
         self.dimension = 2
         self.verbose = verbose
 
@@ -586,7 +587,7 @@ class ProblemSolver2D:
         self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
-        print("initSol: ", initSol)
+        # print("initSol: ", initSol)
 
         alpha = 0.5 # Between [0, 1.0]
         beta = 0 # Between [0, 0.5]
@@ -622,7 +623,6 @@ class ProblemSolver2D:
 
         else:
 
-            useDiagAddConstraints = True
             oddDegree = degree % 2
             nconstraints = augmentSpanSpace + (
                 int(degree / 2.0) if not oddDegree else int((degree + 1) / 2.0)
@@ -805,7 +805,7 @@ class ProblemSolver2D:
                             : nconstraints - 1, -nconstraints + 1 :
                         ] += 1.0
 
-                        if useDiagAddConstraints:
+                        if self.useDiagAddConstraints:
                             if "left" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     nconstraints - 1, -nconstraints + 1 :
@@ -864,7 +864,7 @@ class ProblemSolver2D:
                             -nconstraints + 1 :, : nconstraints - 1
                         ] += 1.0
 
-                        if useDiagAddConstraints:
+                        if self.useDiagAddConstraints:
                             if "right" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     -nconstraints, : nconstraints - 1
@@ -923,7 +923,7 @@ class ProblemSolver2D:
                             : nconstraints - 1, : nconstraints - 1
                         ] += 1.0
 
-                        if useDiagAddConstraints:
+                        if self.useDiagAddConstraints:
                             if "left" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     nconstraints - 1, : nconstraints - 1
@@ -981,7 +981,7 @@ class ProblemSolver2D:
                             -nconstraints + 1 :, -nconstraints + 1 :
                         ] += 1.0
 
-                        if useDiagAddConstraints:
+                        if self.useDiagAddConstraints:
                             if "right" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     -nconstraints, -nconstraints + 1 :
@@ -1043,7 +1043,7 @@ class ProblemSolver2D:
             #                 : nconstraints - 1, -nconstraints + 1 :
             #             ] += 1.0
 
-            #             if useDiagAddConstraints:
+            #             if self.useDiagAddConstraints:
 
             #                 if "top" in inputCB.boundaryConstraints:
             #                     localBCAssembly[
@@ -1096,7 +1096,7 @@ class ProblemSolver2D:
             #                 -nconstraints + 1 :, : nconstraints - 1
             #             ] += 1.0
 
-            #             if useDiagAddConstraints:
+            #             if self.useDiagAddConstraints:
 
             #                 if "bottom" in inputCB.boundaryConstraints:
             #                     localBCAssembly[
@@ -1149,7 +1149,7 @@ class ProblemSolver2D:
             #                 : nconstraints - 1, : nconstraints - 1
             #             ] += 1.0
 
-            #             if useDiagAddConstraints:
+            #             if self.useDiagAddConstraints:
 
             #                 if "bottom" in inputCB.boundaryConstraints:
             #                     localBCAssembly[
@@ -1201,7 +1201,7 @@ class ProblemSolver2D:
             #                 -nconstraints + 1 :, -nconstraints + 1 :
             #             ] += 1.0
 
-            #             if useDiagAddConstraints:
+            #             if self.useDiagAddConstraints:
 
             #                 if "right" in inputCB.boundaryConstraints:
             #                     localBCAssembly[
