@@ -629,41 +629,19 @@ class ProblemSolver3D:
                         inputCB.boundaryConstraints["up-bottom"] = cp.dequeue(target)
 
                 # target is coupled in X-direction
-                elif dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
+                else:
+                    if dir[0] > 0 and dir[1] == 0:  # target block is to the right of current subdomain
                         inputCB.boundaryConstraints["up-right"] = cp.dequeue(target)
-
+                    elif dir[0] > 0 and dir[1] > 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["up-top-right"] = cp.dequeue(target)
+                    elif dir[0] > 0 and dir[1] < 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["up-bottom-right"] = cp.dequeue(target)
+                    elif dir[0] < 0 and dir[1] < 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["up-bottom-left"] = cp.dequeue(target)
+                    elif dir[0] < 0 and dir[1] > 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["up-top-left"] = cp.dequeue(target)
                     else:  # target block is to the left of current subdomain
                         inputCB.boundaryConstraints["up-left"] = cp.dequeue(target)
-
-                else:
-
-                    if self.useDiagonalBlocks:
-
-                        # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
-                        # sender block is diagonally right top to  current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-                            inputCB.boundaryConstraints["up-top-right"] = cp.dequeue(
-                                target
-                            )
-
-                        # sender block is diagonally left top to current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints["up-bottom-right"] = cp.dequeue(
-                                target
-                            )
-
-                        # sender block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints["up-bottom-left"] = cp.dequeue(
-                                target
-                            )
-
-                        # sender block is diagonally left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            inputCB.boundaryConstraints["up-top-left"] = cp.dequeue(
-                                target
-                            )
 
             else:  # dir[2] < 0 - sending to layer of blocks below in z-direction
                 # ONLY consider coupling through faces and not through verties
@@ -685,41 +663,19 @@ class ProblemSolver3D:
                         inputCB.boundaryConstraints["down-bottom"] = cp.dequeue(target)
 
                 # target is coupled in X-direction
-                elif dir[1] == 0:
-                    if dir[0] > 0:  # target block is to the right of current subdomain
+                else:
+                    if dir[0] > 0 and dir[1] == 0:  # target block is to the right of current subdomain
                         inputCB.boundaryConstraints["down-right"] = cp.dequeue(target)
-
+                    elif dir[0] > 0 and dir[1] > 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["down-top-right"] = cp.dequeue(target)
+                    elif dir[0] > 0 and dir[1] < 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["down-bottom-right"] = cp.dequeue(target)
+                    elif dir[0] < 0 and dir[1] < 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["down-bottom-left"] = cp.dequeue(target)
+                    elif dir[0] < 0 and dir[1] > 0:  # target block is to the right of current subdomain
+                        inputCB.boundaryConstraints["down-top-left"] = cp.dequeue(target)
                     else:  # target block is to the left of current subdomain
                         inputCB.boundaryConstraints["down-left"] = cp.dequeue(target)
-
-                else:
-
-                    if self.useDiagonalBlocks:
-
-                        # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
-                        # sender block is diagonally right top to  current subdomain
-                        if dir[0] > 0 and dir[1] > 0:
-                            inputCB.boundaryConstraints["down-top-right"] = cp.dequeue(
-                                target
-                            )
-
-                        # sender block is diagonally left top to current subdomain
-                        if dir[0] > 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints[
-                                "down-bottom-right"
-                            ] = cp.dequeue(target)
-
-                        # sender block is diagonally left bottom  current subdomain
-                        if dir[0] < 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints[
-                                "down-bottom-left"
-                            ] = cp.dequeue(target)
-
-                        # sender block is diagonally left to current subdomain
-                        if dir[0] < 0 and dir[1] > 0:
-                            inputCB.boundaryConstraints["down-top-left"] = cp.dequeue(
-                                target
-                            )
 
         return
 
@@ -1104,6 +1060,84 @@ class ProblemSolver3D:
                         -nconstraints:
                     ] = 1.0
 
+            # if "top-left" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #             : nconstraints - 1, -nconstraints + 1 :, freeBounds[4] : freeBounds[5]
+            #         ] = 1.0
+            # if "bottom-right" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 -nconstraints + 1 :, : nconstraints - 1, freeBounds[4] : freeBounds[5]
+            #             ] = 1.0
+            # if "bottom-left" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 : nconstraints - 1, : nconstraints - 1, freeBounds[4] : freeBounds[5]
+            #             ] = 1.0
+            # if "top-right" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 -nconstraints + 1 :, -nconstraints + 1 :, freeBounds[4] : freeBounds[5]
+            #             ] = 1.0
+            # if "up-top" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 -nconstraints + 1 :,
+            #                 -nconstraints + 1 :
+            #             ] = 1.0
+            # if "up-bottom" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 : nconstraints - 1,
+            #                 -nconstraints + 1 :
+            #             ] = 1.0
+            if "down-top" in inputCB.boundaryConstraints:
+                if oddDegree and nconstraints > 1:
+                    localAssemblyWeights[
+                            freeBounds[0] : freeBounds[1],
+                            -nconstraints + 1 :,
+                            : nconstraints - 1
+                        ] = 1.0
+            if "down-bottom" in inputCB.boundaryConstraints:
+                if oddDegree and nconstraints > 1:
+                    localAssemblyWeights[
+                            freeBounds[0] : freeBounds[1],
+                            : nconstraints - 1,
+                            : nconstraints - 1
+                        ] = 1.0
+
+            # if "up-right" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 -nconstraints + 1 :,
+            #                 freeBounds[2] : freeBounds[3],
+            #                 -nconstraints + 1 :
+            #             ] = 1.0
+            # if "up-left" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 : nconstraints - 1,
+            #                 freeBounds[2] : freeBounds[3],
+            #                 -nconstraints + 1 :
+            #             ] = 1.0
+            # if "down-right" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 -nconstraints + 1 :,
+            #                 freeBounds[2] : freeBounds[3],
+            #                 : nconstraints - 1
+            #             ] = 1.0
+            # if "down-left" in inputCB.boundaryConstraints:
+            #     if oddDegree and nconstraints > 1:
+            #         localAssemblyWeights[
+            #                 : nconstraints - 1,
+            #                 freeBounds[2] : freeBounds[3],
+            #                 : nconstraints - 1
+            #             ] = 1.0
+
 
             if "top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1310,85 +1344,85 @@ class ProblemSolver3D:
                         freeBounds[0] : freeBounds[1], :nconstraints, -nconstraints:
                     ] = 1.0
 
-            if "down-top" in inputCB.boundaryConstraints:
-                if oddDegree:
-                    localBCAssembly[
-                        freeBounds[0] : freeBounds[1], -nconstraints, nconstraints - 1
-                    ] += inputCB.boundaryConstraints["down-top"][
-                        freeBounds[0] : freeBounds[1], nconstraints - 1, -nconstraints
-                    ]
-                    localAssemblyWeights[
-                        freeBounds[0] : freeBounds[1], -nconstraints, nconstraints - 1
-                    ] += 1.0
+            # if "down-top" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             freeBounds[0] : freeBounds[1], -nconstraints, nconstraints - 1
+            #         ] += inputCB.boundaryConstraints["down-top"][
+            #             freeBounds[0] : freeBounds[1], nconstraints - 1, -nconstraints
+            #         ]
+            #         localAssemblyWeights[
+            #             freeBounds[0] : freeBounds[1], -nconstraints, nconstraints - 1
+            #         ] += 1.0
 
-                    if nconstraints > 1:
-                        initSol[
-                            freeBounds[0] : freeBounds[1],
-                            -nconstraints + 1 :,
-                            : nconstraints - 1,
-                        ] = inputCB.boundaryConstraints["down-top"][
-                            freeBounds[0] : freeBounds[1],
-                            nconstraints : loffset + degree,
-                            -degree - loffset : -nconstraints,
-                        ]
-                        localAssemblyWeights[
-                            freeBounds[0] : freeBounds[1],
-                            -nconstraints + 1 :,
-                            : nconstraints - 1,
-                        ] = 1.0
-                else:
-                    initSol[
-                        freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
-                    ] = inputCB.boundaryConstraints["down-top"][
-                        freeBounds[0] : freeBounds[1],
-                        nconstraints : loffset + degree,
-                        -degree - loffset : -nconstraints,
-                    ]
-                    localAssemblyWeights[
-                        freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
-                    ] = 1.0
+            #         if nconstraints > 1:
+            #             initSol[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 -nconstraints + 1 :,
+            #                 : nconstraints - 1,
+            #             ] = inputCB.boundaryConstraints["down-top"][
+            #                 freeBounds[0] : freeBounds[1],
+            #                 nconstraints : loffset + degree,
+            #                 -degree - loffset : -nconstraints,
+            #             ]
+            #             localAssemblyWeights[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 -nconstraints + 1 :,
+            #                 : nconstraints - 1,
+            #             ] = 1.0
+            #     else:
+            #         initSol[
+            #             freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
+            #         ] = inputCB.boundaryConstraints["down-top"][
+            #             freeBounds[0] : freeBounds[1],
+            #             nconstraints : loffset + degree,
+            #             -degree - loffset : -nconstraints,
+            #         ]
+            #         localAssemblyWeights[
+            #             freeBounds[0] : freeBounds[1], -nconstraints:, :nconstraints
+            #         ] = 1.0
 
-            if "down-bottom" in inputCB.boundaryConstraints:
-                if oddDegree:
-                    localBCAssembly[
-                        freeBounds[0] : freeBounds[1],
-                        nconstraints - 1,
-                        nconstraints - 1,
-                    ] += inputCB.boundaryConstraints["down-bottom"][
-                        freeBounds[0] : freeBounds[1], -nconstraints, -nconstraints
-                    ]
-                    localAssemblyWeights[
-                        freeBounds[0] : freeBounds[1],
-                        nconstraints - 1,
-                        nconstraints - 1,
-                    ] += 1.0
+            # if "down-bottom" in inputCB.boundaryConstraints:
+            #     if oddDegree:
+            #         localBCAssembly[
+            #             freeBounds[0] : freeBounds[1],
+            #             nconstraints - 1,
+            #             nconstraints - 1,
+            #         ] += inputCB.boundaryConstraints["down-bottom"][
+            #             freeBounds[0] : freeBounds[1], -nconstraints, -nconstraints
+            #         ]
+            #         localAssemblyWeights[
+            #             freeBounds[0] : freeBounds[1],
+            #             nconstraints - 1,
+            #             nconstraints - 1,
+            #         ] += 1.0
 
-                    if nconstraints > 1:
-                        initSol[
-                            freeBounds[0] : freeBounds[1],
-                            : nconstraints - 1,
-                            : nconstraints - 1,
-                        ] = inputCB.boundaryConstraints["down-bottom"][
-                            freeBounds[0] : freeBounds[1],
-                            -degree - loffset : -nconstraints,
-                            -degree - loffset : -nconstraints,
-                        ]
-                        localAssemblyWeights[
-                            freeBounds[0] : freeBounds[1],
-                            : nconstraints - 1,
-                            : nconstraints - 1,
-                        ] = 1.0
-                else:
-                    initSol[
-                        freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
-                    ] = inputCB.boundaryConstraints["down-bottom"][
-                        freeBounds[0] : freeBounds[1],
-                        -degree - loffset : -nconstraints,
-                        -degree - loffset : -nconstraints,
-                    ]
-                    localAssemblyWeights[
-                        freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
-                    ] = 1.0
+            #         if nconstraints > 1:
+            #             initSol[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 : nconstraints - 1,
+            #                 : nconstraints - 1,
+            #             ] = inputCB.boundaryConstraints["down-bottom"][
+            #                 freeBounds[0] : freeBounds[1],
+            #                 -degree - loffset : -nconstraints,
+            #                 -degree - loffset : -nconstraints,
+            #             ]
+            #             localAssemblyWeights[
+            #                 freeBounds[0] : freeBounds[1],
+            #                 : nconstraints - 1,
+            #                 : nconstraints - 1,
+            #             ] = 1.0
+            #     else:
+            #         initSol[
+            #             freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
+            #         ] = inputCB.boundaryConstraints["down-bottom"][
+            #             freeBounds[0] : freeBounds[1],
+            #             -degree - loffset : -nconstraints,
+            #             -degree - loffset : -nconstraints,
+            #         ]
+            #         localAssemblyWeights[
+            #             freeBounds[0] : freeBounds[1], :nconstraints, :nconstraints
+            #         ] = 1.0
 
             if "up-right" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -1411,7 +1445,7 @@ class ProblemSolver3D:
                         ] = inputCB.boundaryConstraints["up-right"][
                             nconstraints : loffset + degree,
                             freeBounds[2] : freeBounds[3],
-                            nconstraints : loffset + degree,
+                            nconstraints : loffset + degree
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :,
@@ -1447,11 +1481,11 @@ class ProblemSolver3D:
                         initSol[
                             : nconstraints - 1,
                             freeBounds[2] : freeBounds[3],
-                            -nconstraints + 1 :,
+                            -nconstraints + 1 :
                         ] = inputCB.boundaryConstraints["up-left"][
                             -degree - loffset : -nconstraints,
                             freeBounds[2] : freeBounds[3],
-                            nconstraints : loffset + degree,
+                            nconstraints : loffset + degree
                         ]
                         localAssemblyWeights[
                             : nconstraints - 1,
@@ -1464,7 +1498,7 @@ class ProblemSolver3D:
                     ] = inputCB.boundaryConstraints["up-left"][
                         -degree - loffset : -nconstraints,
                         freeBounds[2] : freeBounds[3],
-                        nconstraints : loffset + degree,
+                        nconstraints : loffset + degree
                     ]
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3], -nconstraints:
@@ -1549,6 +1583,8 @@ class ProblemSolver3D:
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3], :nconstraints
                     ] = 1.0
+
+
 
             if "up-top-left" in inputCB.boundaryConstraints:
                 if oddDegree:
