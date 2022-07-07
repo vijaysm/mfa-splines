@@ -63,7 +63,7 @@ directions = ["x", "y", "z"]
 problem = 1
 dimension = 3
 degree = 3
-scalingstudy = False
+scalingstudy = True
 nSubDomains = np.array([1] * dimension, dtype=np.uint32)
 nSubDomains = [2, 2, 2]
 nSubDomainsX = nSubDomains[0]
@@ -77,7 +77,7 @@ showplot = False
 useVTKOutput = not scalingstudy
 useMOABMesh = False
 
-augmentSpanSpace = degree
+augmentSpanSpace = 0
 useDiagonalBlocks = True
 
 relEPS = 5e-5
@@ -678,24 +678,29 @@ elif dimension == 3:
         # solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
         #                     np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
 
-        solution = lambda x, y, z: scale * (
-            np.sinc(np.sqrt(x**2 + y**2 + z**2))
-            + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
-        )
-        # solution = lambda x, y, z: scale * (
-        #     np.sinc(np.sqrt(x**2 + y**2 + z**2))
-        # )
+        @vectorize(target="cpu")
+        def solution(x,y,z):
+            return scale * (
+                np.sinc(np.sqrt(x**2 + y**2 + z**2))
+                + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
+            )
+        # @vectorize(target="cpu")
+        # def solution(x,y,z):
+        #   return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
 
-        # solution = lambda x, y, z: scale * (
-        #     z**4
-        # )
+        # @vectorize(target="cpu")
+        # def solution(x,y,z):
+        #   return scale * (z**4)
 
-        solution2 = lambda x, y, z: scale * (
-            np.sinc(np.sqrt(x**2 + y**2 + z**2))
-            + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
-        )
+        # @vectorize(target="cpu")
+        # def solution(x,y,z):
+        #     return scale * (
+        #         np.sinc(np.sqrt(x**2 + y**2 + z**2))
+        #         + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
+        #     )
 
-        # solution = lambda x, y, z: scale * (x*y*z**4)
+        # def solution(x,y,z):
+        #   scale * (x*y*z**4)
         # solution = scale * (np.sinc(X) + np.sinc(2 *
         #                     X-1) + np.sinc(3*X+1.5)).T
         # solution = ((4-X)*(4-Y)).T
@@ -2005,7 +2010,7 @@ class InputControlBlock:
         for idir in range(dimension):
             cDirection = directions[idir]
 
-            print("Checking direction ", cDirection)
+            if verbose: print("Checking direction ", cDirection)
 
             xyzCP = [
                 self.knotsAdaptive[cDirection][degree],
@@ -2048,12 +2053,13 @@ class InputControlBlock:
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][
                     lboundXYZ[idir] : uboundXYZ[idir]
                 ]
-            print(
-                "%s bounds: " % (cDirection),
-                self.xyzCoordLocal[cDirection][0],
-                self.xyzCoordLocal[cDirection][-1],
-                xyzCP,
-            )
+            if verbose:
+                print(
+                    "%s bounds: " % (cDirection),
+                    self.xyzCoordLocal[cDirection][0],
+                    self.xyzCoordLocal[cDirection][-1],
+                    xyzCP,
+                )
 
 
         # Store the core indices before augment
@@ -2227,12 +2233,13 @@ class InputControlBlock:
         else:
             self.solutionDecodedOld = []
 
-        print(
-            "augment_inputdata:",
-            cp.gid(),
-            "Number of control points = ",
-            self.nControlPoints,
-        )
+        if verbose:
+            print(
+                "augment_inputdata:",
+                cp.gid(),
+                "Number of control points = ",
+                self.nControlPoints,
+            )
 
     def LSQFit_NonlinearOptimize(self, idom, degree, constraints=None):
 
@@ -2586,11 +2593,22 @@ class InputControlBlock:
 
         # Subdomain ID: iSubDom = cp.gid()+1
         newSolve = False
-        if len(self.controlPointData) == 0 or (
-            np.sum(np.abs(self.controlPointData[0,:])) < 1e-14
-            and np.sum(np.abs(self.controlPointData[:,0])) < 1e-14
-        ):
-            newSolve = True
+        if dimension == 1:
+            if len(self.controlPointData) == 0 or np.sum(np.abs(self.controlPointData[:])) < 1e-14:
+                newSolve = True
+        elif dimension == 2:
+            if len(self.controlPointData) == 0 or (
+                np.sum(np.abs(self.controlPointData[0,:])) < 1e-14
+                and np.sum(np.abs(self.controlPointData[:,0])) < 1e-14
+            ):
+                newSolve = True
+        else:
+            if len(self.controlPointData) == 0 or (
+                np.sum(np.abs(self.controlPointData[0,:,:])) < 1e-14
+                and np.sum(np.abs(self.controlPointData[:,0,:])) < 1e-14
+                and np.sum(np.abs(self.controlPointData[:,:,0])) < 1e-14
+            ):
+                newSolve = True
 
         print("Subdomain -- ", cp.gid() + 1)
 
@@ -2866,7 +2884,7 @@ total_convcheck_time = 0
 total_sendrecv_time = 0
 if nprocs > 1 and scalingstudy: commWorld.Barrier()
 start_time = timeit.default_timer()
-for iterIdx in range(nASMIterations):
+for iterIdx in range(nASMIterations+1):
 
     totalConvergedIteration = (iterIdx + 1)
     if rank == 0:
@@ -2893,7 +2911,7 @@ for iterIdx in range(nASMIterations):
 
     # check if we have locally converged within criteria
     if not scalingstudy:
-        if nprocs > 1 and scalingstudy: commWorld.Barrier()
+        if nprocs > 1: commWorld.Barrier()
         loc_convcheck_time = timeit.default_timer()
         masterControl.foreach(
             lambda icb, cp: InputControlBlock.check_convergence(icb, cp, iterIdx)
@@ -2983,7 +3001,7 @@ if not scalingstudy:
 # mc.foreach(InputControlBlock.print_error_metrics)
 if rank == 0:
     avg_first_solve_time /= commWorld.size
-    if totalConvergedIteration < nASMIterations-1:
+    if totalConvergedIteration < nASMIterations:
         print("\n[LOG] ASM solver converged after %d iterations" % totalConvergedIteration)
     else: print("")
     print("[LOG] Computational time for first solve             = ", max_first_solve_time, " average = ", avg_first_solve_time)
