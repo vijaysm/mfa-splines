@@ -678,13 +678,17 @@ elif dimension == 3:
         # solution = scale * (np.sinc(np.sqrt(X**2 + Y**2 + Z**2)) +
         #                     np.sinc(2*((X-2)**2 + (Y+2)**2 + Z**2)))
 
-        solution3 = lambda x, y, z: scale * (
+        solution = lambda x, y, z: scale * (
             np.sinc(np.sqrt(x**2 + y**2 + z**2))
             + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
         )
-        solution = lambda x, y, z: scale * (
-            np.sinc(np.sqrt(x**2 + y**2 + z**2))
-        )
+        # solution = lambda x, y, z: scale * (
+        #     np.sinc(np.sqrt(x**2 + y**2 + z**2))
+        # )
+
+        # solution = lambda x, y, z: scale * (
+        #     z**4
+        # )
 
         solution2 = lambda x, y, z: scale * (
             np.sinc(np.sqrt(x**2 + y**2 + z**2))
