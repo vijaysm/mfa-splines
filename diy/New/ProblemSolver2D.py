@@ -1,17 +1,17 @@
 # import autograd.numpy as np
 import numpy as np
 import splipy as sp
-
-import scipy.sparse.linalg as la
-from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import splu
-from scipy.sparse.linalg import cg, SuperLU
-
 import timeit
 from scipy.interpolate import BSpline
 
-import time
+import scipy.sparse.linalg as sla
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import splu
+
+# from scipy.sparse.linalg import cg, SuperLU
+
 from numba import jit, vectorize
+
 
 class ProblemSolver2D:
     def __init__(
@@ -24,7 +24,8 @@ class ProblemSolver2D:
         degree,
         augmentSpanSpace=0,
         useDiagonalBlocks=True,
-        verbose=False
+        sparse=False,
+        verbose=False,
     ):
         icBlock.xbounds = [xb.min[0], xb.max[0], xb.min[1], xb.max[1]]
         icBlock.corebounds = [
@@ -70,9 +71,10 @@ class ProblemSolver2D:
         self.useDiagonalBlocks = useDiagonalBlocks
         self.useDiagAddConstraints = False
         self.dimension = 2
+        self.sparseOperators = sparse
         self.verbose = verbose
 
-    def compute_basis(self, constraints=None):
+    def compute_basis(self):
         basisFunction = self.inputCB.basisFunction
         knotsAdaptive = self.inputCB.knotsAdaptive
         UVW = self.inputCB.UVW
@@ -81,39 +83,29 @@ class ProblemSolver2D:
         # self.inputCB.basisFunction['y'].reparam()
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
         # print("TV = ", self.inputCB.knotsAdaptive['y'], self.inputCB.UVW['y'][0], self.inputCB.UVW['y'][-1], self.inputCB.basisFunction['y'].greville())
-        method = 2
         for dir in ["x", "y"]:
-            start_time = timeit.default_timer()
-            if method == 1:
+            if not self.sparseOperators:
                 basisFunction[dir] = sp.BSplineBasis(
                     order=self.degree + 1, knots=knotsAdaptive[dir]
                 )
                 NUVW[dir] = csc_matrix(
-                    basisFunction[dir].evaluate(UVW[dir], sparse=True)
+                    basisFunction[dir].evaluate(UVW[dir], sparse=False)
                 )
             else:
                 if dir == "x":
-                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[:,0], k=self.degree)
+                    bspl = BSpline(
+                        knotsAdaptive[dir],
+                        c=self.inputCB.controlPointData[:, 0],
+                        k=self.degree,
+                    )
                 else:
-                    bspl = BSpline(knotsAdaptive[dir], c=self.inputCB.controlPointData[0,:], k=self.degree)
+                    bspl = BSpline(
+                        knotsAdaptive[dir],
+                        c=self.inputCB.controlPointData[0, :],
+                        k=self.degree,
+                    )
                 # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
                 NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree)
-            print("Time to compute basis matrix for dir = ", dir, " is = ", timeit.default_timer() - start_time)
-
-                # print("Basis for dir = ", dir, "; shapes = ", design_matrix.shape,  NUVW[dir].shape)
-                # print("Basis for dir = ", dir, "; error = ", np.amax(design_matrix - NUVW[dir]))
-
-        # print(
-        #     "Number of basis functions = ",
-        #     self.inputCB.basisFunction["x"].num_functions(),
-        # )
-        if constraints is not None:
-            for entry in constraints[0]:
-                NUVW["x"][entry, :] = 0.0
-                NUVW["x"][entry, entry] = 1.0
-            for entry in constraints[1]:
-                NUVW["y"][entry, :] = 0.0
-                NUVW["y"][entry, entry] = 1.0
 
     def compute_decode_operators(self, RN):
         for dir in ["x", "y"]:
@@ -123,7 +115,6 @@ class ProblemSolver2D:
             # )
             RN[dir] = self.inputCB.NUVW[dir]
 
-
     def decode(self, P, RN):
 
         # return np.einsum("kj,lj->kl", np.einsum("ki,ij->kj", RN["x"], P, optimize=True), RN["y"], optimize=True)
@@ -131,7 +122,6 @@ class ProblemSolver2D:
         return XX
 
         # return np.einsum("ki,il->kl", RN["x"], np.einsum("lj,ij->il", RN["y"], P))
-
 
         # return np.einsum("kj,jl->kl", RN["y"], np.einsum("ij,li->jl", P, RN["x"]))
         DD1 = np.matmul(np.matmul(RN["x"], P), RN["y"].T)
@@ -145,7 +135,7 @@ class ProblemSolver2D:
         ### DD2 = np.einsum("kj,lj->kl", RN["y"], np.einsum("li,ij->lj", RN["x"], P))
         # DD3 = np.einsum("il,ik->lk", np.einsum("ij,jl->il", P, RN["y"]), RN["x"])
 
-        print (np.amax(DD1-DD2))
+        print(np.amax(DD1 - DD2))
 
         return DD1
 
@@ -155,16 +145,16 @@ class ProblemSolver2D:
 
         use_cho = False
         if use_cho:
-            X = la.cho_solve(
-                la.cho_factor(
+            X = sla.cho_solve(
+                sla.cho_factor(
                     np.matmul(
                         self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"]
                     )
                 ),
                 self.inputCB.decodeOpXYZ["x"].T,
             )
-            Y = la.cho_solve(
-                la.cho_factor(
+            Y = sla.cho_solve(
+                sla.cho_factor(
                     np.matmul(
                         self.inputCB.decodeOpXYZ["y"].T, self.inputCB.decodeOpXYZ["y"]
                     )
@@ -175,16 +165,12 @@ class ProblemSolver2D:
             return np.matmul(X, zY)
         else:
 
-            # NTNxInv = la.inv(
+            # NTNxInv = sla.inv(
             #     np.matmul(
             #         decodeOpXYZ["x"].T, decodeOpXYZ["x"]
             #     )
             # )
-            NTNyInv = la.inv(
-
-                    decodeOpXYZ["y"].T @ decodeOpXYZ["y"]
-
-            )
+            NTNyInv = sla.inv(decodeOpXYZ["y"].T @ decodeOpXYZ["y"])
             # XX = np.matmul(
             #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
             #     )
@@ -192,39 +178,30 @@ class ProblemSolver2D:
             NxTQNy = decodeOpXYZ["x"].T @ refSolutionLocal @ decodeOpXYZ["y"]
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
-            Aoper = (decodeOpXYZ["x"].T @ decodeOpXYZ["x"])
-            Brhs = (NxTQNy @ NTNyInv)
+            Aoper = decodeOpXYZ["x"].T @ decodeOpXYZ["x"]
+            Brhs = NxTQNy @ NTNyInv
 
             # t = time.time()
             # res = spsolve(Aoper, Brhs)
             # print("Time to compute res with direct solve: ", time.time() - t)
-
 
             # t = time.time()
             lu = splu(Aoper)
             res = lu.solve(Brhs)
             # print("Time to compute res with iterative solve: ", time.time() - t, np.amax(res-res1))
 
-            # res = la.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
-            #                 la.solve(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]), NxTQNy, assume_a='pos', transposed=False), assume_a='pos'
+            # res = sla.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),
+            #                 sla.solve(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]), NxTQNy, assume_a='pos', transposed=False), assume_a='pos'
             # )
 
             # print(res[0])
 
             # print ('Max', np.amax(referenceLSQ-res))
 
-            return res#.todense()
+            return res  # .todense()
 
-            NTNxInv = np.linalg.inv(
-                np.matmul(
-                    decodeOpXYZ["x"].T, decodeOpXYZ["x"]
-                )
-            )
-            NTNyInv = np.linalg.inv(
-                np.matmul(
-                    decodeOpXYZ["y"].T, decodeOpXYZ["y"]
-                )
-            )
+            NTNxInv = np.linalg.inv(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]))
+            NTNyInv = np.linalg.inv(np.matmul(decodeOpXYZ["y"].T, decodeOpXYZ["y"]))
             NxTQNy = np.matmul(
                 decodeOpXYZ["x"].T,
                 np.matmul(refSolutionLocal, decodeOpXYZ["y"]),
@@ -589,8 +566,8 @@ class ProblemSolver2D:
 
         # print("initSol: ", initSol)
 
-        alpha = 0.5 # Between [0, 1.0]
-        beta = 0 # Between [0, 0.5]
+        alpha = 0.5  # Between [0, 1.0]
+        beta = 0  # Between [0, 0.5]
         localAssemblyWeights = np.zeros(initSol.shape)
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0]), 0, len(localBCAssembly[0, :])]
@@ -654,9 +631,9 @@ class ProblemSolver2D:
             )
 
             initSol[: freeBounds[0], :] = 0.0
-            initSol[freeBounds[1]:, :] = 0.0
+            initSol[freeBounds[1] :, :] = 0.0
             initSol[:, : freeBounds[2]] = 0.0
-            initSol[:, freeBounds[3]:] = 0.0
+            initSol[:, freeBounds[3] :] = 0.0
 
             if "top" in inputCB.boundaryConstraints:
                 if oddDegree:
@@ -737,7 +714,8 @@ class ProblemSolver2D:
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
                         ] += inputCB.boundaryConstraints["left"][
                             -degree - loffset : -nconstraints,
-                            freeBounds[2] : freeBounds[3] ]
+                            freeBounds[2] : freeBounds[3],
+                        ]
 
                         localAssemblyWeights[
                             : nconstraints - 1, freeBounds[2] : freeBounds[3]
@@ -746,7 +724,8 @@ class ProblemSolver2D:
                     initSol[
                         :nconstraints, freeBounds[2] : freeBounds[3]
                     ] = inputCB.boundaryConstraints["left"][
-                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3] ]
+                        -degree - loffset : -nconstraints, freeBounds[2] : freeBounds[3]
+                    ]
                     localAssemblyWeights[
                         :nconstraints, freeBounds[2] : freeBounds[3]
                     ] += 1.0
@@ -767,7 +746,7 @@ class ProblemSolver2D:
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
                         ] += inputCB.boundaryConstraints["right"][
                             nconstraints : degree + loffset,
-                            freeBounds[2] : freeBounds[3]
+                            freeBounds[2] : freeBounds[3],
                         ]
                         localAssemblyWeights[
                             -nconstraints + 1 :, freeBounds[2] : freeBounds[3]
@@ -807,27 +786,27 @@ class ProblemSolver2D:
                             if "left" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     nconstraints - 1, -nconstraints + 1 :
-                                ] = (inputCB.boundaryConstraints["left"][
-                                    -nconstraints,
-                                    -nconstraints + 1 :
-                                ] + inputCB.boundaryConstraints["top-left"][
-                                    -nconstraints,
-                                    : nconstraints - 1
-                                ])
+                                ] = (
+                                    inputCB.boundaryConstraints["left"][
+                                        -nconstraints, -nconstraints + 1 :
+                                    ]
+                                    + inputCB.boundaryConstraints["top-left"][
+                                        -nconstraints, : nconstraints - 1
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     nconstraints - 1, -nconstraints + 1 :
                                 ] += 1
 
                             if "top" in inputCB.boundaryConstraints:
-                                localBCAssembly[
-                                    : nconstraints - 1, -nconstraints
-                                ] = (inputCB.boundaryConstraints["top"][
-                                    : nconstraints - 1,
-                                    nconstraints - 1
-                                ] + inputCB.boundaryConstraints["top-left"][
-                                    -nconstraints + 1 :,
-                                    nconstraints - 1
-                                ])
+                                localBCAssembly[: nconstraints - 1, -nconstraints] = (
+                                    inputCB.boundaryConstraints["top"][
+                                        : nconstraints - 1, nconstraints - 1
+                                    ]
+                                    + inputCB.boundaryConstraints["top-left"][
+                                        -nconstraints + 1 :, nconstraints - 1
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     : nconstraints - 1, -nconstraints
                                 ] += 1
@@ -864,31 +843,31 @@ class ProblemSolver2D:
 
                         if self.useDiagAddConstraints:
                             if "right" in inputCB.boundaryConstraints:
-                                localBCAssembly[
-                                    -nconstraints, : nconstraints - 1
-                                ] = (inputCB.boundaryConstraints["right"][
-                                    nconstraints - 1,
-                                    : nconstraints - 1
-                                ] + inputCB.boundaryConstraints["bottom-right"][
-                                    nconstraints - 1,
-                                    -nconstraints + 1 :
-                                ])
+                                localBCAssembly[-nconstraints, : nconstraints - 1] = (
+                                    inputCB.boundaryConstraints["right"][
+                                        nconstraints - 1, : nconstraints - 1
+                                    ]
+                                    + inputCB.boundaryConstraints["bottom-right"][
+                                        nconstraints - 1, -nconstraints + 1 :
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     -nconstraints, : nconstraints - 1
                                 ] += 1
 
                             if "bottom" in inputCB.boundaryConstraints:
                                 localBCAssembly[
-                                    -nconstraints + 1:, nconstraints - 1
-                                ] = (inputCB.boundaryConstraints["bottom"][
-                                    -nconstraints + 1 :,
-                                    -nconstraints
-                                ] + inputCB.boundaryConstraints["bottom-right"][
-                                    : nconstraints - 1,
-                                    -nconstraints
-                                ])
+                                    -nconstraints + 1 :, nconstraints - 1
+                                ] = (
+                                    inputCB.boundaryConstraints["bottom"][
+                                        -nconstraints + 1 :, -nconstraints
+                                    ]
+                                    + inputCB.boundaryConstraints["bottom-right"][
+                                        : nconstraints - 1, -nconstraints
+                                    ]
+                                )
                                 localAssemblyWeights[
-                                    -nconstraints + 1:, nconstraints - 1
+                                    -nconstraints + 1 :, nconstraints - 1
                                 ] += 1
 
                 else:
@@ -925,13 +904,14 @@ class ProblemSolver2D:
                             if "left" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     nconstraints - 1, : nconstraints - 1
-                                ] = (inputCB.boundaryConstraints["left"][
-                                    -nconstraints,
-                                    : nconstraints - 1
-                                ] + inputCB.boundaryConstraints["bottom-left"][
-                                    -nconstraints,
-                                    -nconstraints + 1 :
-                                ])
+                                ] = (
+                                    inputCB.boundaryConstraints["left"][
+                                        -nconstraints, : nconstraints - 1
+                                    ]
+                                    + inputCB.boundaryConstraints["bottom-left"][
+                                        -nconstraints, -nconstraints + 1 :
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     nconstraints - 1, : nconstraints - 1
                                 ] += 1
@@ -939,13 +919,14 @@ class ProblemSolver2D:
                             if "bottom" in inputCB.boundaryConstraints:
                                 localBCAssembly[
                                     : nconstraints - 1, nconstraints - 1
-                                ] = (inputCB.boundaryConstraints["bottom"][
-                                    : nconstraints - 1,
-                                    -nconstraints
-                                ] + inputCB.boundaryConstraints["bottom-left"][
-                                    -nconstraints + 1 :,
-                                    -nconstraints
-                                ])
+                                ] = (
+                                    inputCB.boundaryConstraints["bottom"][
+                                        : nconstraints - 1, -nconstraints
+                                    ]
+                                    + inputCB.boundaryConstraints["bottom-left"][
+                                        -nconstraints + 1 :, -nconstraints
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     : nconstraints - 1, nconstraints - 1
                                 ] += 1
@@ -981,29 +962,27 @@ class ProblemSolver2D:
 
                         if self.useDiagAddConstraints:
                             if "right" in inputCB.boundaryConstraints:
-                                localBCAssembly[
-                                    -nconstraints, -nconstraints + 1 :
-                                ] = (inputCB.boundaryConstraints["right"][
-                                    nconstraints - 1,
-                                    -nconstraints + 1 :
-                                ] + inputCB.boundaryConstraints["top-right"][
-                                    nconstraints - 1,
-                                    : nconstraints - 1
-                                ])
+                                localBCAssembly[-nconstraints, -nconstraints + 1 :] = (
+                                    inputCB.boundaryConstraints["right"][
+                                        nconstraints - 1, -nconstraints + 1 :
+                                    ]
+                                    + inputCB.boundaryConstraints["top-right"][
+                                        nconstraints - 1, : nconstraints - 1
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     -nconstraints, -nconstraints + 1 :
                                 ] += 1
 
                             if "top" in inputCB.boundaryConstraints:
-                                localBCAssembly[
-                                    -nconstraints + 1 :, -nconstraints
-                                ] = (inputCB.boundaryConstraints["top"][
-                                    -nconstraints + 1 :,
-                                    nconstraints - 1
-                                ] + inputCB.boundaryConstraints["top-right"][
-                                    : nconstraints - 1,
-                                    nconstraints - 1
-                                ])
+                                localBCAssembly[-nconstraints + 1 :, -nconstraints] = (
+                                    inputCB.boundaryConstraints["top"][
+                                        -nconstraints + 1 :, nconstraints - 1
+                                    ]
+                                    + inputCB.boundaryConstraints["top-right"][
+                                        : nconstraints - 1, nconstraints - 1
+                                    ]
+                                )
                                 localAssemblyWeights[
                                     -nconstraints + 1 :, -nconstraints
                                 ] += 1
@@ -1015,7 +994,6 @@ class ProblemSolver2D:
                         nconstraints : degree + loffset, nconstraints : degree + loffset
                     ]
                     localAssemblyWeights[-nconstraints:, -nconstraints:] += 1.0
-
 
             localAssemblyWeights[
                 freeBounds[0] : freeBounds[1], freeBounds[2] : freeBounds[3]

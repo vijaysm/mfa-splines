@@ -1,12 +1,31 @@
 # import autograd.numpy as np
 import numpy as np
 import splipy as sp
-from scipy import linalg
-from numba import jit
+
+import timeit
+from scipy.interpolate import BSpline
+from scipy import linalg as la
+
+import scipy.sparse.linalg as sla
+
+# from scipy.sparse import csc_matrix
+# from scipy.sparse.linalg import splu
+# from scipy.sparse.linalg import cg, SuperLU
+# from numba import jit, vectorize
+
 
 class ProblemSolver1D:
     def __init__(
-        self, icBlock, coreb, xb, xl, degree, augmentSpanSpace=0, useDiagonalBlocks=True, verbose=False
+        self,
+        icBlock,
+        coreb,
+        xb,
+        xl,
+        degree,
+        augmentSpanSpace=0,
+        useDiagonalBlocks=True,
+        sparse=False,
+        verbose=False,
     ):
         icBlock.xbounds = [xb.min[0], xb.max[0]]
         icBlock.corebounds = [[coreb.min[0] - xb.min[0], len(xl)]]
@@ -23,9 +42,10 @@ class ProblemSolver1D:
         self.augmentSpanSpace = augmentSpanSpace
         self.useDiagonalBlocks = useDiagonalBlocks
         self.dimension = 1
+        self.sparseOperators = sparse
         self.verbose = verbose
 
-    def compute_basis(self, constraints=None):
+    def compute_basis(self):
         self.inputCB.basisFunction["x"] = sp.BSplineBasis(
             order=self.degree + 1, knots=self.inputCB.knotsAdaptive["x"]
         )
@@ -34,16 +54,30 @@ class ProblemSolver1D:
             self.inputCB.basisFunction["x"].num_functions(),
         )
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
-        self.inputCB.NUVW["x"] = np.array(
-            self.inputCB.basisFunction["x"].evaluate(self.inputCB.UVW["x"])
-        )
-        if constraints is not None:
-            for entry in constraints:
-                self.inputCB.NUVW["x"][entry, :] = 0.0
-                self.inputCB.NUVW["x"][entry, entry] = 0.0
+
+        if not self.sparseOperators:
+            self.inputCB.basisFunction["x"] = sp.BSplineBasis(
+                order=self.degree + 1, knots=self.inputCB.knotsAdaptive["x"]
+            )
+            self.inputCB.NUVW["x"] = self.inputCB.basisFunction["x"].evaluate(
+                self.inputCB.UVW["x"], sparse=False
+            )
+        else:
+            bspl = BSpline(
+                self.inputCB.knotsAdaptive["x"],
+                c=self.inputCB.controlPointData[:],
+                k=self.degree,
+            )
+            # bspl = BSpline.basis_element(self.inputCB.knotsAdaptive["x"][self.degree-1:self.degree*2+1]) #make_interp_spline(self.inputCB.UVW["x"], y, k=self.degree)
+            self.inputCB.NUVW["x"] = bspl.design_matrix(
+                self.inputCB.UVW["x"], bspl.t, k=self.degree
+            )
 
     def decode(self, P, RN):
-        return np.matmul(RN["x"], P)
+        if not self.sparseOperators:
+            return RN["x"] @ P
+        else:
+            RN["x"].multiply(P)
 
     def compute_decode_operators(self, RN):
         for dir in ["x"]:
@@ -52,14 +86,18 @@ class ProblemSolver1D:
                 / np.sum(self.inputCB.NUVW[dir], axis=1)[:, np.newaxis]
             )
 
-    @jit
     def lsqFit(self):
         self.inputCB.refSolutionLocal = self.inputCB.refSolutionLocal.reshape(
             self.inputCB.refSolutionLocal.shape[0], 1
         )
-        return linalg.lstsq(
-            self.inputCB.decodeOpXYZ["x"], self.inputCB.refSolutionLocal
-        )[0]
+        if not self.sparseOperators:
+            return la.lstsq(
+                self.inputCB.decodeOpXYZ["x"], self.inputCB.refSolutionLocal
+            )[0]
+        else:
+            return sla.lstsq(
+                self.inputCB.decodeOpXYZ["x"], self.inputCB.refSolutionLocal
+            )[0]
 
     def update_bounds(self):
         return [self.inputCB.corebounds[0][0], self.inputCB.corebounds[0][1]]
@@ -324,8 +362,8 @@ class ProblemSolver1D:
         self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
     ):
 
-        alpha = 0.5 # Between [0, 1.0]
-        beta = 0.0 # Between [0, 0.5]
+        alpha = 0.5  # Between [0, 1.0]
+        beta = 0.0  # Between [0, 0.5]
         localBCAssembly = np.zeros(initSol.shape)
         freeBounds = [0, len(localBCAssembly[:, 0])]
 
