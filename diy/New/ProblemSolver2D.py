@@ -174,7 +174,7 @@ class ProblemSolver2D:
             # XX = np.matmul(
             #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
             #     )
-            # print ('Max', np.amax(referenceLSQ-res))
+            print ('Shapes:', decodeOpXYZ["x"].T.shape, refSolutionLocal.shape, decodeOpXYZ["y"].shape)
             NxTQNy = decodeOpXYZ["x"].T @ refSolutionLocal @ decodeOpXYZ["y"]
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 

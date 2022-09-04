@@ -163,13 +163,13 @@ class ProblemSolver3D:
                     "ijk,kl->ijl",
                     self.inputCB.refSolutionLocal,
                     self.inputCB.decodeOpXYZ["z"],
-                    # optimize=True,
+                    optimize=True
                 ),
                 self.inputCB.decodeOpXYZ["y"],
-                # optimize=True,
+                optimize=True
             ),
             self.inputCB.decodeOpXYZ["x"],
-            # optimize=True,
+            optimize=True
         )
 
         # NxTQNy2 = contract("ijk,il,jm,kn->nml", self.inputCB.refSolutionLocal, self.inputCB.decodeOpXYZ["z"], self.inputCB.decodeOpXYZ["y"], self.inputCB.decodeOpXYZ["x"])
@@ -192,7 +192,7 @@ class ProblemSolver3D:
             np.einsum(
                 "ijk,jl->ilk", np.einsum("ijk,kl->ijl", NxTQNy, NTNzInv), NTNyInv
             ),
-            NTNxInv,
+            NTNxInv, optimize=True
         ).T
 
         # Rotate axis so that we can do logical indexing
