@@ -63,7 +63,7 @@ plt.rcParams.update(params)
 
 directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
-problem = 1
+problem = 2
 dimension = 3
 degree = 3
 scalingstudy = False
@@ -249,8 +249,10 @@ if args.input_points > 0:
     nProblemInputPoints = args.input_points
 if args.nsubdomains > 0:
     nSubDomainsX = args.nsubdomains
-    if dimension > 1: nSubDomainsY = args.nsubdomains
-    if dimension > 2: nSubDomainsZ = args.nsubdomains
+    if dimension > 1:
+        nSubDomainsY = args.nsubdomains
+    if dimension > 2:
+        nSubDomainsZ = args.nsubdomains
     print("Found subdomain args: ", args.nsubdomains, nSubDomainsX, nSubDomainsY, nSubDomainsZ)
 if args.nx > 1:
     nSubDomainsX = args.nx
@@ -282,8 +284,10 @@ useAitken = not args.wynn
 nSubDomains = np.array([0] * dimension, dtype=np.uintc)
 
 nSubDomains[0] = nSubDomainsX
-if dimension > 1: nSubDomains[1] = nSubDomainsY
-if dimension > 2: nSubDomains[2] = nSubDomainsZ
+if dimension > 1:
+    nSubDomains[1] = nSubDomainsY
+if dimension > 2:
+    nSubDomains[2] = nSubDomainsZ
 print("nSubDomains: ", nSubDomains)
 # -------------------------------------
 
@@ -537,7 +541,7 @@ elif dimension == 2:
         inputFilename = "data/s3d_2D.raw"
 
         Dmin = [0, 0]
-        Dmax = nPoints.astype(np.float)
+        Dmax = nPoints.astype(np.float32)
 
         DataType = np.float64
 
@@ -568,7 +572,7 @@ elif dimension == 2:
         inputFilename = "data/FLDSC_1_1800_3600.dat"
 
         Dmin = [0, 0]
-        Dmax = nPoints.astype(np.float)
+        Dmax = nPoints.astype(np.float32)
 
         DataType = np.float32
 
@@ -756,7 +760,24 @@ elif dimension == 3:
         Ncomponents = 3
 
         Dmin = [0, 0, 0]
-        Dmax = nPoints.astype(np.float)
+        Dmax = nPoints.astype(np.float32)
+
+        closedFormFunctional = False
+
+
+    elif problem == 3:
+
+        nPoints[0] = 200
+        nPoints[1] = 200
+        nPoints[2] = 200
+
+        inputFilename = "data/nek5000_3d.xyz"
+
+        DataType = np.float32
+        Ncomponents = 3
+
+        Dmin = [0, 0, 0]
+        Dmax = nPoints.astype(np.float32)
 
         closedFormFunctional = False
 
@@ -769,8 +790,8 @@ nControlPointsInput = np.array([nControlPointsInputIn] * dimension, dtype=np.uin
 #     print ( "[ERROR]: The total number of points do not divide equally with subdomains" )
 #     sys.exit(1)
 
-xyzMin = np.array([0.0] * dimension, dtype=np.float)
-xyzMax = np.array([0.0] * dimension, dtype=np.float)
+xyzMin = np.array([0.0] * dimension, dtype=np.float32)
+xyzMax = np.array([0.0] * dimension, dtype=np.float32)
 
 
 def plot_solution(solVector):
@@ -800,21 +821,40 @@ def plot_solution(solVector):
         elif dimension == 2:
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
-            print("Writing out nek output", cx.shape, cy.shape, solVector.shape)
+            print("Writing out output", cx.shape, cy.shape, solVector.shape)
             with RectilinearGrid("./structured.vtr", (cx, cy)) as rect:
                 rect.addPointData(DataArray(solVector, range(2), "solution"))
         elif dimension == 3:
             print("Dmin: ", Dmin, " Dmax: ", Dmax, " nPoints: ", nPoints)
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
             cz = np.linspace(Dmin[2], Dmax[2], nPoints[2])
-            with RectilinearGrid(
-                "./structured.vtr", (cx, cy, cz)
-            ) as rect:
+            with RectilinearGrid("./structured.vtr", (cx, cy, cz)) as rect:
                 rect.addPointData(DataArray(solVector, range(3), "solution"))
         else:
             print("No visualization output available for dimension > 3")
 
 
+# function definition to compute magnitude of the vector
+def magnitude(vdata):
+    print("Vdata shape:", vdata.shape)
+    if Ncomponents == 1: return vdata
+    if dimension == 1:
+        # gen = (vdata[:,idim]**2 for idim in range(Ncomponents))
+        gen = np.copy(vdata[:,0]**2)
+        for idim in range(1, Ncomponents):
+            gen = gen + (vdata[:,idim]**2)
+    elif dimension == 2:
+        # gen = (vdata[:,:,idim]**2 for idim in range(Ncomponents))
+        gen = np.copy(vdata[:,:,0]**2)
+        for idim in range(1, Ncomponents):
+            gen = gen + np.copy(vdata[:,:,idim]**2)
+    else:
+        # print("Printing max of each component: ", np.max(vdata[:,:,:,0]), np.max(vdata[:,:,:,1]), np.max(vdata[:,:,:,2]))
+        gen = np.copy(vdata[:,:,:,0]**2)
+        for idim in range(1, Ncomponents):
+            gen = gen + np.copy(vdata[:,:,:,idim]**2)
+
+    return np.sqrt(gen)
 
 # Store the reference solution
 if showplot and useVTKOutput:
@@ -836,11 +876,19 @@ if showplot and useVTKOutput:
             print("Writing out reference output solution for non-closed form function")
             # solution = diy.mpi.parallel_read_double_data(diy.mpi.MPIComm(), inputFilename, diy.mpi.Bounds([0,0], nPoints), nPoints).reshape(nPoints)
             if dimension == 2:
-                solution = np.fromfile(inputFilename, dtype=DataType).reshape(np.array([Ncomponents, nPoints[0], nPoints[1]], dtype=np.intc))
+                solution = np.fromfile(inputFilename, dtype=DataType).reshape(
+                    np.array([nPoints[0], nPoints[1], Ncomponents], dtype=np.intc)
+                )
+                print("Solution: ", solution.shape, solution[:,:,0].shape)
+                solVis = solution[:,:,0]
             else:
-                solution = np.fromfile(inputFilename, dtype=DataType).reshape(np.array([Ncomponents, nPoints[0], nPoints[1], nPoints[2]], dtype=np.intc))
-            print("Solution: ", solution.shape, solution[0].shape)
-            plot_solution(solution[0])
+                solution = np.fromfile(inputFilename, dtype=DataType).reshape(
+                    np.array([nPoints[0], nPoints[1], nPoints[2], Ncomponents], dtype=np.intc)
+                )
+                print("Solution: ", solution.shape, solution[:,:,:,0].shape)
+                solVis = magnitude(solution)
+            plot_solution(solVis)
+            del solVis
 
 ### Print parameter details ###
 if rank == 0:
@@ -850,6 +898,7 @@ if rank == 0:
     print("Processes = ", nprocs)
     print("Dimension = ", dimension)
     print("Problem = ", problem)
+    if not closedFormFunctional: print("Input File = ", inputFilename)
     print("Input points = ", nPoints, "; Total = ", np.prod(nPoints))
     print("nSubDomains = ", nSubDomains, "; Total = ", np.prod(nSubDomains))
     print("degree = ", degree)
@@ -1013,7 +1062,7 @@ def WritePVTKControlFile(iteration):
     isubd = 0
     # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
     # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-    print('max: ', xyzMax, ' min: ', xyzMin, ' subd: ', nSubDomains)
+    print("max: ", xyzMax, " min: ", xyzMin, " subd: ", nSubDomains)
     dxyz = (xyzMax - xyzMin) / nSubDomains
 
     zoff = xyzMin[2] if dimension == 3 else 0
@@ -2723,29 +2772,29 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     minb = bounds.min
     maxb = bounds.max
 
-    Ncomponents = 1
-
     if dimension == 1:
-        locbounds = np.array((maxb[0] - minb[0] + 1))
         if Ncomponents > 1:
-            boundsnc = diy._diy.DiscreteBounds(diy._diy.DiscreteDynamicPoint(Ncomponents*minb[0]), diy._diy.DiscreteDynamicPoint(Ncomponents*maxb[0]+(Ncomponents-1)))
+            locbounds = np.array((maxb[0] - minb[0] + 1, Ncomponents), dtype=np.intc)
         else:
-            boundsnc = bounds
+            locbounds = np.array((maxb[0] - minb[0] + 1), dtype=np.intc)
     elif dimension == 2:
-        locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1))
         if Ncomponents > 1:
-            boundsnc = diy._diy.DiscreteBounds(diy._diy.DiscreteDynamicPoint([minb[0], Ncomponents*minb[1]]), diy._diy.DiscreteDynamicPoint([maxb[0], Ncomponents*maxb[1]+(Ncomponents-1)]))
+            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, Ncomponents), dtype=np.intc)
         else:
-            boundsnc = bounds
+            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1), dtype=np.intc)
     else:
-        locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1))
         if Ncomponents > 1:
-            boundsnc = diy._diy.DiscreteBounds(diy._diy.DiscreteDynamicPoint([minb[0], minb[1], Ncomponents*minb[2]]), diy._diy.DiscreteDynamicPoint([maxb[0], maxb[1], Ncomponents*maxb[2]+(Ncomponents-1)]))
+            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1, Ncomponents), dtype=np.intc)
         else:
-            boundsnc = bounds
+            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1), dtype=np.intc)
 
-    # print('Original bounds: ', bounds, ' Modified bounds: ', boundsnc)
-    type_based_function = diy.mpi.parallel_read_double_data if DataType == np.float64 else diy.mpi.parallel_read_float_data
+    # print('Original bounds: ', bounds, ' Modified bounds: ', bounds)
+    type_based_function = (
+        diy.mpi.parallel_read_double_data
+        if DataType == np.float64
+        else diy.mpi.parallel_read_float_data
+    )
+    # type_based_function = diy.mpi.parallel_read_float_data
 
     if closedFormFunctional:
         xlocal = coordinates["x"][minb[0] : maxb[0] + 1]
@@ -2769,7 +2818,12 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                 del X, Y, Z
             else:
                 if inputFilename:
-                    sollocal = type_based_function(diy.mpi.MPIComm(), inputFilename, boundsnc, nPoints, Ncomponents).reshape(np.array([Ncomponents, locbounds[0], locbounds[1], locbounds[2]], dtype=np.intc))
+                    print("Locbounds: ", Ncomponents, locbounds)
+                    sollocal = type_based_function(
+                        diy.mpi.MPIComm(), inputFilename, bounds, nPoints, Ncomponents
+                    )
+                    print("sollocal shape: ", sollocal.shape)
+                    sollocal = sollocal.reshape(locbounds)
                 else:
                     sollocal = solution[
                         minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1, minb[2] : maxb[2] + 1
@@ -2784,7 +2838,9 @@ def add_input_control_block2(gid, core, bounds, domain, link):
             else:
                 if inputFilename:
                     # sollocal = type_based_function(diy.mpi.MPIComm(), inputFilename, bounds, nPoints).reshape(locbounds)
-                    sollocal = type_based_function(diy.mpi.MPIComm(), inputFilename, boundsnc, nPoints, Ncomponents).reshape(np.array([Ncomponents, locbounds[0], locbounds[1]], dtype=np.intc))
+                    sollocal = type_based_function(
+                        diy.mpi.MPIComm(), inputFilename, bounds, nPoints, Ncomponents
+                    ).reshape(locbounds)
                 else:
                     sollocal = solution[minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1]
 
@@ -2795,27 +2851,37 @@ def add_input_control_block2(gid, core, bounds, domain, link):
             sollocal = solution(xlocal)
         else:
             if inputFilename:
-                sollocal = type_based_function(diy.mpi.MPIComm(), inputFilename, boundsnc, nPoints, Ncomponents).reshape(np.array([Ncomponents, locbounds[0]], dtype=np.intc))
+                sollocal = type_based_function(
+                    diy.mpi.MPIComm(), inputFilename, bounds, nPoints, Ncomponents
+                ).reshape(locbounds)
             else:
                 sollocal = solution[minb[0] : maxb[0] + 1]
         sollocal = sollocal.reshape((len(sollocal), 1))
 
-    # function definition to compute magnitude o f the vector
-    def magnitude(vdata):
-        return np.sqrt(np.sum(pow(vdata[idim], 2) for idim in range(dimension)))
-
     # print("Shape of sollocal = ", sollocal.shape)
     if Ncomponents == 1:
-        domainsol = sollocal[0]
+        domainsol = sollocal
     else:
         ## Let us compute the magnitude
         # domainsol = sollocal[0]
+        print("Computing magnitude now...")
         domainsol = magnitude(sollocal)
 
-    print("Subdomain %d: " % gid, minb[0], maxb[0], minb[1], maxb[1], xlocal.shape, ylocal.shape, sollocal.shape)
+    print(
+        "Subdomain %d: " % gid,
+        minb[0],
+        maxb[0],
+        minb[1],
+        maxb[1],
+        xlocal.shape,
+        ylocal.shape,
+        sollocal.shape,
+    )
     masterControl.add(
         gid,
-        InputControlBlock(gid, nControlPointsInput, core, bounds, domainsol, xlocal, ylocal, zlocal),
+        InputControlBlock(
+            gid, nControlPointsInput, core, bounds, domainsol, xlocal, ylocal, zlocal
+        ),
         link,
     )
 
@@ -2891,7 +2957,7 @@ if closedFormFunctional:
 else:
     # xyzMin is already all zeros
     # set xyzMax to nPoints
-    xyzMax = nPoints.astype(np.float) - 1.0
+    xyzMax = nPoints.astype(np.float32) - 1.0
 
 
 sys.stdout.flush()

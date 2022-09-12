@@ -6,4 +6,13 @@ __pycache__
 *.code-workspace
 diy/1D/diy
 diy/2D/diy
+*.png
+*.aux
+*.bbl
+*.log
+*.blg
+*.dvi
+*.ps
+*.synctex.gz
+*.toc
 
