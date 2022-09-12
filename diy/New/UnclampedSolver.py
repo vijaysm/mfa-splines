@@ -253,7 +253,7 @@ if args.nsubdomains > 0:
         nSubDomainsY = args.nsubdomains
     if dimension > 2:
         nSubDomainsZ = args.nsubdomains
-    print("Found subdomain args: ", args.nsubdomains, nSubDomainsX, nSubDomainsY, nSubDomainsZ)
+    # print("Found subdomain args: ", args.nsubdomains, nSubDomainsX, nSubDomainsY, nSubDomainsZ)
 if args.nx > 1:
     nSubDomainsX = args.nx
 if args.ny > 1 and dimension > 1:
@@ -288,7 +288,7 @@ if dimension > 1:
     nSubDomains[1] = nSubDomainsY
 if dimension > 2:
     nSubDomains[2] = nSubDomainsZ
-print("nSubDomains: ", nSubDomains)
+# print("nSubDomains: ", nSubDomains)
 # -------------------------------------
 
 nPoints = np.array([1] * dimension, dtype=np.uintc)
@@ -350,7 +350,7 @@ if dimension == 1:
         solutionRange = scale
     elif problem == 2:
         solution = np.fromfile("data/s3d.raw", dtype=np.float64)
-        print("Real data shape: ", solution.shape)
+        if rank == 0 and not scalingstudy: print("Real data shape: ", solution.shape)
         Dmin = [0.0]
         Dmax = [1.0]
         nPoints[0] = solution.shape[0]
@@ -526,7 +526,7 @@ elif dimension == 2:
         #         Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
         #         newY=coordinates["y"],
         #     )
-        print("Nek5000 shape:", nPoints)
+        if rank == 0 and not scalingstudy: print("Nek5000 shape:", nPoints)
         closedFormFunctional = False
 
         # (3*degree + 1) #minimum number of control points
@@ -562,7 +562,7 @@ elif dimension == 2:
 
         # z = z[:540,:540]
         # z = zoom(z, 1./binFactor, order=4)
-        print("S3D shape:", nPoints)
+        if rank == 0 and not scalingstudy: print("S3D shape:", nPoints)
         closedFormFunctional = False
 
     elif problem == 5:
@@ -589,7 +589,7 @@ elif dimension == 2:
         #         Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
         #         newY=coordinates["y"],
         #     )
-        print("CESM data shape: ", nPoints)
+        if rank == 0 and not scalingstudy: print("CESM data shape: ", nPoints)
         closedFormFunctional = False
 
     elif problem == 6:
@@ -821,11 +821,11 @@ def plot_solution(solVector):
         elif dimension == 2:
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
-            print("Writing out output", cx.shape, cy.shape, solVector.shape)
+            if rank == 0 and not scalingstudy: print("Writing out output", cx.shape, cy.shape, solVector.shape)
             with RectilinearGrid("./structured.vtr", (cx, cy)) as rect:
                 rect.addPointData(DataArray(solVector, range(2), "solution"))
         elif dimension == 3:
-            print("Dmin: ", Dmin, " Dmax: ", Dmax, " nPoints: ", nPoints)
+            # print("Dmin: ", Dmin, " Dmax: ", Dmax, " nPoints: ", nPoints)
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
             cz = np.linspace(Dmin[2], Dmax[2], nPoints[2])
             with RectilinearGrid("./structured.vtr", (cx, cy, cz)) as rect:
@@ -836,7 +836,7 @@ def plot_solution(solVector):
 
 # function definition to compute magnitude of the vector
 def magnitude(vdata):
-    print("Vdata shape:", vdata.shape)
+    # print("Vdata shape:", vdata.shape)
     if Ncomponents == 1: return vdata
     if dimension == 1:
         # gen = (vdata[:,idim]**2 for idim in range(Ncomponents))
@@ -859,7 +859,7 @@ def magnitude(vdata):
 # Store the reference solution
 if showplot and useVTKOutput:
     if dimension > 1:
-        print("Writing out reference output solution")
+        if rank == 0 and not scalingstudy: print("Writing out reference output solution")
         if closedFormFunctional:
             if dimension == 2:
                 X, Y = np.meshgrid(coordinates["x"], coordinates["y"], indexing="ij")
@@ -873,19 +873,19 @@ if showplot and useVTKOutput:
             plot_solution(solVis)
             del solVis
         else:
-            print("Writing out reference output solution for non-closed form function")
+            # print("Writing out reference output solution for non-closed form function")
             # solution = diy.mpi.parallel_read_double_data(diy.mpi.MPIComm(), inputFilename, diy.mpi.Bounds([0,0], nPoints), nPoints).reshape(nPoints)
             if dimension == 2:
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array([nPoints[0], nPoints[1], Ncomponents], dtype=np.intc)
                 )
-                print("Solution: ", solution.shape, solution[:,:,0].shape)
+                # print("Solution: ", solution.shape, solution[:,:,0].shape)
                 solVis = solution[:,:,0]
             else:
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array([nPoints[0], nPoints[1], nPoints[2], Ncomponents], dtype=np.intc)
                 )
-                print("Solution: ", solution.shape, solution[:,:,:,0].shape)
+                # print("Solution: ", solution.shape, solution[:,:,:,0].shape)
                 solVis = magnitude(solution)
             plot_solution(solVis)
             del solVis
@@ -1062,7 +1062,7 @@ def WritePVTKControlFile(iteration):
     isubd = 0
     # dx = (xyzMax[0]-xyzMin[0])/nSubDomainsX
     # dy = (xyzMax[1]-xyzMin[1])/nSubDomainsY
-    print("max: ", xyzMax, " min: ", xyzMin, " subd: ", nSubDomains)
+    # print("max: ", xyzMax, " min: ", xyzMin, " subd: ", nSubDomains)
     dxyz = (xyzMax - xyzMin) / nSubDomains
 
     zoff = xyzMin[2] if dimension == 3 else 0
@@ -1226,11 +1226,12 @@ class InputControlBlock:
         self.solutionLocalHistory = []
 
     def show(self, cp):
-        print(
-            "Rank: %d, Subdomain %d:" % (commWorld.rank, cp.gid()),
-            " Bounds = ",
-            self.xbounds,
-        )
+        if rank == 0 and not scalingstudy:
+            print(
+                "Rank: %d, Subdomain %d:" % (commWorld.rank, cp.gid()),
+                " Bounds = ",
+                self.xbounds,
+            )
 
     def update_bounds(self, cp):
         localExtents[cp.gid()] = self.problemInterface.update_bounds()
@@ -1480,7 +1481,7 @@ class InputControlBlock:
         # cpz = np.ones(len(cpx))
         Xi, Yi = np.meshgrid(cpx, cpy)
 
-        print(Xi.shape, Yi.shape, self.controlPointData.shape)
+        # print(Xi.shape, Yi.shape, self.controlPointData.shape)
 
         points = np.c_[
             Xi.reshape(-1),
@@ -2052,7 +2053,7 @@ class InputControlBlock:
                     self.knotsAdaptive["z"],
                 )
 
-            if rank == 0:
+            if rank == 0 and not scalingstudy:
                 print(
                     "augment_spans:",
                     cp.gid(),
@@ -2112,7 +2113,7 @@ class InputControlBlock:
         for idir in range(dimension):
             cDirection = directions[idir]
 
-            print("Checking direction ", cDirection)
+            # print("Checking direction ", cDirection)
 
             xyzCP = [
                 self.knotsAdaptive[cDirection][degree],
@@ -2151,12 +2152,12 @@ class InputControlBlock:
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][
                     lboundXYZ[idir] : uboundXYZ[idir]
                 ]
-            print(
-                "%s bounds: " % (cDirection),
-                self.xyzCoordLocal[cDirection][0],
-                self.xyzCoordLocal[cDirection][-1],
-                xyzCP,
-            )
+            # print(
+            #     "%s bounds: " % (cDirection),
+            #     self.xyzCoordLocal[cDirection][0],
+            #     self.xyzCoordLocal[cDirection][-1],
+            #     xyzCP,
+            # )
 
         # Store the core indices before augment
         cindicesX = np.array(
@@ -2322,12 +2323,12 @@ class InputControlBlock:
         else:
             self.solutionDecodedOld = []
 
-        print(
-            "augment_inputdata:",
-            cp.gid(),
-            "Number of control points = ",
-            self.nControlPoints,
-        )
+        # print(
+        #     "augment_inputdata:",
+        #     cp.gid(),
+        #     "Number of control points = ",
+        #     self.nControlPoints,
+        # )
 
     def LSQFit_NonlinearOptimize(self, idom, degree, constraints=None):
 
@@ -2338,7 +2339,7 @@ class InputControlBlock:
             initSol = np.copy(constraints)
 
         else:
-            print("Constraints are all null. Solving unconstrained.")
+            if rank == 0: print("Constraints are all null. Solving unconstrained.")
             initSol = np.ones_like(self.controlPointData)
 
         # Compute hte linear operators needed to compute decoded residuals
@@ -2377,7 +2378,7 @@ class InputControlBlock:
 
             net_residual_norm = np.amax(decodedErr) / solutionRange
 
-            print("Residual = ", net_residual_norm)
+            if rank == 0: print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
@@ -2438,7 +2439,7 @@ class InputControlBlock:
                     0,
                     len(localBCAssembly[:, :, 0]),
                 ]
-            print("Initial calculation")
+            if rank == 0: print("Initial calculation")
             # Lets update our initial solution with constraints
             if constraints is not None and len(constraints) > 0:
 
@@ -2478,7 +2479,7 @@ class InputControlBlock:
                 else:
                     bnds = None
 
-                print("Using optimization solver = ", solverScheme)
+                if rank == 0 and not scalingstudy: print("Using optimization solver = ", solverScheme)
                 # Solver options: https://docs.scipy.org/doc/scipy-0.13.0/reference/generated/scipy.optimize.show_options.html
                 if solverScheme == "L-BFGS-B":
                     res = minimize(
@@ -2541,7 +2542,7 @@ class InputControlBlock:
                 else:
                     error("No implementation available")
 
-                print("[%d] : %s" % (idom, res.message))
+                if rank == 0 and not scalingstudy: print("[%d] : %s" % (idom, res.message))
                 solution = np.copy(res.x).reshape(self.controlPointData.shape)
 
             else:
@@ -2669,7 +2670,7 @@ class InputControlBlock:
         if len(self.controlPointData) == 0 or np.sum(np.abs(self.controlPointData)) < 1e-14:
             newSolve = True
 
-        print("Subdomain -- ", cp.gid() + 1)
+        if rank == 0: print("Subdomain -- ", cp.gid() + 1)
 
         # Let do the recursive iterations
         # Use the previous MAK solver solution as initial guess; Could do something clever later
@@ -2680,10 +2681,10 @@ class InputControlBlock:
         # self.globalTolerance = 1e-3 * 1e-3**self.adaptiveIterationNum
 
         if newSolve and self.outerIteration == 0:
-            print(iSubDom, " - Applying the unconstrained solver.")
+            if rank == 0: print(iSubDom, " - Applying the unconstrained solver.")
             constraints = None
         else:
-            print(iSubDom, " - Applying the constrained solver.")
+            if rank == 0: print(iSubDom, " - Applying the constrained solver.")
             constraints = np.copy(self.controlPointData)
 
         #  Invoke the local subdomain solver
@@ -2747,14 +2748,15 @@ class InputControlBlock:
         self.decodederrors[0] = locL2Err
         self.decodederrors[1] = locLinfErr
 
-        print(
-            "Subdomain -- ",
-            iSubDom,
-            ": L2 error: ",
-            locL2Err,
-            ", Linf error: ",
-            locLinfErr,
-        )
+        if rank == 0 and not scalingstudy:
+            print(
+                "Subdomain -- ",
+                iSubDom,
+                ": L2 error: ",
+                locL2Err,
+                ", Linf error: ",
+                locLinfErr,
+            )
 
 
 #########
@@ -2818,11 +2820,11 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                 del X, Y, Z
             else:
                 if inputFilename:
-                    print("Locbounds: ", Ncomponents, locbounds)
+                    # print("Locbounds: ", Ncomponents, locbounds)
                     sollocal = type_based_function(
                         diy.mpi.MPIComm(), inputFilename, bounds, nPoints, Ncomponents
                     )
-                    print("sollocal shape: ", sollocal.shape)
+                    # print("sollocal shape: ", sollocal.shape)
                     sollocal = sollocal.reshape(locbounds)
                 else:
                     sollocal = solution[
@@ -2864,19 +2866,20 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     else:
         ## Let us compute the magnitude
         # domainsol = sollocal[0]
-        print("Computing magnitude now...")
+        # print("Computing magnitude now...")
         domainsol = magnitude(sollocal)
 
-    print(
-        "Subdomain %d: " % gid,
-        minb[0],
-        maxb[0],
-        minb[1],
-        maxb[1],
-        xlocal.shape,
-        ylocal.shape,
-        sollocal.shape,
-    )
+    if not scalingstudy:
+        print(
+            "Subdomain %d: " % gid,
+            minb[0],
+            maxb[0],
+            minb[1],
+            maxb[1],
+            xlocal.shape,
+            ylocal.shape,
+            sollocal.shape,
+        )
     masterControl.add(
         gid,
         InputControlBlock(
