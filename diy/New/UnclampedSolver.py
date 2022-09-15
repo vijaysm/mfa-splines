@@ -110,6 +110,8 @@ nProblemInputPoints = 50
 nControlPointsInputIn = 5
 solutionRange = 1.0
 Ncomponents = 1
+DataType = np.float32
+outputCPData = False
 ##################
 
 # Initialize DIY
@@ -350,7 +352,8 @@ if dimension == 1:
         solutionRange = scale
     elif problem == 2:
         solution = np.fromfile("data/s3d.raw", dtype=np.float64)
-        if rank == 0 and not scalingstudy: print("Real data shape: ", solution.shape)
+        if rank == 0 and not scalingstudy:
+            print("Real data shape: ", solution.shape)
         Dmin = [0.0]
         Dmax = [1.0]
         nPoints[0] = solution.shape[0]
@@ -526,7 +529,8 @@ elif dimension == 2:
         #         Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
         #         newY=coordinates["y"],
         #     )
-        if rank == 0 and not scalingstudy: print("Nek5000 shape:", nPoints)
+        if rank == 0 and not scalingstudy:
+            print("Nek5000 shape:", nPoints)
         closedFormFunctional = False
 
         # (3*degree + 1) #minimum number of control points
@@ -562,7 +566,8 @@ elif dimension == 2:
 
         # z = z[:540,:540]
         # z = zoom(z, 1./binFactor, order=4)
-        if rank == 0 and not scalingstudy: print("S3D shape:", nPoints)
+        if rank == 0 and not scalingstudy:
+            print("S3D shape:", nPoints)
         closedFormFunctional = False
 
     elif problem == 5:
@@ -589,7 +594,8 @@ elif dimension == 2:
         #         Yi=np.linspace(Dmin[1], Dmax[1], solution.shape[1]),
         #         newY=coordinates["y"],
         #     )
-        if rank == 0 and not scalingstudy: print("CESM data shape: ", nPoints)
+        if rank == 0 and not scalingstudy:
+            print("CESM data shape: ", nPoints)
         closedFormFunctional = False
 
     elif problem == 6:
@@ -764,7 +770,6 @@ elif dimension == 3:
 
         closedFormFunctional = False
 
-
     elif problem == 3:
 
         nPoints[0] = 200
@@ -803,11 +808,15 @@ def plot_solution(solVector):
             plt.plot(coordinates["x"], solVector, "r-", ms=2)
             mpl_fig.show()
         elif dimension == 2:
-            with RectilinearGrid("./structured.vtr", (coordinates["x"], coordinates["y"])) as rect:
+            with RectilinearGrid(
+                "./structured.vtr", (coordinates["x"], coordinates["y"]), compression=True
+            ) as rect:
                 rect.addPointData(DataArray(solVector, range(2), "solution"))
         elif dimension == 3:
             with RectilinearGrid(
-                "./structured.vtr", (coordinates["x"], coordinates["y"], coordinates["z"])
+                "./structured.vtr",
+                (coordinates["x"], coordinates["y"], coordinates["z"]),
+                compression=True,
             ) as rect:
                 rect.addPointData(DataArray(solVector, range(3), "solution"))
         else:
@@ -821,14 +830,15 @@ def plot_solution(solVector):
         elif dimension == 2:
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
-            if rank == 0 and not scalingstudy: print("Writing out output", cx.shape, cy.shape, solVector.shape)
-            with RectilinearGrid("./structured.vtr", (cx, cy)) as rect:
+            if rank == 0 and not scalingstudy:
+                print("Writing out output", cx.shape, cy.shape, solVector.shape)
+            with RectilinearGrid("./structured.vtr", (cx, cy), compression=True) as rect:
                 rect.addPointData(DataArray(solVector, range(2), "solution"))
         elif dimension == 3:
             # print("Dmin: ", Dmin, " Dmax: ", Dmax, " nPoints: ", nPoints)
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
             cz = np.linspace(Dmin[2], Dmax[2], nPoints[2])
-            with RectilinearGrid("./structured.vtr", (cx, cy, cz)) as rect:
+            with RectilinearGrid("./structured.vtr", (cx, cy, cz), compression=True) as rect:
                 rect.addPointData(DataArray(solVector, range(3), "solution"))
         else:
             print("No visualization output available for dimension > 3")
@@ -837,29 +847,47 @@ def plot_solution(solVector):
 # function definition to compute magnitude of the vector
 def magnitude(vdata):
     # print("Vdata shape:", vdata.shape)
-    if Ncomponents == 1: return vdata
+    if Ncomponents == 1:
+        return vdata
     if dimension == 1:
         # gen = (vdata[:,idim]**2 for idim in range(Ncomponents))
-        gen = np.copy(vdata[:,0]**2)
+        gen = vdata[:, 0] ** 2
         for idim in range(1, Ncomponents):
-            gen = gen + (vdata[:,idim]**2)
+            gen += vdata[:, idim] ** 2
     elif dimension == 2:
         # gen = (vdata[:,:,idim]**2 for idim in range(Ncomponents))
-        gen = np.copy(vdata[:,:,0]**2)
+        gen = vdata[:, :, 0] ** 2
         for idim in range(1, Ncomponents):
-            gen = gen + np.copy(vdata[:,:,idim]**2)
+            gen += vdata[:, :, idim] ** 2
     else:
-        # print("Printing max of each component: ", np.max(vdata[:,:,:,0]), np.max(vdata[:,:,:,1]), np.max(vdata[:,:,:,2]))
-        gen = np.copy(vdata[:,:,:,0]**2)
+        print(
+            "Printing min of each component: ",
+            np.min(vdata[:, :, :, 0]),
+            np.min(vdata[:, :, :, 1]),
+            np.min(vdata[:, :, :, 2]),
+        )
+        print(
+            "Printing max of each component: ",
+            np.max(vdata[:, :, :, 0]),
+            np.max(vdata[:, :, :, 1]),
+            np.max(vdata[:, :, :, 2]),
+        )
+        # print("Component data: ", (vdata[-10:,0,-20:,0]), (vdata[-10:,0,-20:,1]), (vdata[-10:,0,-20:,2]))
+        gen = vdata[:, :, :, 0] ** 2
         for idim in range(1, Ncomponents):
-            gen = gen + np.copy(vdata[:,:,:,idim]**2)
+            gen += vdata[:, :, :, idim] ** 2
+        # print("Printing magnitude: ", (gen[-10:,0,-20:]))
 
-    return np.sqrt(gen)
+    gen = np.sqrt(gen)
+    print("Printing min/max of magnitude: ", np.min(gen), np.max(gen))
+    return gen
+
 
 # Store the reference solution
 if showplot and useVTKOutput:
     if dimension > 1:
-        if rank == 0 and not scalingstudy: print("Writing out reference output solution")
+        if rank == 0 and not scalingstudy:
+            print("Writing out reference output solution")
         if closedFormFunctional:
             if dimension == 2:
                 X, Y = np.meshgrid(coordinates["x"], coordinates["y"], indexing="ij")
@@ -880,7 +908,7 @@ if showplot and useVTKOutput:
                     np.array([nPoints[0], nPoints[1], Ncomponents], dtype=np.intc)
                 )
                 # print("Solution: ", solution.shape, solution[:,:,0].shape)
-                solVis = solution[:,:,0]
+                solVis = solution[:, :, 0]
             else:
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array([nPoints[0], nPoints[1], nPoints[2], Ncomponents], dtype=np.intc)
@@ -898,7 +926,8 @@ if rank == 0:
     print("Processes = ", nprocs)
     print("Dimension = ", dimension)
     print("Problem = ", problem)
-    if not closedFormFunctional: print("Input File = ", inputFilename)
+    if not closedFormFunctional:
+        print("Input File = ", inputFilename)
     print("Input points = ", nPoints, "; Total = ", np.prod(nPoints))
     print("nSubDomains = ", nSubDomains, "; Total = ", np.prod(nSubDomains))
     print("degree = ", degree)
@@ -971,10 +1000,10 @@ def WritePVTKFile(iteration):
                     pvtkfile.write(
                         '    <Piece Extent="%d %d %d %d 0 0" Source="structured-%d-%d.vtr"/>\n'
                         % (
-                            0,
-                            globalExtentDict[isubd][1] - globalExtentDict[isubd][0],
-                            0,
-                            globalExtentDict[isubd][3] - globalExtentDict[isubd][2],
+                            globalExtentDict[isubd][0],
+                            globalExtentDict[isubd][1],
+                            globalExtentDict[isubd][2],
+                            globalExtentDict[isubd][3],
                             isubd,
                             iteration,
                         )
@@ -983,12 +1012,12 @@ def WritePVTKFile(iteration):
                     pvtkfile.write(
                         '    <Piece Extent="%d %d %d %d %d %d" Source="structured-%d-%d.vtr"/>\n'
                         % (
-                            0,
-                            globalExtentDict[isubd][1] - globalExtentDict[isubd][0],
-                            0,
-                            globalExtentDict[isubd][3] - globalExtentDict[isubd][2],
-                            0,
-                            globalExtentDict[isubd][5] - globalExtentDict[isubd][4],
+                            globalExtentDict[isubd][0],
+                            globalExtentDict[isubd][1],
+                            globalExtentDict[isubd][2],
+                            globalExtentDict[isubd][3],
+                            globalExtentDict[isubd][4],
+                            globalExtentDict[isubd][5],
                             isubd,
                             iteration,
                         )
@@ -1142,7 +1171,7 @@ def flattenListDict(t):
 # Additive vs Multiplicative Schwartz scheme for DD resolution
 ####
 class InputControlBlock:
-    def __init__(self, bid, nCPi, coreb, xb, pl, xl, yl=None, zl=None):
+    def __init__(self, gid, nCPi, coreb, xb, pl, xl, yl=None, zl=None):
         self.nControlPoints = np.copy(nCPi)
 
         if useMOABMesh:
@@ -1161,6 +1190,7 @@ class InputControlBlock:
                 sparse=useSparseOperators,
                 verbose=verbose,
             )
+
         elif dimension == 2:
             self.problemInterface = ProblemSolver2D(
                 self,
@@ -1174,6 +1204,7 @@ class InputControlBlock:
                 sparse=useSparseOperators,
                 verbose=verbose,
             )
+
         elif dimension == 3:
             self.problemInterface = ProblemSolver3D(
                 self,
@@ -1232,9 +1263,6 @@ class InputControlBlock:
                 " Bounds = ",
                 self.xbounds,
             )
-
-    def update_bounds(self, cp):
-        localExtents[cp.gid()] = self.problemInterface.update_bounds()
 
     def compute_basis(self):
         # Call the appropriate basis computation function
@@ -1426,48 +1454,54 @@ class InputControlBlock:
 
         iterateChangeVec = self.solutionDecoded - self.solutionDecodedOld
         if dimension == 2:
-            with RectilinearGrid("./structured-%s.vtr" % (self.figSuffix), (locX, locY)) as rect:
+            with RectilinearGrid(
+                "./structured-%s.vtr" % (self.figSuffix), (locX, locY), compression=True
+            ) as rect:
                 rect.addPointData(DataArray(coreData, range(dimension), "solution"))
                 rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
                 rect.addPointData(DataArray(iterateChangeVec, range(dimension), "errorchange"))
                 rect.addCellData(DataArray(proc, range(dimension), "process"))
         else:
             with RectilinearGrid(
-                "./structured-%s.vtr" % (self.figSuffix), (locX, locY, locZ)
+                "./structured-%s.vtr" % (self.figSuffix), (locX, locY, locZ), compression=True
             ) as rect:
                 rect.addPointData(DataArray(coreData, range(dimension), "solution"))
                 rect.addPointData(DataArray(errorDecoded, range(dimension), "error"))
                 rect.addPointData(DataArray(iterateChangeVec, range(dimension), "errorchange"))
                 rect.addCellData(DataArray(proc, range(dimension), "process"))
 
-        def compute_greville(knots):
-            """Return the Greville abscissae of the basis"""
-            return np.array(
-                [
-                    1.0 / degree * sum(knots[k + 1 : k + degree + 1])
-                    for k in range(len(knots) - degree - 1)
-                ]
-            )
+        if outputCPData:
 
-        # cpx = np.array(self.basisFunction["x"].greville())
-        # cpy = np.array(self.basisFunction["y"].greville())
-        cpx = compute_greville(self.knotsAdaptive["x"])
-        if dimension > 1:
-            cpy = compute_greville(self.knotsAdaptive["y"])
-        if dimension > 2:
-            # cpz = np.array(self.basisFunction["z"].greville())
-            cpz = compute_greville(self.knotsAdaptive["z"])
-            with RectilinearGrid(
-                "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz)
-            ) as rectc:
-                rectc.addPointData(
-                    DataArray(self.controlPointData, range(dimension), "controlpoints")
+            def compute_greville(knots):
+                """Return the Greville abscissae of the basis"""
+                return np.array(
+                    [
+                        1.0 / degree * sum(knots[k + 1 : k + degree + 1])
+                        for k in range(len(knots) - degree - 1)
+                    ]
                 )
-        else:
-            with RectilinearGrid("./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy)) as rectc:
-                rectc.addPointData(
-                    DataArray(self.controlPointData, range(dimension), "controlpoints")
-                )
+
+            # cpx = np.array(self.basisFunction["x"].greville())
+            # cpy = np.array(self.basisFunction["y"].greville())
+            cpx = compute_greville(self.knotsAdaptive["x"])
+            if dimension > 1:
+                cpy = compute_greville(self.knotsAdaptive["y"])
+            if dimension > 2:
+                # cpz = np.array(self.basisFunction["z"].greville())
+                cpz = compute_greville(self.knotsAdaptive["z"])
+                with RectilinearGrid(
+                    "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy, cpz), compression=True
+                ) as rectc:
+                    rectc.addPointData(
+                        DataArray(self.controlPointData, range(dimension), "controlpoints")
+                    )
+            else:
+                with RectilinearGrid(
+                    "./structuredcp-%s.vtr" % (self.figSuffix), (cpx, cpy), compression=True
+                ) as rectc:
+                    rectc.addPointData(
+                        DataArray(self.controlPointData, range(dimension), "controlpoints")
+                    )
 
     def PlotControlPoints(self):
         import pyvista as pv
@@ -2339,7 +2373,8 @@ class InputControlBlock:
             initSol = np.copy(constraints)
 
         else:
-            if rank == 0: print("Constraints are all null. Solving unconstrained.")
+            if rank == 0:
+                print("Constraints are all null. Solving unconstrained.")
             initSol = np.ones_like(self.controlPointData)
 
         # Compute hte linear operators needed to compute decoded residuals
@@ -2378,7 +2413,8 @@ class InputControlBlock:
 
             net_residual_norm = np.amax(decodedErr) / solutionRange
 
-            if rank == 0: print("Residual = ", net_residual_norm)
+            if rank == 0:
+                print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
@@ -2439,7 +2475,8 @@ class InputControlBlock:
                     0,
                     len(localBCAssembly[:, :, 0]),
                 ]
-            if rank == 0: print("Initial calculation")
+            if rank == 0:
+                print("Initial calculation")
             # Lets update our initial solution with constraints
             if constraints is not None and len(constraints) > 0:
 
@@ -2479,7 +2516,8 @@ class InputControlBlock:
                 else:
                     bnds = None
 
-                if rank == 0 and not scalingstudy: print("Using optimization solver = ", solverScheme)
+                if rank == 0 and not scalingstudy:
+                    print("Using optimization solver = ", solverScheme)
                 # Solver options: https://docs.scipy.org/doc/scipy-0.13.0/reference/generated/scipy.optimize.show_options.html
                 if solverScheme == "L-BFGS-B":
                     res = minimize(
@@ -2542,7 +2580,8 @@ class InputControlBlock:
                 else:
                     error("No implementation available")
 
-                if rank == 0 and not scalingstudy: print("[%d] : %s" % (idom, res.message))
+                if rank == 0 and not scalingstudy:
+                    print("[%d] : %s" % (idom, res.message))
                 solution = np.copy(res.x).reshape(self.controlPointData.shape)
 
             else:
@@ -2670,7 +2709,8 @@ class InputControlBlock:
         if len(self.controlPointData) == 0 or np.sum(np.abs(self.controlPointData)) < 1e-14:
             newSolve = True
 
-        if rank == 0: print("Subdomain -- ", cp.gid() + 1)
+        if rank == 0:
+            print("Subdomain -- ", cp.gid() + 1)
 
         # Let do the recursive iterations
         # Use the previous MAK solver solution as initial guess; Could do something clever later
@@ -2681,10 +2721,12 @@ class InputControlBlock:
         # self.globalTolerance = 1e-3 * 1e-3**self.adaptiveIterationNum
 
         if newSolve and self.outerIteration == 0:
-            if rank == 0: print(iSubDom, " - Applying the unconstrained solver.")
+            if rank == 0:
+                print(iSubDom, " - Applying the unconstrained solver.")
             constraints = None
         else:
-            if rank == 0: print(iSubDom, " - Applying the constrained solver.")
+            if rank == 0:
+                print(iSubDom, " - Applying the constrained solver.")
             constraints = np.copy(self.controlPointData)
 
         #  Invoke the local subdomain solver
@@ -2770,7 +2812,7 @@ def ndmesh(*args):
 
 
 def add_input_control_block2(gid, core, bounds, domain, link):
-    # print("Subdomain %d: " % gid, core, bounds, domain)
+    print("Subdomain %d: " % gid, core, bounds, domain)
     minb = bounds.min
     maxb = bounds.max
 
@@ -2779,24 +2821,43 @@ def add_input_control_block2(gid, core, bounds, domain, link):
             locbounds = np.array((maxb[0] - minb[0] + 1, Ncomponents), dtype=np.intc)
         else:
             locbounds = np.array((maxb[0] - minb[0] + 1), dtype=np.intc)
+        localExtents[gid] = [bounds.min[0], bounds.max[0]]
     elif dimension == 2:
         if Ncomponents > 1:
-            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, Ncomponents), dtype=np.intc)
+            locbounds = np.array(
+                (maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, Ncomponents), dtype=np.intc
+            )
         else:
             locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1), dtype=np.intc)
+        localExtents[gid] = [bounds.min[0], bounds.max[0], bounds.min[1], bounds.max[1]]
     else:
         if Ncomponents > 1:
-            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1, Ncomponents), dtype=np.intc)
+            locbounds = np.array(
+                (maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1, Ncomponents),
+                dtype=np.intc,
+            )
         else:
-            locbounds = np.array((maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1), dtype=np.intc)
+            locbounds = np.array(
+                (maxb[0] - minb[0] + 1, maxb[1] - minb[1] + 1, maxb[2] - minb[2] + 1), dtype=np.intc
+            )
+        localExtents[gid] = [
+            bounds.min[0],
+            bounds.max[0],
+            bounds.min[1],
+            bounds.max[1],
+            bounds.min[2],
+            bounds.max[2],
+        ]
 
-    # print('Original bounds: ', bounds, ' Modified bounds: ', bounds)
-    type_based_function = (
-        diy.mpi.parallel_read_double_data
-        if DataType == np.float64
-        else diy.mpi.parallel_read_float_data
-    )
+    print("Original bounds: ", bounds, " Modified bounds: ", localExtents[gid])
+    if not closedFormFunctional:
+        type_based_function = (
+            diy.mpi.parallel_read_double_data
+            if DataType == np.float64
+            else diy.mpi.parallel_read_float_data
+        )
     # type_based_function = diy.mpi.parallel_read_float_data
+    print(rank, ":: Reading solution chunk now")
 
     if closedFormFunctional:
         xlocal = coordinates["x"][minb[0] : maxb[0] + 1]
@@ -2824,6 +2885,9 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                     sollocal = type_based_function(
                         diy.mpi.MPIComm(), inputFilename, bounds, nPoints, Ncomponents
                     )
+                    # solution = np.fromfile(inputFilename, offset = , dtype=DataType).reshape(
+                    #     np.array([nPoints[0], nPoints[1], nPoints[2], Ncomponents], dtype=np.intc)
+                    # )
                     # print("sollocal shape: ", sollocal.shape)
                     sollocal = sollocal.reshape(locbounds)
                 else:
@@ -2860,7 +2924,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                 sollocal = solution[minb[0] : maxb[0] + 1]
         sollocal = sollocal.reshape((len(sollocal), 1))
 
-    # print("Shape of sollocal = ", sollocal.shape)
+    print(rank, ":: Shape of sollocal = ", sollocal.shape)
     if Ncomponents == 1:
         domainsol = sollocal
     else:
@@ -2984,16 +3048,17 @@ if not fullyPinned:
         masterControl.foreach(InputControlBlock.augment_inputdata)
 
 if showplot:
-    masterControl.foreach(InputControlBlock.update_bounds)
     # globalExtentDict = np.array(commWorld.gather(localExtents, root=0)[0])
     # print(rank, " - localExtents = ", localExtents)
     globalExtentDict = commWorld.gather(flattenDict(localExtents), root=0)
+
     if rank == 0:
         if nprocs == 1:
             globalExtentDict = globalExtentDict[0]
         else:
             globalExtentDict = flattenListDict(globalExtentDict)
         # print("Global extents consolidated  = ", globalExtentDict)
+    print("Global extent: ", globalExtentDict)
 
 del coordinates
 if not closedFormFunctional:
@@ -3111,7 +3176,7 @@ for iterIdx in range(nASMIterations):
 
                 if rank == 0:
                     WritePVTKFile(iterIdx)
-                    WritePVTKControlFile(iterIdx)
+                    # WritePVTKControlFile(iterIdx)
 
     if isASMConverged == nTotalSubDomains:
         break
