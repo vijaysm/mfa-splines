@@ -140,7 +140,7 @@ def usage():
 
 nSubDomainsX = 1
 nSubDomainsY = 1
-nSubDomainsZ = 2
+nSubDomainsZ = 1
 Dmin = np.array(dimension, dtype=np.float32)
 Dmax = np.array(dimension, dtype=np.float32)
 
@@ -518,6 +518,9 @@ elif dimension == 2:
 
         DataType = np.float64
 
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+
         # solution = np.fromfile("data/nek5000.raw", dtype=np.float64).reshape(200, 200)
 
         # coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
@@ -551,6 +554,9 @@ elif dimension == 2:
 
         DataType = np.float64
 
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+
         # solution = np.fromfile("data/s3d_2D.raw", dtype=np.float64).reshape(540, 704)
 
         # binFactor = 4.0
@@ -582,6 +588,9 @@ elif dimension == 2:
         Dmax = nPoints.astype(np.float32)
 
         DataType = np.float32
+
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
 
         # solution = np.fromfile("data/FLDSC_1_1800_3600.dat", dtype=np.float32).reshape(1800, 3600)
 
@@ -694,6 +703,7 @@ elif dimension == 3:
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
         coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
+
         # X, Y, Z = np.meshgrid(
         #     coordinates["x"], coordinates["y"], coordinates["z"], indexing="ij"
         # )
@@ -774,6 +784,10 @@ elif dimension == 3:
         Dmax = nPoints.astype(np.float32)
         # coordinate_order = [2, 1, 0]
 
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+        coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
+
         closedFormFunctional = False
 
     elif problem == 3:
@@ -790,6 +804,10 @@ elif dimension == 3:
 
         Dmin = [0, 0, 0]
         Dmax = nPoints.astype(np.float32)
+
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+        coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
 
         closedFormFunctional = False
 
@@ -1958,7 +1976,7 @@ class InputControlBlock:
 
     def augment_spans(self, cp):
 
-        if fullyPinned:
+        if fullyPinned or nTotalSubDomains == 1:
             return
 
         if verbose:
@@ -2122,7 +2140,7 @@ class InputControlBlock:
 
     def augment_inputdata(self, cp):
 
-        if fullyPinned:
+        if fullyPinned or nTotalSubDomains == 1:
             return
 
         postol = 1e-10
@@ -2299,6 +2317,22 @@ class InputControlBlock:
         #     self.UVW['y'] = self.xyzCoordLocal['y'][self.corebounds[1][0]:self.corebounds[1][1]] / (self.xyzCoordLocal['y'][self.corebounds[1][1]] - self.xyzCoordLocal['y'][self.corebounds[1][0]])
 
         if dimension == 1:
+            new_soldecshape = np.array([uboundXYZ[0] - lboundXYZ[0] + 1], dtype=int)
+        elif dimension == 2:
+            new_soldecshape = np.array(
+                [uboundXYZ[0] - lboundXYZ[0] + 1, uboundXYZ[1] - lboundXYZ[1] + 1], dtype=int
+            )
+        elif dimension == 3:
+            new_soldecshape = np.array(
+                [
+                    uboundXYZ[0] - lboundXYZ[0] + 1,
+                    uboundXYZ[1] - lboundXYZ[1] + 1,
+                    uboundXYZ[2] - lboundXYZ[2] + 1,
+                ],
+                dtype=int,
+            )
+
+        if dimension == 1:
             if closedFormFunctional:
                 self.refSolutionLocal = solution(self.xyzCoordLocal["x"])
             else:
@@ -2376,9 +2410,9 @@ class InputControlBlock:
 
         self.controlPointData = np.zeros(self.nControlPoints)
         self.weightsData = np.ones(self.nControlPoints)
-        self.solutionDecoded = np.zeros(self.refSolutionLocal.shape)
+        self.solutionDecoded = np.zeros(new_soldecshape)
         if useVTKOutput:
-            self.solutionDecodedOld = np.zeros(self.refSolutionLocal.shape)
+            self.solutionDecodedOld = np.zeros(new_soldecshape)
         else:
             self.solutionDecodedOld = []
 
@@ -3115,13 +3149,15 @@ masterControl.foreach(InputControlBlock.setup_subdomain_solve)
 elapsed = timeit.default_timer() - start_time
 if nprocs > 1:
     setup_time = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
-    if not closedFormFunctional: max_iotime = commWorld.reduce(pio_time, op=MPI.MAX, root=0)
+    if not closedFormFunctional:
+        max_iotime = commWorld.reduce(pio_time, op=MPI.MAX, root=0)
 else:
     setup_time = elapsed
     max_iotime = pio_time
 
 if rank == 0:
-    if not closedFormFunctional: print("[LOG] Maximum I/O setup time per process             = ", max_iotime)
+    if not closedFormFunctional:
+        print("[LOG] Maximum I/O setup time per process             = ", max_iotime)
     print("[LOG] Total setup time for solver                    = ", setup_time)
 
 sys.stdout.flush()
