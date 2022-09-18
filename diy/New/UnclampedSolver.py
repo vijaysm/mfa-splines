@@ -867,18 +867,18 @@ def magnitude(vdata):
         for idim in range(1, Ncomponents):
             gen += vdata[:, :, idim] ** 2
     else:
-        print(
-            "Printing min of each component: ",
-            np.min(vdata[:, :, :, 0]),
-            np.min(vdata[:, :, :, 1]),
-            np.min(vdata[:, :, :, 2]),
-        )
-        print(
-            "Printing max of each component: ",
-            np.max(vdata[:, :, :, 0]),
-            np.max(vdata[:, :, :, 1]),
-            np.max(vdata[:, :, :, 2]),
-        )
+        # print(
+        #     "Printing min of each component: ",
+        #     np.min(vdata[:, :, :, 0]),
+        #     np.min(vdata[:, :, :, 1]),
+        #     np.min(vdata[:, :, :, 2]),
+        # )
+        # print(
+        #     "Printing max of each component: ",
+        #     np.max(vdata[:, :, :, 0]),
+        #     np.max(vdata[:, :, :, 1]),
+        #     np.max(vdata[:, :, :, 2]),
+        # )
         # print("Component data: ", (vdata[-10:,0,-20:,0]), (vdata[-10:,0,-20:,1]), (vdata[-10:,0,-20:,2]))
         gen = vdata[:, :, :, 0] ** 2
         for idim in range(1, Ncomponents):
@@ -890,7 +890,7 @@ def magnitude(vdata):
         #     gen += vdata[idim, :, :, :] ** 2
 
     gen = np.sqrt(gen)
-    print("Printing min/max of magnitude: ", np.min(gen), np.max(gen))
+    # print("Printing min/max of magnitude: ", np.min(gen), np.max(gen))
     return gen
 
 
@@ -2012,19 +2012,19 @@ class InputControlBlock:
             )
 
         if not self.isClamped["right"]:  # Pad knot spans from the right of subdomain
-            if verbose or True:
+            if verbose:
                 print(
                     "\tSubdomain -- ",
                     cp.gid() + 1,
                     ": right ghost: ",
                     self.ghostKnots["right"],
                 )
-            print("Knot proposal: ", np.concatenate(
-                    (self.knotsAdaptive["x"], self.ghostKnots["right"][1:])
-                ))
+            # print("Knot proposal: ", np.concatenate(
+            #         (self.knotsAdaptive["x"], self.ghostKnots["right"][1:])
+            #     ))
             self.knotsAdaptive["x"] = np.concatenate(
-                    (self.knotsAdaptive["x"], self.ghostKnots["right"][1:])
-                )
+                (self.knotsAdaptive["x"], self.ghostKnots["right"][1:])
+            )
 
         if dimension > 1:
             # Pad knot spans from the left of subdomain
@@ -2836,6 +2836,9 @@ def ndmesh(*args):
     return np.broadcast_arrays(*[x[(slice(None),) + (None,) * i] for i, x in enumerate(args)])
 
 
+pio_time = 0
+
+
 def add_input_control_block2(gid, core, bounds, domain, link):
     print("Subdomain %d: " % gid, core, bounds, domain)
     minb = bounds.min
@@ -2874,7 +2877,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
             bounds.max[2],
         ]
 
-    print("Original bounds: ", bounds, " Modified bounds: ", localExtents[gid])
+    # print("Original bounds: ", bounds, " Modified bounds: ", localExtents[gid])
     if not closedFormFunctional:
         type_based_function = (
             diy.mpi.parallel_read_double_data
@@ -2882,7 +2885,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
             else diy.mpi.parallel_read_float_data
         )
     # type_based_function = diy.mpi.parallel_read_float_data
-    print(rank, ":: Reading solution chunk now")
+    # print(rank, ":: Reading solution chunk now")
 
     modbounds = bounds
     modlocbounds = locbounds
@@ -2893,6 +2896,8 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         modlocbounds[idim] = locbounds[coordinate_order[idim]]
         modnPoints[idim] = nPoints[coordinate_order[idim]]
 
+    global pio_time
+    pio_time = timeit.default_timer()
     if closedFormFunctional:
         xlocal = coordinates["x"][minb[0] : maxb[0] + 1]
     else:
@@ -2957,13 +2962,14 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                 sollocal = solution[minb[0] : maxb[0] + 1]
                 sollocal = sollocal.reshape((len(sollocal), 1))
 
+    pio_time = timeit.default_timer() - pio_time
     if not coordinate_order == range(dimension):
         # reshape array by swapping axes
         if dimension == 3:
             np.swapaxes(sollocal, 0, 2)
         elif dimension == 2:
             np.swapaxes(sollocal, 0, 1)
-    print(rank, ":: Shape of sollocal = ", sollocal.shape)
+    # print(rank, ":: Shape of sollocal = ", sollocal.shape)
     if Ncomponents == 1:
         domainsol = sollocal
     else:
@@ -3109,10 +3115,15 @@ masterControl.foreach(InputControlBlock.setup_subdomain_solve)
 elapsed = timeit.default_timer() - start_time
 if nprocs > 1:
     setup_time = commWorld.reduce(elapsed, op=MPI.MAX, root=0)
+    if not closedFormFunctional: max_iotime = commWorld.reduce(pio_time, op=MPI.MAX, root=0)
 else:
     setup_time = elapsed
+    max_iotime = pio_time
+
 if rank == 0:
-    print("\n[LOG] Total setup time for solver = ", setup_time)
+    if not closedFormFunctional: print("[LOG] Maximum I/O setup time per process             = ", max_iotime)
+    print("[LOG] Total setup time for solver                    = ", setup_time)
+
 sys.stdout.flush()
 
 first_solve_time = 0
