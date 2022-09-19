@@ -64,9 +64,9 @@ plt.rcParams.update(params)
 directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
 problem = 1
-dimension = 3
+dimension = 1
 degree = 3
-scalingstudy = True
+scalingstudy = False
 
 useSparseOperators = False
 closedFormFunctional = True
@@ -84,9 +84,6 @@ fullyPinned = False
 useAdditiveSchwartz = True
 enforceBounds = False
 alwaysSolveConstrained = False
-
-if fullyPinned:
-    useDiagonalBlocks = False
 
 # ------------------------------------------
 # Solver parameters
@@ -158,6 +155,12 @@ parser.add_argument(
     "-p",
     "--showplot",
     help="dump out vtk or plot solutions",
+    default=False,
+    action="store_true",
+)
+parser.add_argument(
+    "--pinned",
+    help="use fully pinned subdomain interfaces",
     default=False,
     action="store_true",
 )
@@ -275,8 +278,14 @@ if args.nasm != nASMIterations:
     nASMIterations = args.nasm
 if args.solverIter != solverMaxIter:
     solverMaxIter = args.solverIter
+
+fullyPinned = args.pinned
 extrapolate = args.accel
 useAitken = not args.wynn
+
+if fullyPinned:
+    useDiagonalBlocks = False
+
 ######################################################################
 
 # nSubDomainsY = 1 if dimension < 2 else nSubDomainsY
@@ -2924,11 +2933,11 @@ def add_input_control_block2(gid, core, bounds, domain, link):
     modbounds = bounds
     modlocbounds = locbounds
     modnPoints = nPoints
-    for idim in range(dimension):
-        modbounds.min[idim] = bounds.min[coordinate_order[idim]]
-        modbounds.max[idim] = bounds.max[coordinate_order[idim]]
-        modlocbounds[idim] = locbounds[coordinate_order[idim]]
-        modnPoints[idim] = nPoints[coordinate_order[idim]]
+    # for idim in range(dimension):
+    #     modbounds.min[idim] = bounds.min[coordinate_order[idim]]
+    #     modbounds.max[idim] = bounds.max[coordinate_order[idim]]
+    #     modlocbounds[idim] = locbounds[coordinate_order[idim]]
+    #     modnPoints[idim] = nPoints[coordinate_order[idim]]
 
     global pio_time
     pio_time = timeit.default_timer()
@@ -3012,7 +3021,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
         # print("Computing magnitude now...")
         domainsol = magnitude(sollocal)
 
-    if not scalingstudy:
+    if not scalingstudy and dimension == 2:
         print(
             "Subdomain %d: " % gid,
             minb[0],
