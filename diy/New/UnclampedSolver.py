@@ -1,6 +1,7 @@
 # coding: utf-8
 # get_ipython().magic(u'matplotlib notebook')
 # %matplotlib notebook
+# S3D: mpiexec -n 10 python UnclampedSolver.py --dimension 2 --problem 4 --degree 6 -n 10 --controlpoints 25 --showplot --aug 6
 import sys
 import math
 import argparse
@@ -64,7 +65,7 @@ plt.rcParams.update(params)
 directions = ["x", "y", "z"]
 # --- set problem input parameters here ---
 problem = 1
-dimension = 1
+dimension = 2
 degree = 3
 scalingstudy = False
 
@@ -72,7 +73,7 @@ useSparseOperators = False
 closedFormFunctional = True
 debugProblem = False
 verbose = False
-showplot = False
+showplot = True
 useVTKOutput = not scalingstudy
 useMOABMesh = False
 
@@ -242,7 +243,6 @@ parser.add_argument(
 
 # Process the arguments
 args = parser.parse_args()
-coordinate_order = range(dimension)
 
 # Retrieve and store it in our local variables
 verbose = args.verbose
@@ -308,6 +308,8 @@ nPoints = np.array([1] * dimension, dtype=np.uintc)
 nTotalSubDomains = nSubDomainsX * nSubDomainsY * nSubDomainsZ
 isConverged = np.zeros(nTotalSubDomains, dtype=np.uintc)
 L2err = np.zeros(nTotalSubDomains)
+ref_order = np.linspace(0, 3, 3, endpoint=False, dtype=int)
+coordinate_order = ref_order[:dimension]
 
 # globalExtentDict = np.zeros(nTotalSubDomains*2*dimension, dtype='int32')
 # globalExtentDict[cp.gid()*4:cp.gid()*4+4] = extents
@@ -354,8 +356,9 @@ if dimension == 1:
         # solution = lambda x: scale * (
         #     np.sinc(coordinates["x"] - 1) + np.sinc(coordinates["x"] + 1)
         # )
+        solution = lambda x: scale * (np.sinc(x+1) + np.sinc(x-1))
         # solution = lambda x: scale * (np.sinc(x+1) + np.sinc(2*x) + np.sinc(x-1))
-        solution = lambda x: scale * (np.sinc(x) + np.sinc(2 * x - 1) + np.sinc(3 * x + 1.5))
+        # solution = lambda x: scale * (np.sinc(x) + np.sinc(2 * x - 1) + np.sinc(3 * x + 1.5))
         # solution = lambda x: np.zeros(x.shape)
         # solution[coordinates["x"] <= 0] = 1
         # solution[coordinates["x"] > 0] = -1
@@ -741,7 +744,22 @@ elif dimension == 3:
         #     )
         @vectorize(target="cpu")
         def solution(x, y, z):
-            return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
+            # return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
+            return scale * (np.sinc(x) * np.sinc(y) * np.sinc(z))
+
+
+        # Dmin = [0.0, 0.0, 0.0]
+        # Dmax = [1.0, 1.0, 1.0]
+
+        # coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
+        # coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
+        # coordinates["z"] = np.linspace(Dmin[2], Dmax[2], nPoints[2])
+
+        # @vectorize(target="cpu")
+        # def solution(x, y, z):
+        #     # return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
+        #     return scale * (np.sin(np.pi*x) * np.sin(np.pi*(y-0.25)) * np.tanh(10*(z-0.5)))
+
 
         # @vectorize(target="cpu")
         # def solution(x,y,z):
@@ -791,7 +809,6 @@ elif dimension == 3:
 
         Dmin = [0, 0, 0]
         Dmax = nPoints.astype(np.float32)
-        # coordinate_order = [2, 1, 0]
 
         coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
@@ -806,7 +823,6 @@ elif dimension == 3:
         nPoints[2] = 200
 
         inputFilename = "data/nek5000_3d.xyz"
-        # coordinate_order = [2, 1, 0]
 
         DataType = np.float32
         Ncomponents = 3
@@ -840,6 +856,11 @@ def plot_solution(solVector):
         if dimension == 1:
             mpl_fig = plt.figure()
             plt.plot(coordinates["x"], solVector, "r-", ms=2)
+            plt.ylabel("Reference Solution")
+            plt.xlabel("X")
+            # plt.title("{0} (Params: AUG=0)".format(title))
+            # plt.title("{0}".format(title))
+            # plt.legend(loc='upper left', bbox_to_anchor=(0.15, 0.9), ncol=2)
             mpl_fig.show()
         elif dimension == 2:
             with RectilinearGrid(
@@ -860,6 +881,8 @@ def plot_solution(solVector):
         if dimension == 1:
             mpl_fig = plt.figure()
             plt.plot(cx, solVector, "r-", ms=2)
+            plt.ylabel("Reference Solution")
+            plt.xlabel("X")
             mpl_fig.show()
         elif dimension == 2:
             cy = np.linspace(Dmin[1], Dmax[1], nPoints[1])
@@ -942,30 +965,42 @@ if showplot and useVTKOutput:
             # print("Writing out reference output solution for non-closed form function")
             # solution = diy.mpi.parallel_read_double_data(diy.mpi.MPIComm(), inputFilename, diy.mpi.Bounds([0,0], nPoints), nPoints).reshape(nPoints)
             if dimension == 2:
+                # print("Sol shape: ", nPoints, coordinate_order, Ncomponents)
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array(
-                        [nPoints[coordinate_order[0]], nPoints[coordinate_order[1]], Ncomponents],
+                        [nPoints[0], nPoints[1], Ncomponents],
                         dtype=np.intc,
                     )
                 )
                 # print("Solution: ", solution.shape, solution[:,:,0].shape)
-                solVis = solution[:, :, 0]
+                if Ncomponents > 1:
+                    solVis = magnitude(solution)
+                else:
+                    solVis = solution[:,:,0]
             else:
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array(
                         [
-                            nPoints[coordinate_order[0]],
-                            nPoints[coordinate_order[1]],
-                            nPoints[coordinate_order[2]],
-                            Ncomponents,
+                            nPoints[0],
+                            nPoints[1],
+                            nPoints[2],
+                            Ncomponents
                         ],
                         dtype=np.intc,
                     )
                 )
                 # print("Solution: ", solution.shape, solution[:,:,:,0].shape)
-                solVis = magnitude(solution)
+                if Ncomponents > 1:
+                    solVis = magnitude(solution)
+                else:
+                    solVis = solution[:,:,:,0]
             plot_solution(solVis)
+            if augmentSpanSpace > 0:
+                solution = np.copy(solVis)
+                # print("Solution: ", solution.shape)
             del solVis
+    else:
+        plot_solution(solution(coordinates['x']))
 
 ### Print parameter details ###
 if rank == 0:
@@ -1222,7 +1257,7 @@ def flattenListDict(t):
 class InputControlBlock:
     def __init__(self, gid, nCPi, coreb, xb, pl, xl, yl=None, zl=None):
         self.nControlPoints = np.copy(nCPi)
-
+        self.gid = gid
         if useMOABMesh:
             self.mbInterface = core.Core()
             self.scdGrid = ScdInterface(self.mbInterface)
@@ -1414,6 +1449,12 @@ class InputControlBlock:
                 color=["r", "g", "b", "y", "c"][cp.gid() % 5],
                 label="Control-%d" % (cp.gid() + 1),
             )
+            plt.ylabel("Solution")
+            # plt.xlabel("X")
+            plt.legend(loc='upper left')
+
+            # if cp.gid() == 0 and closedFormFunctional:
+            #     plt.plot(coordinates["x"], solution(coordinates["x"]), 'b-', ms=5, label='Input')
 
             # Plot the error
             errorDecoded = self.refSolutionLocal.reshape(
@@ -1431,6 +1472,9 @@ class InputControlBlock:
                 lw=2,
                 label="Subdomain(%d) Error" % (cp.gid() + 1),
             )
+            plt.ylabel("Decoded Error")
+            plt.xlabel("X")
+            # plt.legend(loc='upper left')
 
         else:
             if useVTKOutput:
@@ -1501,7 +1545,8 @@ class InputControlBlock:
                 proc = np.ones((locX.size - 1, locY.size - 1)) * commWorld.Get_rank()
             coreData = self.pMK
 
-        iterateChangeVec = self.solutionDecoded - self.solutionDecodedOld
+        # print("Decoded sol: ", self.solutionDecoded.shape, self.solutionDecodedOld.shape, np.max(self.solutionDecoded), np.max(self.solutionDecodedOld))
+        iterateChangeVec = (self.solutionDecoded - self.solutionDecodedOld) / solutionRange
         if dimension == 2:
             with RectilinearGrid(
                 "./structured-%s.vtr" % (self.figSuffix), (locX, locY), compression=True
@@ -2152,7 +2197,7 @@ class InputControlBlock:
         if fullyPinned or nTotalSubDomains == 1:
             return
 
-        postol = 1e-10
+        postol = 1e-6
         if verbose:
             print(
                 "augment_inputdata:",
@@ -2215,12 +2260,14 @@ class InputControlBlock:
 
             lboundXYZ[idir] = indicesXYZ[0][0]
             # indicesX[0][-1] < len(coordinates[cDirection])
+            # print("Ubound choices: ", indicesXYZ[0][-1] + 1, len(coordinates[cDirection]))
             uboundXYZ[idir] = min(indicesXYZ[0][-1] + 1, len(coordinates[cDirection]))
             if (
                 (idir == 0 and self.isClamped["left"] and self.isClamped["right"])
                 or (idir == 1 and self.isClamped["top"] and self.isClamped["bottom"])
                 or (idir == 2 and self.isClamped["up"] and self.isClamped["down"])
             ):
+                uboundXYZ[idir] = len(coordinates[cDirection])
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][:]
             elif (
                 (idir == 0 and self.isClamped["left"])
@@ -2233,6 +2280,7 @@ class InputControlBlock:
                 or (idir == 1 and self.isClamped["top"])
                 or (idir == 2 and self.isClamped["up"])
             ):
+                uboundXYZ[idir] = len(coordinates[cDirection])
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][lboundXYZ[idir] :]
             else:
                 self.xyzCoordLocal[cDirection] = coordinates[cDirection][
@@ -2321,23 +2369,20 @@ class InputControlBlock:
         if verbose:
             print("self.corebounds = ", self.xbounds, self.corebounds)
 
+        # print("XYZ shapes: ", self.xyzCoordLocal['x'].shape, self.xyzCoordLocal['y'].shape)
         # self.UVW['x'] = self.xyzCoordLocal['x'][self.corebounds[0][0]:self.corebounds[0][1]] / (self.xyzCoordLocal['x'][self.corebounds[0][1]] - self.xyzCoordLocal['x'][self.corebounds[0][0]])
         # if dimension > 1:
         #     self.UVW['y'] = self.xyzCoordLocal['y'][self.corebounds[1][0]:self.corebounds[1][1]] / (self.xyzCoordLocal['y'][self.corebounds[1][1]] - self.xyzCoordLocal['y'][self.corebounds[1][0]])
 
         if dimension == 1:
-            new_soldecshape = np.array([uboundXYZ[0] - lboundXYZ[0] + 1], dtype=int)
+            new_soldecshape = np.array([uboundXYZ[0] - lboundXYZ[0]], dtype=int)
         elif dimension == 2:
             new_soldecshape = np.array(
-                [uboundXYZ[0] - lboundXYZ[0] + 1, uboundXYZ[1] - lboundXYZ[1] + 1], dtype=int
+                [uboundXYZ[0] - lboundXYZ[0], uboundXYZ[1] - lboundXYZ[1]], dtype=int
             )
         elif dimension == 3:
             new_soldecshape = np.array(
-                [
-                    uboundXYZ[0] - lboundXYZ[0] + 1,
-                    uboundXYZ[1] - lboundXYZ[1] + 1,
-                    uboundXYZ[2] - lboundXYZ[2] + 1,
-                ],
+                [ uboundXYZ[0] - lboundXYZ[0], uboundXYZ[1] - lboundXYZ[1], uboundXYZ[2] - lboundXYZ[2] ],
                 dtype=int,
             )
 
@@ -2352,9 +2397,11 @@ class InputControlBlock:
                 X, Y = np.meshgrid(self.xyzCoordLocal["x"], self.xyzCoordLocal["y"], indexing="ij")
                 self.refSolutionLocal = solution(X, Y)
             else:
+                # print("Reshaping refSolutionLocal ", self.refSolutionLocal.shape, new_soldecshape)
                 self.refSolutionLocal = solution[
                     lboundXYZ[0] : uboundXYZ[0], lboundXYZ[1] : uboundXYZ[1]
                 ]
+                # print("Reshaping refSolutionLocal to ", lboundXYZ, uboundXYZ, self.refSolutionLocal.shape)
         else:
             if closedFormFunctional:
                 X, Y, Z = np.meshgrid(
@@ -2417,6 +2464,7 @@ class InputControlBlock:
                     augmentSpanSpace if not self.isClamped["down"] else 0
                 )
 
+        # print("Modified solshape: ", self.refSolutionLocal.shape, new_soldecshape)
         self.controlPointData = np.zeros(self.nControlPoints)
         self.weightsData = np.ones(self.nControlPoints)
         self.solutionDecoded = np.zeros(new_soldecshape)
@@ -2481,8 +2529,8 @@ class InputControlBlock:
 
             net_residual_norm = np.amax(decodedErr) / solutionRange
 
-            if rank == 0:
-                print("Residual = ", net_residual_norm)
+            # if rank == 0:
+            #     print("Residual = ", net_residual_norm)
 
             return net_residual_norm
 
@@ -2543,8 +2591,8 @@ class InputControlBlock:
                     0,
                     len(localBCAssembly[:, :, 0]),
                 ]
-            if rank == 0:
-                print("Initial calculation")
+            # if rank == 0:
+            #     print("Initial calculation")
             # Lets update our initial solution with constraints
             if constraints is not None and len(constraints) > 0:
 
@@ -2777,8 +2825,8 @@ class InputControlBlock:
         if len(self.controlPointData) == 0 or np.sum(np.abs(self.controlPointData)) < 1e-14:
             newSolve = True
 
-        if rank == 0:
-            print("Subdomain -- ", cp.gid() + 1)
+        # if rank == 0:
+        #     print("Subdomain -- ", cp.gid() + 1)
 
         # Let do the recursive iterations
         # Use the previous MAK solver solution as initial guess; Could do something clever later
@@ -2970,7 +3018,6 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                     # solution = np.fromfile(inputFilename, offset = , dtype=DataType).reshape(
                     #     np.array([nPoints[0], nPoints[1], nPoints[2], Ncomponents], dtype=np.intc)
                     # )
-                    # print("sollocal shape: ", sollocal.shape)
                 else:
                     sollocal = solution[
                         minb[0] : maxb[0] + 1, minb[1] : maxb[1] + 1, minb[2] : maxb[2] + 1
@@ -3006,7 +3053,7 @@ def add_input_control_block2(gid, core, bounds, domain, link):
                 sollocal = sollocal.reshape((len(sollocal), 1))
 
     pio_time = timeit.default_timer() - pio_time
-    if not coordinate_order == range(dimension):
+    if not np.array_equal(coordinate_order, ref_order[:dimension]):
         # reshape array by swapping axes
         if dimension == 3:
             np.swapaxes(sollocal, 0, 2)
@@ -3146,9 +3193,9 @@ if showplot:
         else:
             globalExtentDict = flattenListDict(globalExtentDict)
         # print("Global extents consolidated  = ", globalExtentDict)
-    print("Global extent: ", globalExtentDict)
+    # print("Global extent: ", globalExtentDict)
 
-del coordinates
+# del coordinates
 if not closedFormFunctional:
     del solution
 
@@ -3245,7 +3292,7 @@ for iterIdx in range(nASMIterations):
             figHnd = plt.figure()
             figErrHnd = None
             # figErrHnd = plt.figure()
-            # plt.plot(coordinates["x"], solution, 'b-', ms=5, label='Input')
+            # plt.plot(coordinates["x"], solution(coordinates["x"]), 'b-', ms=5, label='Input')
 
             masterControl.foreach(
                 lambda icb, cp: InputControlBlock.set_fig_handles(

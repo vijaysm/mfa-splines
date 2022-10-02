@@ -4,14 +4,18 @@ import splipy as sp
 import timeit
 from scipy.interpolate import BSpline
 
-import scipy.sparse.linalg as sla
-from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import splu
+from scipy.optimize import minimize
+import scipy.linalg as la
+# import scipy.sparse.linalg as sla
+# from scipy.sparse import csc_matrix
+# from scipy.sparse.linalg import splu
 
 # from scipy.sparse.linalg import cg, SuperLU
 
 from numba import jit, vectorize
 
+from autograd import elementwise_grad as egrad
+import autograd.numpy as autonp
 
 class ProblemSolver2D:
     def __init__(
@@ -84,13 +88,16 @@ class ProblemSolver2D:
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
         # print("TV = ", self.inputCB.knotsAdaptive['y'], self.inputCB.UVW['y'][0], self.inputCB.UVW['y'][-1], self.inputCB.basisFunction['y'].greville())
         for dir in ["x", "y"]:
-            if not self.sparseOperators:
+            if True or not self.sparseOperators:
                 basisFunction[dir] = sp.BSplineBasis(
                     order=self.degree + 1, knots=knotsAdaptive[dir]
                 )
-                NUVW[dir] = csc_matrix(
-                    basisFunction[dir].evaluate(UVW[dir], sparse=False)
-                )
+                if self.sparseOperators:
+                    NUVW[dir] = csc_matrix(
+                        basisFunction[dir].evaluate(UVW[dir], sparse=self.sparseOperators)
+                    )
+                else:
+                    NUVW[dir] = basisFunction[dir].evaluate(UVW[dir], sparse=self.sparseOperators)
             else:
                 if dir == "x":
                     bspl = BSpline(
@@ -148,20 +155,20 @@ class ProblemSolver2D:
             X = sla.cho_solve(
                 sla.cho_factor(
                     np.matmul(
-                        self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"]
+                        decodeOpXYZ["x"].T, decodeOpXYZ["x"]
                     )
                 ),
-                self.inputCB.decodeOpXYZ["x"].T,
+                decodeOpXYZ["x"].T,
             )
             Y = sla.cho_solve(
                 sla.cho_factor(
                     np.matmul(
-                        self.inputCB.decodeOpXYZ["y"].T, self.inputCB.decodeOpXYZ["y"]
+                        decodeOpXYZ["y"].T, decodeOpXYZ["y"]
                     )
                 ),
-                self.inputCB.decodeOpXYZ["y"].T,
+                decodeOpXYZ["y"].T,
             )
-            zY = np.matmul(self.inputCB.refSolutionLocal, Y.T)
+            zY = np.matmul(refSolutionLocal, Y.T)
             return np.matmul(X, zY)
         else:
 
@@ -170,24 +177,82 @@ class ProblemSolver2D:
             #         decodeOpXYZ["x"].T, decodeOpXYZ["x"]
             #     )
             # )
-            NTNyInv = sla.inv(decodeOpXYZ["y"].T @ decodeOpXYZ["y"])
+            # print ('Shapes:', decodeOpXYZ["x"].T.shape, refSolutionLocal.shape, decodeOpXYZ["y"].shape)
+            if self.sparseOperators:
+                NTNyInv = sla.inv(decodeOpXYZ["y"].T @ decodeOpXYZ["y"])
+            else:
+                NTNyInv = la.inv(decodeOpXYZ["y"].T @ decodeOpXYZ["y"])
             # XX = np.matmul(
             #         decodeOpXYZ["y"].T, decodeOpXYZ["y"]
             #     )
-            print ('Shapes:', decodeOpXYZ["x"].T.shape, refSolutionLocal.shape, decodeOpXYZ["y"].shape)
+            print("Shapes: ", decodeOpXYZ["x"].T.shape, refSolutionLocal.shape, decodeOpXYZ["y"].shape)
             NxTQNy = decodeOpXYZ["x"].T @ refSolutionLocal @ decodeOpXYZ["y"]
             # referenceLSQ = np.matmul(NTNxInv, np.matmul(NxTQNy, NTNyInv))
 
+
+            nshape = self.inputCB.NUVW['x'].shape[1] * self.inputCB.NUVW['y'].shape[1]
             Aoper = decodeOpXYZ["x"].T @ decodeOpXYZ["x"]
             Brhs = NxTQNy @ NTNyInv
 
-            # t = time.time()
-            # res = spsolve(Aoper, Brhs)
-            # print("Time to compute res with direct solve: ", time.time() - t)
+            # print("Nshape, ", nshape, self.inputCB.NUVW['x'].shape[1], self.inputCB.NUVW['y'].shape[1])
 
-            # t = time.time()
-            lu = splu(Aoper)
-            res = lu.solve(Brhs)
+            def residual(Pin):
+
+                # Residuals are in the decoded space - so direct way to constrain the boundary data
+                residual_decoded = (self.decode(Pin.reshape(self.inputCB.NUVW['x'].shape[1], self.inputCB.NUVW['y'].shape[1]), decodeOpXYZ) - refSolutionLocal).reshape(-1)
+                decoded_residual_norm = autonp.sqrt(
+                    autonp.sum(residual_decoded**2) / len(residual_decoded)
+                )
+                # print("2D LSQ Residual = ", decoded_residual_norm)
+                return decoded_residual_norm
+
+            useBFGS = True
+
+            if useBFGS:
+
+                # t = time.time()
+                if self.sparseOperators:
+                    lu = splu(Aoper)
+                    initSol = lu.solve(Brhs)
+                else:
+                    # lu = la.lu(Aoper)
+                    # res = lu.solve(Brhs)
+                    initSol = la.solve(Aoper, Brhs)
+
+                controlPointData = np.ones(nshape)
+                bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
+                result = minimize(
+                        residual,
+                        # x0=controlPointData,
+                        x0=initSol,
+                        method='L-BFGS-B',  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        bounds=bnds,
+                        jac=egrad(residual),
+                        # callback=print_iterate,
+                        tol=1e-14,
+                        options={
+                            "disp": False,
+                            "ftol": 1e-10,
+                            "gtol": 1e-14,
+                            "maxiter": 1000,
+                        },
+                    )
+                print("[%d] : %s with the final residual = %g" % (self.inputCB.gid, result.message, residual(result.x)))
+                res = result.x.reshape(self.inputCB.NUVW['x'].shape[1], self.inputCB.NUVW['y'].shape[1])
+            else:
+                # t = time.time()
+                # res = spsolve(Aoper, Brhs)
+                # print("Time to compute res with direct solve: ", time.time() - t)
+
+                # t = time.time()
+                if self.sparseOperators:
+                    lu = splu(Aoper)
+                    res = lu.solve(Brhs)
+                else:
+                    # lu = la.lu(Aoper)
+                    # res = lu.solve(Brhs)
+                    res = la.solve(Aoper, Brhs)
+
             # print("Time to compute res with iterative solve: ", time.time() - t, np.amax(res-res1))
 
             # res = sla.solve(np.matmul(decodeOpXYZ["x"].T, decodeOpXYZ["x"]),

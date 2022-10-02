@@ -51,7 +51,7 @@ class ProblemSolver1D:
         )
         print(
             "Number of basis functions = ",
-            self.inputCB.basisFunction["x"].num_functions(),
+            self.inputCB.basisFunction["x"].num_functions(), self.inputCB.knotsAdaptive["x"]
         )
         # print("TU = ", self.inputCB.knotsAdaptive['x'], self.inputCB.UVW['x'][0], self.inputCB.UVW['x'][-1], self.inputCB.basisFunction['x'].greville())
 

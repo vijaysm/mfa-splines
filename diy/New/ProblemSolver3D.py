@@ -1,9 +1,11 @@
 # import autograd.numpy as np
 import numpy as np
+import scipy as sc
 import splipy as sp
 import timeit
 from scipy.interpolate import BSpline
 
+from scipy.optimize import minimize, least_squares, shgo
 import scipy.sparse.linalg as sla
 from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import splu
@@ -12,6 +14,9 @@ from scipy.sparse.linalg import cg, SuperLU
 from opt_einsum import contract, contract_path
 
 from numba import jit, vectorize
+
+from autograd import elementwise_grad as egrad
+import autograd.numpy as autonp
 
 
 class ProblemSolver3D:
@@ -139,7 +144,7 @@ class ProblemSolver3D:
         return DD
         # return np.matmul(RN['z'], np.matmul(np.matmul(RN['x'], P), RN['y'].T))
 
-    def lsqFit(self):
+    def lsqFit_internal(self):
 
         NTNxInv = np.linalg.inv(
             np.matmul(self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"])
@@ -212,6 +217,70 @@ class ProblemSolver3D:
         # sol = linalg.lstsq(Oper, RHS)[0]
 
         return sol
+
+    def lsqFit(self):
+        initSol = self.lsqFit_internal()
+
+        useBFGS = False
+
+        if useBFGS:
+
+            nshape = self.inputCB.NUVW['x'].shape[1] * self.inputCB.NUVW['y'].shape[1] * self.inputCB.NUVW['z'].shape[1]
+            controlPointData = np.ones(nshape)
+            bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
+            # bnds = np.tensordot(np.ones(initSol.shape), [0, 1000], axes=0)
+
+            def residual(Pin):
+
+                # Residuals are in the decoded space - so direct way to constrain the boundary data
+                residual_decoded = (self.decode(Pin.reshape(initSol.shape), self.inputCB.decodeOpXYZ) - self.inputCB.refSolutionLocal).reshape(-1)
+                decoded_residual_norm = autonp.sqrt(
+                    autonp.sum(residual_decoded**2) / len(residual_decoded)
+                )
+                print("3D LSQ Residual = ", decoded_residual_norm)
+                return decoded_residual_norm
+
+            result = minimize(
+                    residual,
+                    # x0=controlPointData,
+                    x0=initSol.reshape(-1),
+                    # x0=np.ones(initSol.shape).reshape(-1),
+                    method='L-BFGS-B',  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                    bounds=bnds,
+                    jac=egrad(residual),
+                    # jac="2-point",
+                    # callback=print_iterate,
+                    tol=1e-14,
+                    options={
+                        "disp": False,
+                        "ftol": 1e-10,
+                        "gtol": 1e-14,
+                        "maxiter": 10,
+                        "maxfev": 100,
+                        'adaptive': True
+                    },
+                )
+            # result = least_squares(
+            #         residual,
+            #         # x0=controlPointData,
+            #         x0=np.ones(initSol.shape).reshape(-1),
+            #         f_scale=0.1,
+            #         method='dogbox',  # ‘trf’, ‘dogbox’, ‘lm’
+            #         loss='cauchy',
+            #         max_nfev=100,
+            #         bounds=[0,1000],
+            #         jac='2-point',
+            #         # callback=print_iterate,
+            #     )
+            print("[%d] : %s with the final residual = %g" % (self.inputCB.gid, result.message, residual(result.x)))
+            res = result.x.reshape(initSol.shape)
+            print(self.inputCB.gid, " : sol shape", res.shape)
+
+            return res
+
+        else:
+
+            return initSol
 
     def update_bounds(self):
         return [
