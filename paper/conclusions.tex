@@ -1,0 +1,45 @@
+\section{Summary}
+\label{sec:conclusions}
+
+%\comment{Future work: extensions to fully adaptive calculations with castelejau knot insertion techniques to match constraints across boundaries, and extensions to \dimension{3}, potential use of hierarchical NURBS bases to accelerate error and parallel solver convergence \cite{schillinger2013}; unstructured datasets and domains}
+
+We have presented a scalable DD approach to tackle the issue of discontinuous B-spline based MFA representations when performing the computations in parallel. The Restricted Additive Schwarz (RAS) method is a natural algorithmic fit for data analysis problems to create efficient MFA solutions in parallel. Through the use of Schwarz-based iterative schemes, combined with constrained local subdomain solvers, the two-level iterative technique has been shown to be robust in converging to the compressed functional representation of the given data, without sacrificing the approximation accuracy measured on a single subdomain of equivalent control point resolution. Replacing B-spline bases with NURBS bases ($W \ne 1$) only requires imposing the constraints on the $\vec{P}_i W_i$ data instead of $\vec{P}_i$ alone, which is naturally accomplished with minor modifications in \algo{alg:pseudocode}. This can also be combined with aposteriori error measures \cite{nashed-rational} to adaptively resolve solution variations while ensuring higher-order continuity across subdomain boundaries with appropriate knot insertion, removal and communication of shared DoFs in $\Delta \cup \delta$ regions. Another natural way to ensure continuity across adaptively resolved NURBS or B-spline patches would be to use T-splines \cite{sederberg-2004}, which are specifically designed for merging higher-dimensional surfaces with non-matching knot locations. All presented ideas should extend for T-splines instead of B-splines as well with modifications to $\mathcal{C}$  in \eqt{eq:global-constrained-problem}.
+
+We have demonstrated that the use of overlap layers $\delta$ can certainly improve the overall MFA accuracy, with a slightly larger one-time setup cost that gets amortized in the overall computation time. We determined that for all the problems tested, including real datasets, $\left| \delta \right|=p$ to $\left| \delta \right|=2p$ is optimal in terms of error recovery and computational cost even for \dimension{3} problems up to 32,768 tasks.
+%
+%\comment{mention that there are natural extensions to adaptive error resolution with knot insertion and deletion \cite{nashed-rational} and NURBS computation instead of B-splines that are left for future work}
+%
+%Additionally, the strong scalability of the algorithm was demonstrated for a large \dimension{3} combustion dataset with 209M data points. 
+The iterative scheme shows good parallel performance for both \dimension{2} and \dimension{3} problems tested, and the parallel efficiency degrades only when the cost of nearest neighbor subdomain data exchanges start to creep up beyond the cost of the local constrained subdomain solve. Given that scaling characteristics of these processes are well understood in the literature, the parallel speedups behave predictably well at scale on large computing machines tested.
+%due to the lack of local computation work in comparison with the latency and communication costs associated with the nearest-neighbor exchanges of constraint data. 
+
+
+The \texttt{PyDIY} based Python implementations for 1-, 2- and 3-dimensional problems have been shown to resolve large, complex solution profiles with strong gradient variations, even under decreasing subdomain sizes. Depending on the needs for visualization or in-situ analysis, choices on clamped or floating knots can be made with no modifications to the implementation. This scheme can also be used to achieve scalable high-order solution field transfers between component models, a process more generally referred to as {\em remapping} \cite{dukowicz1987accurate}, by imposing constraints on the subdomain solvers to satisfy various metrics of interest \cite{mahadevan2022} such as global conservation and monotonicity. The exploration of parallel MFA for such applications will be pursued in the future.
+
+
+%The presented RAS-based solver approach can be easily extended to this adaptive case to impose constraints across subdomain patch boundaries, while local constraints within each block 
+%%to satisfy hanging node DoFs 
+%can be imposed with appropriate T-spline basis modifications.
+
+%Within this infrastructure, we can also utilize a multilevel MFA representation that hierarchically refines the approximation at each level \cite{schillinger2013} by decreasing the number of subdomains used, similar to ideas in standard multilevel methods \cite{brandt1977}. Such computations involving multilevel MFA such as the ones using hierarchical B-splines \cite{bornemann2013} can significantly reduce the computational cost of the local subdomain solvers, which dominate the total computational time. With appropriate choices of prolongation and restriction operators, the iterative scheme can be used with a multilevel subdomain solver to efficiently produce accurate and compact functional approximation of given data, especially in higher dimensions.
+
+%\comment{Another application is as a smoother for datasets with inherent noise; can reference arxiv preprint by David}
+
+%\comment{talk about application to remapping in multiphysics problems and how we can create conservative maps with appropriate constraints imposed on integrals over the domain etc}
+
+%The methodology and experiments presented in the paper are implemented primarily in Python. 
+%The current Pythonic interface, PyDIY is only a barebones interface. 
+%These algorithms will be ported to the more production-ready C++ MFA codebase \cite{mfa-codebase} in the future. The new implementations will directly make use to the DIY C++ library, and all its features for data decomposition along with fast local subdomain solvers without overheads typically associated with Python codes. We expect that the RAS hierarchical solver implementation in C++ will allow for scalable and efficient application of NURBS-based MFA to much larger problems, without losing solution continuity or approximation accuracy.
+%and hence, a better estimate of the overall performance of both the RAS iterative scheme and the subdomain solvers without the overheads of dependent solvers in Python will provide 
+
+%{\color{red} 
+	%	it would also be interesting to use multilevel techniques to create a hierarchical MFA representation and use ASM to accelerate finer solves using coarser control point data. Need to explore this idea further but can propose it here as future exploration topic
+	%}
+
+%\begin{itemize}
+%	\item What did we implement to enhance speedup of the MFA framework and did we preserve accuracy of the underlying method ?
+%	\item Did we speedup the actual computation by performing DD with ASM global iterations for some of the problem data ?
+%	\item Does the method scale as a function of domains and problem size ? 
+%	\item What advantages does it provide for fix-up schemes that can be used in a post-processing step (ref Iulian's blending idea) ?
+%	\item Future extensions to T-splines and local adaptivity and potential complications involved
+%\end{itemize}

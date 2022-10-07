@@ -1,0 +1,18 @@
+% REQUIRED
+\begin{abstract} \small\baselineskip=5pt 
+	Compactly expressing large-scale datasets through Multivariate Functional Approximations (MFA) can be critically important for analysis and visualization to drive scientific discovery. Tackling such problems requires scalable data partitioning approaches to compute MFA representations in amenable wall clock times. We introduce a fully parallel scheme to reduce the total work per task in combination with an overlapping additive Schwarz-based iterative scheme to compute MFA with a tensor expansion of non-uniform B-spline (NURBS) bases while preserving full degree continuity across subdomain boundaries. While previous work on MFA has been successfully proven to be effective, the computational complexity of encoding large datasets on a single process can be severely prohibitive. Parallel algorithms for generating reconstructions from the MFA have had to rely on post-processing techniques to blend discontinuities across subdomain boundaries. In contrast, a robust constrained minimization infrastructure to impose higher-order continuity directly on the MFA representation is presented here. We demonstrate the effectiveness of the parallel approach with domain decomposition solvers, to minimize the subdomain error residuals of the decoded MFA, and more specifically to recover continuity across non-matching boundaries at scale. The analysis of the presented scheme for analytical and scientific datasets in 1-, 2- and 3-dimensions are presented. Extensive strong and weak scalability performances are also demonstrated for large-scale datasets to evaluate the parallel speedup of the MPI-based algorithm implementation on leadership computing machines.
+\end{abstract}
+
+
+% REQUIRED
+\begin{keywords}
+	functional approximation, domain decomposition, scalable methods, B-spline solvers, additive Schwarz
+\end{keywords}
+
+% REQUIRED
+\begin{MSCcodes}
+	65D05, 65D15, 65Y05
+\end{MSCcodes}
+
+% Novelty of the submission:
+% The submitted manuscript presents a scalable domain decomposed approach to compute Mutivariate Functional Approximations (MFA) using B-spline bases for large datasets. When accelerating the computation using data partitioning strategies, in general we only produce piecewise continuous approximations that depend on the number of subdomains.  Instead, with a variant of an overlapping additive Schwarz iterative scheme, we present a scalable approach that recovers high-order continuity across subdomains with bounded complexity at scale. While there has been work done for Radial Basis Functions in similar contexts, the scheme presented in the manuscript with floating knot spans performs well for growing subdomains and is dominated only by the cost for nearest-neighbor communications in the strong scaling limit.

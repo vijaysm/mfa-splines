@@ -1,0 +1,157 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%  ltexpprt_onecolumn.tex  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% This is ltexpprt_onecolumn.tex, an example file for use with the SIAM LaTeX2E
+% Preprint Series macros. It is designed to provide single-column output.
+% Please take the time to read the following comments, as they document
+% how to use these macros. This file can be composed and printed out for
+% use as sample output.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%\documentclass[twoside,leqno,twocolumn,lineno]{article}
+%\documentclass[twoside,leqno]{article}
+%\usepackage{ltexpprt}
+
+% SIAM Article Template
+\documentclass[review,hidelinks,onefignum,onetabnum]{siamart220329}
+%\documentclass[hidelinks,onefignum,onetabnum]{siamart220329}
+
+% Comment out the line below if using A4 paper size
+\usepackage[letterpaper]{geometry}
+
+% Packages and macros go here
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{eqnarray}
+\usepackage{xcolor}
+\usepackage{caption,subcaption,subfloat}
+%\usepackage[ruled,noline,linesnumbered,noend]{algorithm2e}
+\usepackage{graphicx,float}
+\usepackage[noend]{algpseudocode}
+
+\usepackage{epstopdf}
+%\usepackage{algorithmic}
+%\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+
+\ifpdf
+\DeclareGraphicsExtensions{.eps,.pdf,.png,.jpg}
+\else
+\DeclareGraphicsExtensions{.eps}
+\fi
+
+% Add a serial/Oxford comma by default.
+\newcommand{\creflastconjunction}{, and~}
+
+
+\newcommand{\eqt}[1]{Equation~(\ref{#1})}
+\newcommand{\fig}[1]{Fig.~(\ref{#1})}
+\newcommand{\sect}[1]{Section~(\ref{#1})}
+\newcommand{\algo}[1]{Algorithm~(\ref{#1})}
+\newcommand{\floor}[1]{\left \lfloor #1 \right \rfloor} 
+
+\usepackage{wrapfig}
+\usepackage{pgfplots}
+
+\newcommand{\comment}[1]{{\color{red}{#1}}}
+%\newcommand{\comment}[1]{{}}
+\newcommand{\todo}[1]{{\color{blue}{[\textbf{TODO:}\em{  }#1]}}}
+\newcommand{\psc}[1]{{\sc {#1}}}
+\newcommand{\tsf}[1]{\psc{\textsf{#1}}}
+\newcommand{\ttt}[1]{\texttt{#1}}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows}
+\usetikzlibrary{decorations.shapes}
+%\pgfplotsset{width=10cm,compat=1.9}
+\usetikzlibrary{arrows.meta}
+\usetikzlibrary{calc}
+
+\tikzset{
+	myarrow/.style={-{Triangle[length=3mm,width=1mm]}}
+}
+
+\usepackage[norndcorners,customcolors,nofill]{hf-tikz}
+\hfsetbordercolor{black!50}
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+%\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+%		T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+%\newcommand{\dimension}[1]{#1$\mathcal{D}$}
+\newcommand{\dimension}[1]{#1D}
+
+\begin{document}
+
+%
+\newcommand\relatedversion{}
+\renewcommand\relatedversion{\thanks{The full version of the paper can be accessed at \protect\url{https://arxiv.org/abs/1902.09310}}} % Replace URL with link to full paper or comment out this line
+
+%\setcounter{chapter}{2} % If you are doing your chapter as chapter one,
+%\setcounter{section}{3} % comment these two lines out.
+
+% Sets running headers as well as PDF title and authors
+\headers{Scalable Functional Approximations of Discrete Data}{V.S. Mahadevan, D. Lenz, I. Grindeanu and T. Peterka}
+
+\title{Parallel Domain Decomposition Techniques Applied to Multivariate Functional Approximation of Discrete Data
+%{\footnotesize \textsuperscript{*}Note: Sub-titles are not captured in Xplore and should not be used}
+\thanks{Submitted to editors \date{}.
+\funding{This work was funded by the Early Career Research Program, Department of Energy, USA under contract no.~DE-AC02-06CH11357.}}
+}
+
+\author{Vijay S. Mahadevan\thanks{Argonne National Laboratory, Lemont, IL (\email{mahadevan@anl.gov})} 
+\and
+David Lenz\thanks{Argonne National Laboratory, Lemont, IL (\email{dlenz@anl.gov})}
+\and
+Iulian Grindeanu\thanks{Argonne National Laboratory, Lemont, IL (\email{iulian@anl.gov})}
+\and
+Thomas Peterka\thanks{Argonne National Laboratory, Lemont, IL  (\email{tpeterka@mcs.anl.gov})}
+}
+
+
+\date{}
+
+
+\maketitle
+
+%\pagenumbering{arabic}
+%\setcounter{page}{1}%Leave this line commented out.
+
+\input{abstract}
+
+% \tableofcontents
+
+
+%% Introduction section
+\input{introduction}
+
+%% Related work section
+%\input{related-work}
+
+%% Approach section
+\input{approach}
+
+%% Results section
+\input{asm-results}
+
+%% Conclusions section
+\input{conclusions}
+
+%% acknowledgements section
+\input{acknowledgements}
+
+
+%\appendix
+%\section{An example appendix} 
+%\lipsum[71]
+%
+%\begin{lemma}
+%	Test Lemma.
+%\end{lemma}
+
+
+%\pagebreak
+\bibliographystyle{siamplain}
+\bibliography{asm-mfa}
+
+\input{glicense}
+
+\end{document}

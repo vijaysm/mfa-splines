@@ -12,7 +12,6 @@ from packaging import version
 import cProfile, pstats, io
 from pstats import SortKey
 
-# import numpy as np
 from functools import reduce
 
 import pandas as pd
@@ -356,7 +355,7 @@ if dimension == 1:
         # solution = lambda x: scale * (
         #     np.sinc(coordinates["x"] - 1) + np.sinc(coordinates["x"] + 1)
         # )
-        solution = lambda x: scale * (np.sinc(x+1) + np.sinc(x-1))
+        solution = lambda x: scale * (np.sinc(x + 1) + np.sinc(x - 1))
         # solution = lambda x: scale * (np.sinc(x+1) + np.sinc(2*x) + np.sinc(x-1))
         # solution = lambda x: scale * (np.sinc(x) + np.sinc(2 * x - 1) + np.sinc(3 * x + 1.5))
         # solution = lambda x: np.zeros(x.shape)
@@ -623,10 +622,10 @@ elif dimension == 2:
 
     elif problem == 6:
         # A grid of c-values
-        nPoints[0] = 6001
-        nPoints[1] = 6001
-        # nPoints[0] = 2501
-        # nPoints[1] = 2501
+        # nPoints[0] = 6001
+        # nPoints[1] = 6001
+        nPoints[0] = 1001
+        nPoints[1] = 1001
         scale = 1.0
         shiftX = 0.25
         shiftY = 0.5
@@ -636,30 +635,56 @@ elif dimension == 2:
         N_max = 255
         some_threshold = 50.0
 
-        @jit
+        # @jit
         def mandelbrot(c, maxiter):
+            # print("mandebrot: ", c.shape)
             z = c
             for n in range(maxiter):
                 if abs(z) > 2:
-                    return (n % 4 * 64) * 65536 + (n % 8 * 32) * 256 + (n % 16 * 16)
+                    return ((n % 4 * 64) * 65536 + (n % 8 * 32) * 256 + (n % 16 * 16)) / 1e5
                     # return n
                 z = z * z + c
             return 0
 
-        @jit
-        def mandelbrot_set(xmin, xmax, ymin, ymax, width, height, maxiter):
-            r1 = npo.linspace(xmin, xmax, width, dtype=npo.float)
-            r2 = npo.linspace(ymin, ymax, height, dtype=npo.float)
-            n3 = npo.empty((width, height))
-            for i in range(width):
-                for j in range(height):
-                    n3[i, j] = mandelbrot(r1[i] + 1j * r2[j], maxiter)
-            return (r1, r2, n3)
+        # @jit
+        def mandelbrot_set(r1, r2):
+            n3 = np.empty((r1.shape[0], r2.shape[0]))
+            for i in range(r1.shape[0]):
+                for j in range(r2.shape[0]):
+                    n3[i, j] = mandelbrot(r1[i] + 1j * r2[j], N_max)
+            return n3
 
-        coordinates["x"], coordinates["y"], solution = mandelbrot_set(
-            Dmin[0], Dmax[0], Dmin[1], Dmax[1], nPoints[0], nPoints[1], N_max
-        )
-        solution /= 1e4
+        coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0], dtype=np.float)
+        coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1], dtype=np.float)
+        # solution_vec = mandelbrot_set(coordinates["x"], coordinates["y"])
+        # solution_vec /= 1e4
+
+        def solution(x, y):
+            c = x + 1j * y
+            # print("mandebrot: ", c.shape)
+            # Initialize z to all zero
+            z = np.zeros(c.shape, dtype=np.complex128)
+
+            # To keep track on which points did not converge so far
+            m = np.full(c.shape, True, dtype=bool)
+            # To keep track in which iteration the point diverged
+            div_time = np.zeros(z.shape, dtype=int)
+
+            for n in range(N_max):
+                z[m] = z[m] ** 2 + c[m]
+                diverged = np.greater(
+                    np.abs(z), 2, out=np.full(c.shape, False), where=m
+                )  # Find diverging
+                # div_time[diverged] = n  # set the value of the diverged iteration number
+                div_time[diverged] = (
+                    (n % 4 * 64) * 65536 + (n % 8 * 32) * 256 + (n % 16 * 16)
+                ) / 1e5
+
+                m[np.abs(z) > 2] = False  # to remember which have diverged
+
+            return div_time
+            # return mandelbrot(x + 1j * y, N_max)
+            # return mandelbrot_set(x, y)
 
         # coordinates["x"] = np.linspace(Dmin[0], Dmax[0], nPoints[0])
         # coordinates["y"] = np.linspace(Dmin[1], Dmax[1], nPoints[1])
@@ -692,7 +717,8 @@ elif dimension == 2:
         # plt.imshow(solution, extent=[Dmin[0], Dmax[0], Dmin[1], Dmax[1]])
         # plt.show()
 
-        closedFormFunctional = False
+        inputFilename = ""
+        closedFormFunctional = True
         if nControlPointsInputIn == 0:
             nControlPointsInputIn = 50
 
@@ -747,7 +773,6 @@ elif dimension == 3:
             # return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
             return scale * (np.sinc(x) * np.sinc(y) * np.sinc(z))
 
-
         # Dmin = [0.0, 0.0, 0.0]
         # Dmax = [1.0, 1.0, 1.0]
 
@@ -759,7 +784,6 @@ elif dimension == 3:
         # def solution(x, y, z):
         #     # return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
         #     return scale * (np.sin(np.pi*x) * np.sin(np.pi*(y-0.25)) * np.tanh(10*(z-0.5)))
-
 
         # @vectorize(target="cpu")
         # def solution(x,y,z):
@@ -976,16 +1000,11 @@ if showplot and useVTKOutput:
                 if Ncomponents > 1:
                     solVis = magnitude(solution)
                 else:
-                    solVis = solution[:,:,0]
+                    solVis = solution[:, :, 0]
             else:
                 solution = np.fromfile(inputFilename, dtype=DataType).reshape(
                     np.array(
-                        [
-                            nPoints[0],
-                            nPoints[1],
-                            nPoints[2],
-                            Ncomponents
-                        ],
+                        [nPoints[0], nPoints[1], nPoints[2], Ncomponents],
                         dtype=np.intc,
                     )
                 )
@@ -993,14 +1012,14 @@ if showplot and useVTKOutput:
                 if Ncomponents > 1:
                     solVis = magnitude(solution)
                 else:
-                    solVis = solution[:,:,:,0]
+                    solVis = solution[:, :, :, 0]
             plot_solution(solVis)
             if augmentSpanSpace > 0:
                 solution = np.copy(solVis)
                 # print("Solution: ", solution.shape)
             del solVis
     else:
-        plot_solution(solution(coordinates['x']))
+        plot_solution(solution(coordinates["x"]))
 
 ### Print parameter details ###
 if rank == 0:
@@ -1451,7 +1470,7 @@ class InputControlBlock:
             )
             plt.ylabel("Solution")
             # plt.xlabel("X")
-            plt.legend(loc='upper left')
+            plt.legend(loc="upper left")
 
             # if cp.gid() == 0 and closedFormFunctional:
             #     plt.plot(coordinates["x"], solution(coordinates["x"]), 'b-', ms=5, label='Input')
@@ -2382,7 +2401,11 @@ class InputControlBlock:
             )
         elif dimension == 3:
             new_soldecshape = np.array(
-                [ uboundXYZ[0] - lboundXYZ[0], uboundXYZ[1] - lboundXYZ[1], uboundXYZ[2] - lboundXYZ[2] ],
+                [
+                    uboundXYZ[0] - lboundXYZ[0],
+                    uboundXYZ[1] - lboundXYZ[1],
+                    uboundXYZ[2] - lboundXYZ[2],
+                ],
                 dtype=int,
             )
 

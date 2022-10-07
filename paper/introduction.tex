@@ -1,0 +1,28 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Large-scale discrete data analysis of various scientific computational simulations often requires high-order continuous functional representations that have to be evaluated anywhere in the domain. Such expansions described as {\em Multivariate Functional Approximations} (MFA) \cite{de1983approximation, functional-analysis} in arbitrary dimensions allow the original discrete data to be compressed, and expressed in a compact form, in addition to supporting higher-order derivative queries (without further approximations such as finite differences) for complex data analysis tasks. MFA utilizes approximations of the raw discrete data using a hypervolume of piecewise continuous functions. One particular option is to use the variations of the B-Spline or NURBS bases \cite{nurbs-book, peterka-mfa} for the MFA {\em encoding} of scientific data. The reconstructed data in MFA retains the spatiotemporal contiguity, and statistical distributions, with lesser storage requirements. Due to the potentially large datasets that need to be encoded into MFA, the need for computationally efficient algorithms (in both time and memory) to parallelize the work is critically important. It is also essential to guarantee that the solution smoothness in the reconstructed (or {\em decoded}) dataset is consistently preserved when transitioning from a single MFA domain to multiple domains during parallelization.
+
+Achieving improved performance without sacrificing discretization accuracy requires an infrastructure that is consistent in the error metrics of the decoded data and an algorithm that remains efficient in the limit of large number of parallel tasks. In this paper, we will utilize domain decomposition (DD) techniques \cite{smith-ddm} with data partitioning strategies to produce scalable MFA computation algorithms tha minimizes the reconstruction error when reproducing a given dataset. In such partitioned analysis, it is imperative to ensure that the continuity of the encoded and decoded data across subdomain interfaces is maintained, and remain consistent with the degree of underlying expansion bases used in MFA \cite{peterka-mfa}.  This is due to the fact that independently computing MFA approximations in individual subdomains do not guarantee even $C^0$ regularity in either the MFA space or in the reconstructed data. 
+In order to tackle this issue, we rely on an iterative Schwarz-type DD scheme to ensure that continuity is enforced, and the overall error stays bounded as the number of subdomains are increased (or as the subdomain size decreases).
+
+In addition to remaining efficient, we also require the devised algorithms to extend naturally to arbitrary dimensional settings and to handle large datasets. We next discuss some of the related work in the literature that have been explored for reconstruction of scattered data, and approaches to make these algorithms scalable in order to motivate the ideas presented in the paper. %While considerable effort has been dedicated to reconstruct scattered data using other methods such as 
+
+%\comment{Provide more motivations on why parallel MFA is important. Large problem sizes, dimensions with full high-order continuity and evaluation (decode) anywhere in the domain; akin to a FEM approximation of discrete data but faster}
+
+%\Remark{mention that method not limited to G0, G1 or G2 but arbitrary order upto p-1, where p is degree of NURBS bases}
+
+%\begin{itemize}
+%	\item Talk about MFA and how it can be used to approximation discrete solution data. Reference previous work.
+%	\item Provide motivations on why this is necessary especially for large datasets
+%	\item Literature survey of other work for parallel interpolation and compression of data
+%	\item What are the other approaches to address this issue; pros and cons
+%\end{itemize}
+
+
+\subsection*{Literature Review}
+\input{related-work}
+
+\subsection*{Structure of the paper}
+
+The paper is organized as follows. \sect{sec:approach} presents the theory and necessary details about the subdomain solvers, and the DD approach used to converge the boundary continuities across MFA subdomains. Next, in \sect{sec:results}, the DD solver is applied to several \dimension{1}, \dimension{2} and \dimension{3} synthetic and real-world datasets to verify error convergence, and the parallel scalability of the iterative algorithm for decreasing subdomain sizes is demonstrated. Finally, key observations from the parallel MFA solver and future extensions to more complex cases with spatial adaptivity are presented in \sect{sec:conclusions}.%The parallel scalability of the scheme is presented for scientific use-cases to compute the MFA within user-specified tolerances.

@@ -220,7 +220,7 @@ class ProblemSolver2D:
                     initSol = la.solve(Aoper, Brhs)
 
                 controlPointData = np.ones(nshape)
-                bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
+                bnds = np.tensordot(np.ones(nshape), [0, 130], axes=0)
                 result = minimize(
                         residual,
                         # x0=controlPointData,

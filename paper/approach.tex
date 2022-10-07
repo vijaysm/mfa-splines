@@ -1,0 +1,610 @@
+
+\section{Approach}
+\label{sec:approach}
+
+With motivations to accelerate the computation of an accurate MFA representation scalably, we utilize a data decomposition approach with overlapping subdomains to create shared layers of piecewise accurate functional reconstructions. This is similar to a multipatch approach typically taken in IGA computations \cite{cottrell2009, petiga-dalcin-2016}.  However, in order to ensure that higher-order continuity across domain boundaries are preserved, an outer iteration loop is inevitable to converge the shared unknowns across the interfaces. These global iterations guarantee consistent MFA encodings in parallel, without which the representations will not even ensure $C^0$ regularity. 
+
+In this section, we first provide an illustrative example by formulating the constrained minimization problem to be solved in each subdomain and explain the iterative methodology used in the current work to converge the shared DoFs. We will also introduce the idea of using open vs closed knots, which are clamped or floating respectively at subdomain boundaries and discuss the advantages of using one approach over the other. %, but are rather shared by two adjacent blocks. 
+%Hence, by ensuring that these shared control point data converge to a uniform value, we can recover fully $C^p$ continuity in the final encoded MFA.
+
+
+%\begin{itemize}
+%	\item What are we proposing and why this can be a stable technique to recover high-order continuity in parallel ?
+%	\item Give context about DD methods and how ASM in this context makes sense 
+%	\item Refer to \cite{smith-ddm} and \cite{ddm-rbf} as well and write out the equations with \cite{nurbs-book} help
+%\end{itemize}
+
+\subsection{Numerical Background}
+\label{sec:background}
+
+A $p$-th degree NURBS or B-spline curve \cite{nurbs-book} is defined using the Cox-deBoor functions for each subdomain as
+
+\begin{eqnarray}
+	\vec{C}(u) &=& \sum_{i=0}^{n} R_{i,p}(u) \vec{P}(i), \quad \forall u \in \Omega \\
+	R_{i,p}(u) &=& \frac{N_{i,p}(u) W_i}{\sum_{i=0}^{n} N_{i,p}(u) W_i}
+	\label{eq:nurbs-basis}
+\end{eqnarray}
+
+where $R_{i,p}(u)$ are the piecewise rational functions with $\vec{P}$ control points of size $n$, $W_i$ are the control point weights, with the $p$-th degree B-spline bases $N_{i,p}(u)$ defined on a knot-vector $u$. Note that exact high-order derivatives of these NURBS basis defined in \eqt{eq:nurbs-basis} can also be evaluated without any approximation errors at the control point locations using the Cox-deBoor recurrence relations \cite{de1983approximation}. This property becomes especially important when performing analysis and in-situ visualization directly based on the NURBS representation of underlying data.
+
+Given a set of input points $\vec{Q}$ that need to be encoded into a MFA, with the weights $W=1$ (B-spline representations) for simplicity, the unconstrained minimization problem to compute the optimal set of control point locations within a subdomain can be posed as a solution to a linear Least-SQuares (LSQ) system that minimizes the net error of the B-spline approximation.
+
+\begin{eqnarray}
+	\argmin_{\vec{P} \in \mathbb{R}^n} {E} = \left\lVert \vec{Q} - R \vec{P} \right\rVert_{L_2}, \quad \quad R \in \mathbb{R}^{m \times n}, \vec{Q} \in \mathbb{R}^m
+	\label{eq:minimization-problem}
+\end{eqnarray}
+
+An appropriate LSQ solver such as the one based on Cholesky decomposition or the more efficient $\ell$-BFGS scheme \cite{zheng-bo-bspline-bfgs} can compute the control point solution $\vec{P}$ that minimizes the residual error $\vec{E}$ for the given input data $\vec{Q}$ and MFA representation of degree $p$. Note that the minimization procedure can be performed independently on each subdomain without dependencies as there are no constraints explicitly specified in \eqt{eq:minimization-problem}.
+%
+However, in order to recover high-order continuity across subdomain patches, computing unconstrained solutions is insufficient. At a minimum, the DoFs on the shared subdomain boundaries have to be converged to recover $C^0$ continuity for the decoded solution data ($R \vec{P}$).
+% Or in other words, ensuring continuity of $\vec{P_i}$ is a sufficient condition to recover 
+%
+
+
+More generally, the constrained minimization problem to recover continuity \cite{nurbs-book} can be formulated as 
+%
+\begin{equation}
+	R \vec{P} = \vec{Q} \mid \mathcal{C} \vec{P} = \vec{G}, \label{eq:global-constrained-problem}
+\end{equation}
+%
+where $\mathcal{C}$ is the constraint matrix imposing continuity restrictions on the control points $\vec{P}$ along with its derivatives, with data exchanged from neighboring domains stored in $\vec{G}$, around the neighborhood of the interface $\Omega_{i,j}$ shared by subdomains $i$ and $j$.
+With the use of penalized constraints ($\mathcal{C}$) and Lagrange multipliers \cite{dornisch2011, paul2020}, the solution to the constrained LSQ problem can recover optimal control point values. 
+
+A straightforward approach to achieve $C^0$ continuity in the recovered solution is by ensuring that the common control point data $\vec{P}$ at subdomain interfaces are clamped with repeated knots, in addition to using clamping at the global domain boundaries. In this scheme, the control points exactly interpolate (are clamped to) input data points at the subdomain interface boundaries. Such an approach requires in general a good spatial distribution of $\vec{Q}$, and yields only low-order continuous approximations ($C^0$) when the solution remains smooth across the subdomain interfaces. It should also be noted that as the number of subdomains increases, the global solution being computed becomes further constrained, and more interpolatory due to clamped DoFs. Moreover, the MFA solution computed becomes dependent on the number of subdomains used to decompose the problem; i.e., the global control point data $\vec{P}$ recovers different reconstructions as a function of number of subdomains ($\mathcal{N}$) used.
+
+%, with even constraints specified for the bounds of the reconstructed data. 
+
+While the numerics and implementation of the domain decomposed MFA can be much simpler with clamped knots on all subdomain boundaries, ensuring higher-order continuity would require that all $p-1$ derivatives of the approximation match as well. As a continuous extension, one could relax the interpolatory behavior of clamped knot boundaries by reducing the number of repeated knots, and instead use floating (or unclamped) knots at internal subdomain boundary interfaces by sharing knot spans between subdomains. This modification allows us to recover fully consistent ($C^0$ to $C^{p-1}$) continuous MFA reconstructions using the solution procedure detailed for the global constrained minimization problem \eqt{eq:global-constrained-problem}.
+%With clamping, having constraints $\mathcal{C}$ defined on control points and derivatives can also make the solver inefficient. In such cases, as the dimension of the problem increases, the global constrained minimization problem \eqt{eq:global-constrained-problem} can become ill-conditioned. 
+%While the implementation of the clamped subdomain interface approach is simpler, we extend the ideas using floating (partially clamped or fully unclamped) knots at internal subdomain boundary interfaces, in order to recover fully consistent ($C^0$ to $C^{p-1}$) continuous MFA reconstructions.
+
+%After investigating the merits and bottlenecks of the clamped subdomain interface approach for several synthetic \dimension{1} and 2D model problems, we concluded that the approach was not feasible to scalably compute MFA approximations of arbitrary order. 
+%Instead, we explore an alternative scheme using floating or unclamped knots at internal subdomain boundary interfaces, in order to recover fully consistent ($C^{p}$) continuous MFA reconstructions.
+
+%\begin{equation}
+%(N_i^T R_i) P_i = N_i^T Q_i, \forall i \in [1, \ldots \mathcal{N}]
+%\label{eq:LSQ-system}
+%\end{equation}
+
+%In the current work, we use the unconstrained LSQ solver using Cholesky decomposition as the method of choice to compute the control point DoFs, when adaptively resolving the features in the input data through knot insertion and removal \cite{li-adaptive-2005}. 
+%Once the local subdomain resolution is sufficiently within user-specified tolerance levels, the resulting global MFA representation is piecewise discontinuous at subdomain boundaries. 
+%The next step is then to apply global constrained solvers to minimize the continuity error in order to recover higher derivatives iteratively as needed.
+
+\subsection{Shared Knot Spans at Subdomain Interfaces}
+
+
+\begin{figure}[htbp]
+	\centering
+	\subfloat[Even degree $p=2$\label{fig:degree-2-1d}]{%
+		\includegraphics[width=0.47\textwidth]{figures/degree-2-1d}}
+	\hfill
+	\subfloat[Odd degree $p=3$\label{fig:degree-3-1d}]{%
+		\includegraphics[width=0.47\textwidth]{figures/degree-3-1d}}
+	\caption{Illustration: \dimension{1} parallel partitioned domain with floating (unclamped) interior knots and augmented spans ($\left| \delta \right|=2$)}
+	\label{fig:DD-subdomain-illustration}
+\end{figure}
+
+%\comment{Talk about open vs closed?? why is open important as we try to recover single subdomain solution information. Perhaps illustrate in 1-d ?}
+
+Instead of using clamped knots, we utilize floating (unclamped), shared knot spans near all interior subdomains such that the high-order continuity and consistency of the reconstructed solution with respect to $\mathcal{N}$ are preserved. 
+
+For the purpose of illustration and to explain the proposed solver methodology, let us consider a simple one dimensional domain ($\Omega$) with two subdomains ($\mathcal{N}=2$) as shown in \fig{fig:DD-subdomain-illustration}, where $\Omega_1$ and $\Omega_2$ represent the subdomains that share an interface $\partial \Omega_{1,2}$. In \fig{fig:DD-subdomain-illustration}, the layout of the knot spans for both an even degree ($p=2$) and odd degree ($p=3$) are shown. For generality, we also introduce here an overlap layer $\Delta_1$ and $\Delta_2$ on each subdomain that represents the set of shared knot spans with its adjacent subdomain (for internal boundaries), and an optional augmented layer $\delta_1$ and $\delta_2$ that has a connotation similar to that of an overlap region in traditional DD schemes \cite{smith-ddm}. Note that in order to reconstruct the input data in $\Omega_i, \forall i \in [1,2]$, the knot spans must mandatorily include $\Delta_i$ regions. This $\Delta_i$ overlap region is required by definition to maintain partition of unity of a B-spline curve in order to evaluate \eqt{eq:nurbs-basis}. For generality, $\Delta_i$ represents the repeated knots along clamped global domain boundaries, and the shared knots between two subdomains in the unclamped interior boundaries.
+%
+For arbitrary degree $p$, the number of knot spans in $\Delta_i$ is given by $\floor{\frac{p}{2}}$, where $\floor{.}$ represents the floor operator. In multidimensional tensor product expansions, these shared spans are replaced by shared layers of knot spans along the subdomain interfaces. The $\delta_i$ regions are additional, and optional, shared knot spans that can help improve error convergence in a manner similar to overlap regions in DD methods used for PDE solvers \cite{gander-rasm, smith-ddm}. 
+
+The control point DoF vector can be represented by three separate parts based on the local support of the basis expansion. The control point vector is in general given as $\vec{P} = [\vec{P}(\Omega); \vec{P}(\Delta); \vec{P}(\delta)]$. For the \dimension{1} scenario illustrated, this is shown below for $\mathcal{N}=2$, $p=3$ and $\left| \delta \right|=1$, where the operator $\left| \mathcal{D} \right|$ represents the number of knot spans in any underlying domain $\mathcal{D}$. 
+\vspace*{-1mm}
+\begin{equation}
+	%\tikzset{left offset=-0.1,right offset=0.02,disable rounded corners=true}
+	\tikzset{offset def/.style={
+			above left offset={-0.1,0.8},
+			below right offset={0.1,-0.65},
+		}
+	}
+	\hfsetfillcolor{red!10}
+	\hfsetbordercolor{red}
+	%\begin{array}{@{} *{2}{ c @{} >{{}}c<{{}} @{} } c @{}}
+	%16\cdot \tikzmarkin{A}I_1  & + & 11\cdot \tikzmarkin{B}I_2  & = & \tikzmarkin{C}13\\[1ex]
+	%11\cdot I_1\tikzmarkend{A} & + & 16\cdot I_2\tikzmarkend{B} & = & 17\tikzmarkend{C}
+	%\end{array}
+	\vec{P}_1 =
+	\left[
+	\begin{array}{c}
+		\tikzmarkin{A}(1,-0.2)(-0.1,0.3) P_1(1)   \\
+		P_1 (2) \\
+		\vdots   \\
+		\tikzmarkend{A} P_1 (m) \\
+		$\quad$ \vspace*{-2mm} \\
+		\tikzmarkin{B}(0.1,-0.2)(-0.1,0.3) P_2(1) \tikzmarkend{B} \\
+		$\quad$ \vspace*{-2mm} \\
+		\tikzmarkin{Bp}(0.1,-0.2)(-0.1,0.3) P_2(2) \tikzmarkend{Bp} \\
+		%		0 \\
+		%		\vdots \\
+		%		\tikzmarkend{B} 0
+	\end{array}
+	\right]
+	, \quad \quad
+	\hfsetfillcolor{blue!10}
+	\hfsetbordercolor{blue}
+	\vec{P}_2 =
+	\left[
+	\begin{array}{c}
+		\tikzmarkin{D}(0.1,-0.2)(-0.1,0.3) P_2(1)   \\
+		P_2 (2) \\
+		\vdots   \\
+		P_2 (n) \tikzmarkend{D} \\
+		$\quad$ \vspace*{-2mm} \\
+		\tikzmarkin{Cp}(0.1,-0.2)(-0.1,0.3) P_1(m) \tikzmarkend{Cp} \\
+		$\quad$ \vspace*{-2mm} \\
+		\tikzmarkin{C}(0.1,-0.2)(-0.1,0.3) P_1(m-1) \tikzmarkend{C} \\
+		%		0 \\
+		%		\vdots \\
+		%		\tikzmarkend{D} 0
+	\end{array}
+	\right]
+	\label{eqn:vecp-layout}
+\end{equation}
+%
+
+\begin{tikzpicture}[remember picture,overlay]
+	\pgfsetarrowsend{latex} 
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (A-aa) at ($(A)+(-0.8,-0.7)$);
+	\node[align=left,left] at (A-aa) {\footnotesize{$\vec{P}_1(\Omega_1)$}};
+	\path[>=stealth,red,draw] (A-aa) -- ($(A)+(0.1,-0.7)$);
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (B-aa) at ($(B)+(-0.8,-0.2)$);
+	\node[align=left,left] at (B-aa) {\footnotesize{$\vec{P}_1(\Delta_1)$}};
+	\path[>=stealth,blue,draw] (B-aa) -- ($(B)+(0.1,-0.2)$);
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (Bp-aa) at ($(Bp)+(-0.8,-0.2)$);
+	\node[align=left,left] at (Bp-aa) {\footnotesize{$\vec{P}_1(\delta_1)$}};
+	\path[>=stealth,blue,draw] (Bp-aa) -- ($(Bp)+(0.1,-0.2)$);
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (D-aa) at ($(D)+(2.5,-1.0)$);
+	\node[align=right,right] at (D-aa) {\footnotesize{$\vec{P}_2(\Omega_2)$}};
+	\path[>=stealth,blue,draw] (D-aa) -- ($(D)+(0.9,-1.0)$);
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (Cp-aa) at ($(Cp)+(2.5,-0.3)$);
+	\node[align=right,right] at (Cp-aa) {\footnotesize{$\vec{P}_2(\Delta_2)$}};
+	\path[>=stealth,red,draw] (Cp-aa) -- ($(Cp)+(1.0,-0.3)$);
+	%
+	% adjust the shift from "col" to move the position of the annotation
+	\coordinate (C-aa) at ($(C)+(2.8,-0.3)$);
+	\node[align=right,right] at (C-aa) {\footnotesize{$\vec{P}_2(\delta_2)$}};
+	\path[>=stealth,red,draw] (C-aa) -- ($(C)+(1.6,-0.3)$);
+	%
+\end{tikzpicture}
+
+
+where $m, n$ are the number of control points in $\Omega_1$ and $\Omega_2$ respectively. Note that higher degree expansions (for e.g., $p>3$) will require more support points in $\Delta$ from adjacent subdomains in order to decode the MFA up to $\partial \Omega_{1,2}$. This implies that $P_i(\Delta_i)$ in addition to the optional $P_i(\delta_i)$ vectors directly provide a measure of the required cost of communication with adjacent subdomains.
+
+Now, the constrained minimization problem for the two subdomain case can be written as
+%
+\begin{equation}
+	% A(X) X = F, \quad X = \left[P1 ; P2 \right]
+	\left[
+	\begin{array}{c|c}
+		R_{1}(\Omega_1) & \lambda_{1,2}(\Delta_1 \cup \delta_1) \\
+		\hline
+		\lambda_{2,1}(\Delta_2 \cup \delta_2) & R_{2}(\Omega_2)
+	\end{array}
+	\right]
+	\left[
+	\begin{array}{c}
+		\vec{P}_{1} \\
+		\vec{P}_{2}
+	\end{array}
+	\right]
+	=
+	\left[
+	\begin{array}{c}
+		\vec{Q}_{1} \\
+		\vec{Q}_{2}
+	\end{array}
+	\right]
+	\label{eq:global-system}
+\end{equation}
+
+%where
+%\begin{eqnarray}
+%A(X) &=&
+%\left[
+%\begin{array}{c|c}
+%A_{1,1}(P_1) & A_{1,2}(P_1,P_2^*) \\
+%\hline
+%A_{2,1}(P_1^*,P_2) & A_{2,2}(P_1)
+%\end{array}
+%\right]
+%\left[
+%\begin{array}{c}
+%P_{1} \\
+%P_{2}
+%\end{array}
+%\right]
+%, \\ 
+%&\quad& \nonumber \\
+%F &=& \left[
+%\begin{array}{c}
+%N_1^T Q_{1} \\
+%N_2^T Q_{2}
+%\end{array}
+%\right]
+%\label{eq:coupled-operator}
+%\end{eqnarray}
+
+where the diagonal operators $R_{1}$ and $R_{2}$ are the piecewise rational functions that minimize the local subdomain residuals in $\Omega_j, \forall j \in [1,2]$, while the off-diagonal blocks $\lambda_{1,2}$ and $\lambda_{2,1}$ represent the coupling terms between the subdomains near the interface $\partial \Omega_{1,2}$. This coupling term provides the constraints on the shared control point data, and higher-order derivatives as needed to recover smoothness and enforce continuity along subdomain boundaries. For higher dimensional problems, the constraints on the control points must include both face neighbor and diagonal neighbor contributions to accurately determine the globally consistent minimization problem. 
+
+The coupling blocks $\lambda_{i,j}$ can be viewed as Lagrange multipliers that explicitly couple the control point DoFs across a subdomain interface ($\vec{P}_{1} \cap \vec{P}_{2}$) such that continuity is preserved in a weak sense \cite{nurbs-book}. Using appropriate Schur complements to eliminate the coupled DoF contributions in each subdomain, with $\lambda_{i,j}$ evaluated at \textit{lagged} iterates of adjacent subdomains, the set of coupled constrained equations in \eqt{eq:global-system} can be completely decoupled for each subdomain. This modified system resembles a block-Jacobi operator of the global system. The scheme illustrated in this section follows ideas similar to the Jacobi-Schwarz method \cite{gander-rasm} and the overlapping,  restricted-Additive-Schwarz (RAS) scheme \cite{orasm-as-ms-2007}.
+%We apply the RAS scheme to tackle this system of global equations shown in \eqt{eq:global-system}, where the coupled terms $\lambda_{i,j}$ utilize \textit{lagged} control point data from adjacent subdomains. 
+%In the current paper, we instead use the Schur complement of \eqt{eq:coupled-operator} to eliminate the coupling terms by evaluating it at the lagged iterate values, in order to impose constraints in each subdomain independently. 
+
+
+
+In the above description, the coupled data chunks, $\vec{P}_1(\Delta_1)$ and $\vec{P}_2(\Delta_2)$ belonging to adjacent subdomains near $\partial \Omega_{1,2}$ are exchanged simultaneously before the local domain solves are computed. %Since the exchanged constraint data is lagged at the previous iterate, the convergence rate in comparison to the more expensive multiplicative Schwarz variants \cite{smith-ddm} is slower.
+One key advantage with such a DD scheme is that only nearest neighbor exchange of data is required, which keeps communication costs bounded as the number of subdomains $\mathcal{N}$ increase \cite{orasm-as-ms-2007, gander-rasm}, while providing opportunities to interlace recomputation of the constrained control point solution. Note that in a RAS iterative scheme, nearest neighbor exchanges can be performed compactly per dimension and direction, thereby minimizing communication costs and eliminating expensive global collectives.
+
+
+\subsubsection*{Augmenting Knot Spans with Overlap}
+
+%\subsubsection*{Constraints on Decoded Data}
+%
+%Instead of imposing the constraints in the control point space, alternatively, we can utilize the expansion of the MFA in input point space directly to minimize the decoded residual $E= Q - R \vec{P}$. The constraints in each subdomain then are essentially the jump terms between the decoded data on $\Omega_i$ and $\Omega_j$ shared at the interface $\partial \Omega_{i,j}$.
+%
+%There are some advantages to this approach compared with imposing the interface constraints in the control point space, even though the potential volume of data to be communicated between subdomains is generally much larger since it scales with size of $Q$. They are listed below.
+%
+%\begin{enumerate}
+%	\item Subdomain residuals and boundary constraints are both in the decoded space, and hence no explicit need for a residual projection (encoding) or penalty term in \eqt{eq:nonlinear-residuals},
+%	\item No explicit need for imposition of higher order derivative constraints, especially in the context of non-conforming adaptivity across subdomain interfaces, since the grid of input points is fixed,
+%	\item Natural extensions within the ASM iterative scheme to generate overlapping variants.
+%\end{enumerate}
+%
+%%Explain the iterative scheme in terms of the underlying equations and how the boundary terms are resolved through a global ASM method. First start with 1-D and talk about extensions in the scheme to allow arbitrary dimensional solver framework.
+%
+%When the solver is setup to use the error residuals in the actual decoded space, the natural data decomposition with overlap $\Delta$ can yield good improvements in both time and accuracy \cite{bjorstad-overlap-1989}. This follows the effectiveness of the overlapping additive-Schwarz preconditioning schemes in the context of linear algebra problems for PDEs \cite{smith-ddm} \cite{gander-rasm}. A demonstration of the improved efficiency and scalability in terms of iteration convergence is shown for a 1-D problem in the \sect{sec:results}. The growing message size for use in overlapping RAS method when solving higher dimensional problems is a concern, and it is a topic of ongoing research to find ways to minimize the communication overheads.
+%
+%%\begin{equation}
+%%(N_i^T M_i) P_i = N_i^T T_i, \forall i \in [1, \ldots \mathcal{N}]
+%%\label{eq:decoded-residuals}
+%%\end{equation}
+
+
+One of the key metrics of interest is that the parallel solver infrastructure does not amplify any approximation errors unresolved by the tensor product NURBS or B-spline mesh. Since the local decoupled subdomain solution is encoded accurately to satisfy \eqt{eq:minimization-problem} in each individual subdomain without any data communication (i.e., embarassingly parallel), imposing the constraints for the shared DoFs in $\Delta$ should ensure the error change is bounded. However, as the control point data across subdomains become synchronized, numerical artifacts, especially for high-degree ($p>2$) basis reconstructions at subdomain interfaces can become dominant sources of error. A key metric to consider in all experiments is to validate that the multiple subdomain case produces the same error profile as a single subdomain case, in order to ensure convergence of the solvers to the same unique solution, independent of $\mathcal{N}$. %Hence, for all comparison purposes in this paper, we will consider the single subdomain solution with equivalent spatial resolution (as compared to multi-subdomain problem) to be the original reference solution. %As the number of subdomains grow, the interface errors grow proportionally, thereby generally requiring larger number of outer iterations to converge. %At convergence, we expect the overall global error in the decoded solution to be similar to the single subdomain case.
+
+
+For many problem domains, overlapping variants of Schwarz solvers \cite{lions-asm, gander-rasm} have been proven to be more stable, efficient and scalable compared to nonoverlapping variants \cite{bjorstad-overlap-1989, orasm-as-ms-2007}. We utilize the concept of overlap regions by sharing additional knot spans between subdomains in order to produce better MFA reconstructions of the underlying data. This user-specified, additional overlap is described by $\delta_j, \forall j \in [1,2]$ in \fig{fig:DD-subdomain-illustration}. The amount of data overlap utilized for computing the functional approximation can directly affect the conditioning in the subdomain solver, and the scalability of the overall algorithm. Additionally, we expect the residual errors $\vec{E}$ from the approximation to remain bounded as the number of subdomain increase with appropriate overlap regions. %And the overall accuracy of the parallel algorithm cannot be worse than the single subdomain case.
+
+For better clarity, we will use overlap regions $\delta$, as illustrated in \fig{fig:2d-schematic} for a \dimension{2} problem with $p=3$ and $\mathcal{N}=4$, to increase the size of the local problem ($\Omega$), and to improve the accuracy of domain decomposed approximations. We note that the control point data $\vec{P}$ in both the $\Delta$ and $\delta$ overlap regions are shared and uniformly weighted (averaged) by $\vec{P}$ computed in the neighboring subdomains.
+
+Note that in the \dimension{2} schematic, shared data in $\delta$ regions are always exchanged between neighboring subdomains. The set of $\vec{P}(\delta)$ are explicitly used only to impose constraints that contribute to the reconstruction of datasets, and hence play a role in the approximation error of MFA. It is also important to note that when $\vec{P}$ DoFs are {\em multishared} between subdomains, then shared data between multiple $\Omega_j, \forall j \in [0,3]$ need to be exchanged in order to compute $\vec{P}_i(\delta_i), \forall i \in [0,3]$.
+
+
+%\comment{Talk about exchanging additional knot spans in addition to the required support required for unclamped interior subdomain solution}
+
+
+
+\begin{figure}[htbp]
+	\centering
+	\begin{tikzpicture}
+		\begin{scope}[xshift=1.5cm]
+			\node[anchor=south west,inner sep=0] (image) at (0,0) {\includegraphics[width=0.44\textwidth]{figures/2d-schematic-4subd.png}};
+			\begin{scope}[x={(image.south east)},y={(image.north west)}]
+				\draw[black,ultra thick,rounded corners] (0.49,0.0) rectangle (0.61,0.61);
+				\draw[black,ultra thick,rounded corners] (0.0,0.49) rectangle (0.61,0.61);
+				\draw[black,ultra thick,densely dashed,rounded corners] (0.59,0.0) rectangle (0.71,0.71);
+				\draw[black,ultra thick,densely dashed,rounded corners] (0.0,0.59) rectangle (0.71,0.71);
+				\draw[black,ultra thick,dotted,rounded corners] (0.0,0.0) rectangle (0.51,0.51);
+				
+				\draw[red,ultra thick,rounded corners] (0.29,0.29) rectangle (0.71,0.71);
+				\node[draw] at (-0.07, 0.25) {\large $\Omega_0$};
+				\node[draw] at (-0.07, 0.55) {\large $\Delta_0$};
+				\node[draw] at (-0.07, 0.66) {\large $\delta_0$};
+				\node[draw] at (0.55,-0.07) {\large $\Delta_0$};
+				\node[draw] at (0.66,-0.07) {\large $\delta_0$};
+				
+				%\draw [-latex, ultra thick, red] (note) to[out=0, in=-120] (0.48,0.80);
+				\draw [-stealth, line width=2pt, red] (0.71,0.5) -- (1.1,0.5);
+				\node[draw] at (1.35,0.5) {multishared region};
+			\end{scope}
+			%	\centering
+			%	\includegraphics[width=0.45\textwidth]{figures/2d-schematic-4subd.png}
+			
+		\end{scope}
+	\end{tikzpicture}%
+	\caption{\dimension{2} subdomains with $\mathcal{N}=4$, $p=3$ and the augmented overlap $\left| \delta \right|=1$ showing local subdomains $\Omega_i$, mandatory overlap for floating knots $\Delta_i$, optional overlap regions $\delta_i$, where $i \in [0,\mathcal{N}-1]$, and multishared DoF regions that couple multiple subdomains (marked in red).}
+	\label{fig:2d-schematic}
+\end{figure}
+
+
+
+%\subsection{Constrained Linear Least-Squares Solver}
+%
+%Given the user specification to obtain a $C^0, C^1$ or $C^2$ continuity across block interfaces, the local subdomain solve can essentially be formulated as the solution to a LSQ problem with constraints. The idea here is to introduce additional unknowns in the solutions, which are essentially the Lagrange multipliers to obtain an augmented system of equations.
+%
+%If we consider the local system introduced in \eqt{eq:LSQ-system}, the solution $P$ is the unconstrained control point data that is only piecewise continuous globally. Then, we can introduce a constrained set of equations \cite{nurbs-book} such that 
+%
+%\begin{equation}
+%(N_i^T M_i) P_i = N_i^T T_i, \forall i \in [1, \ldots \mathcal{N}]
+%\label{eq:LSQ-system-constraint}
+%\end{equation}
+%
+%where $M$ is the basis matrix corresponding to the constrained DoFs and $T$ is the vector of input data in the overlap region of interest $\Delta$. Then the constrained linear least squares curve fitting problem is simply minimizing the residual $E=Q-RP$ such that $MP=T$ is satisfied. We refer the readers to Section (9.4.2) in \cite{nurbs-book} for further details on how a Schur complement of the coupled equation systems can be applied to eliminate the Lagrange multipliers in order to enforce the constraints within each subdomain system. This particular strategy can also be extended to higher dimensions easily with larger number of constraints included in the $M$ operator.
+
+
+We also introduce a definition for compression ratio ($\eta$), which gives the ratio of the total input points in the dataset ($dim\text{ }\vec{Q}$) to the total control points ($dim\text{ }\vec{P}$) used in the MFA B-spline representation. As $\eta \rightarrow 1$, one can achieve better error residuals in comparison to the reference data for a given degree $p$, while $\eta \gg 1$ produces smooth approximations with larger error profiles. When we analyze the results in this manuscript, it should be remembered that the reconstruction error is always inversely proportional to $\eta$.
+
+Next, the parallel MFA computation workflow that will be used with domain-decomposed subdomain partitions is presented in detail. 
+
+\subsection{Solver Workflow}
+\label{sec:solver-methodology}
+
+Computing the functional approximation to large-scale datasets requires efficient solvers at two levels: firstly, the local decoupled subdomain solver for  \eqt{eq:minimization-problem}, and next, the constrained minimization problem in \eqt{eq:global-constrained-problem}. Hence, the global problem reduces to a series of local minimization problems in each subdomain.
+
+%
+\begin{equation}
+	\begin{aligned}
+		% Scalar miniization problem
+		%r_i(\Omega_i) &=& \left\lVert Q_i - R_i \vec{P}_i \right\rVert_2, \quad \forall i \in [1, \mathcal{N}] \nonumber \\
+		%r_c(\Delta_{i})    &=& \sum_{j \in \partial \Omega_i} \left\lVert \vec{P}_i(\Delta_i) - \vec{P}_{j}(\Omega_{j} \cap \Delta_{i} )  \right\rVert_2 \nonumber \\ 
+		%r_i(\Omega_i \bigcup \Delta_{i}) &=&  r_i(\Omega_i) + \epsilon r_c(\Delta_{i}), 
+		% Vector minimization problem
+		%\vec{E}_i(\Omega_i) &=& Q_{\ell} - R_{\ell} \vec{P}_{\ell}, \quad \forall {\ell} \in \Omega_i \nonumber \\
+		%\vec{E}_c(\Delta_{i})    &=& \sum_{\partial \Omega_{i,j}} \left[ \mathcal{F}( \vec{P}_{i}(\Delta_i \cap \Omega_{j}) )  \right] \nonumber \\ 
+		%
+		& \argmin_{\vec{P} \in \mathbb{R}^n} & & \left\lVert \vec{Q}_{\ell} - R_{\ell} \vec{P}_{\ell} \right\rVert_{L_2}, \quad R_{\ell} \in \mathbb{R}^{m \times n}, \vec{Q}_{\ell} \in \mathbb{R}^m, \vec{P}_{\ell} \in \Omega_i \\
+		%
+		& \text{subject to} & & \sum_{\partial \Omega_{i,j}} \left[ \mathcal{F}_{ij}( \vec{P}_{i}(\Delta_i), \vec{P}_{j}(\Omega_j) )  + \mathcal{F}_{ij}( \vec{P}_{i}(\delta_i), \vec{P}_{j}(\Omega_j) )  \right]^2 = 0, \quad \forall i, j \in [1,\ldots\mathcal{N}]
+		%
+		%\vec{E}_c(\Delta_{i})    &=& \sum_{\partial \Omega_{i,j}} \left[ \mathcal{F}_{ij}( \vec{P}_{i}(\Delta_i) )  \right] \nonumber \\ 
+		%\vec{E}_i(\Omega_i \bigcup \Delta_{i}) &=&  \vec{E}_i(\Omega_i) + \epsilon \vec{E}_c(\Delta_{i}), 
+		\label{eq:nonlinear-residuals}
+	\end{aligned}
+\end{equation}
+
+where $\Omega_j$ are the neighboring subdomains of $\Omega_i$, $\mathcal{F}_{ij}(a,b)$ is the jump term across the shared interface DoFs $a$ and $b$ defined on subdomains $i$ and $j$ respectively. 
+%In our experiments, a large value of $\epsilon=10^{7}$ has yielded very good performance with favorably monotonic error reduction in the constraint residuals $r_c(\Delta_{i})$. Note that $\vec{E}_i(\Omega_i)$ is in the decoded space, while the constraint residual $\vec{E}_c(\Delta_{i})$ is in the control point space. Hence in this formulation, we apply the constraints directly on control points, while trying to minimize the overall decoding error for the MFA within the current subdomain thereby satisfying optimality in terms of local resolution and continuity preservation at boundaries.
+
+
+\subsubsection{Subdomain Solvers}
+
+For the linear LSQ solvers that can be used to compute local subdomain control point solution $\vec{P}$, there are a variety of choices available. Direct methods like Singular Value decomposition or Cholesky decomposition operating on the normal equations \cite{bjorck1996} can compute optimal values. Alternatively, the iterative LSQ solvers such as orthogonal decomposition methods based on QR and QZ factorizations are more stable, especially when the normal form of the operator, $R^T R$, is ill-conditioned. %\cite{zheng-bo-bspline-bfgs}
+
+\subsubsection{Restricted Additive-Schwarz Solvers}
+
+The outer RAS iterations work together with nearest neighbor communication procedures to exchange shared DoF data between adjacent subdomains. This is an important step to ensure that $\vec{P}$ data computed through the LSQ procedure are consistent and high-order continuous across subdomain boundaries. The final minimized control point solution is achieved when the interface solutions match on all $\partial \Omega_{i,j} \in \Omega$ rendering zero jump residuals ($\mathcal{F}_{ij}$) on $\Delta$ and $\delta$ shared domains in \eqt{eq:nonlinear-residuals}.
+
+%\todo{Imposing Linear Constraints on Shared DoFs: Illustrate in \dimension{1} case, how the shared DoFs are handled. Split between an even and odd case. Odd case is specifically constraints in the even case, in addition to a weighted average constraint on the interface control point DoF}
+
+%\comment{Compute subdomain solutions independently for the problem using Eq 1;
+	%Then exchange nearest neighbor data and impose constraints;
+	%re-solve the problem and converge shared data}
+
+
+%In order to ensure continuity across NURBS patches, Zhang et al.  \cite{zhang-nurbs-continuity} evaluated the constraint matrix at test points along the interface curve. These computations require a Singular Value Decomposition (SVD) solve at every interface and can become prohibitively expensive as dimensionality increases. Alternatively, we can use a nonlinear minimizer, directly applied to the system in \eqt{eq:global-system}, and adding a penalty term to the constrained DoFs represented by the coupling blocks $\lambda_{i,j}$. Such a system can be expressed as a minimization problem in each subdomain with the following objective functional.
+
+
+%The augmented solution on each local subdomain after nearest neighbor exchange contains only the control points and corresponding derivative data to constrain DoFs on both the left and right interfaces in 1-D. This definition extends naturally to higher dimensions, with the penalized constraints on the boundary terms evaluated as a loop over all shared interfaces to compute the net residual. 
+
+%To compute the solution to the minimization problem in \eqt{eq:nonlinear-residuals}, we can make use of Sequential Least SQuares Programming (SLSQP) solver with equality constraints, or apply the limited memory version of  Broyden-Fletcher-Goldfarb-Shannon ($\ell$-BFGS) algorithm when the dimensionality increases, and memory requirements become large. These solvers have already been proven effective for converging such constrained continuity problems with B-Splines \cite{zheng-bo-bspline-bfgs}. 
+%An even more efficient method is to reformulate the objective function as a root finding problem, and applying Krylov accelerators or Anderson mixing to compute the optimally constrained solutions, with much lower computational complexity and superior convergence properties. However, these approaches have not been explored here. 
+%The final minimized control point solution is achieved when the interface solutions match on all $\partial \Omega_{i,j} \in \Omega$ rendering zero jump residuals ($\mathcal{F}_{ij}$) on $\Delta$ and $\delta$ shared domains in \eqt{eq:nonlinear-residuals}.
+
+%A much more efficient solver would also be to use a Krylov accelerator for the subdomain solves, which expresses the components in \eqt{eq:nonlinear-residuals} as a vector to reformulate it as a root finding problem. In our experiments, the Krylov accelerator was typically much faster to converge and compute the optimally constrained solutions.
+
+It is also important to note that unlike the blending approaches that can be directly applied on decoded data \cite{grindeanu-blending}, the numerical error with the constrained iterative scheme is not bounded by the original partitioned, unconstrained least-squares solution; i,e., imposing subdomain boundary constraints can create artificial numerical peaks (non-monotonic) in reconstructed data as we converge towards continuity recovery. A solution to address this issue is to increase the amount of overlap range to ensure uniform convergence to the true single-subdomain solution error, even as the number of subdomains ($\mathcal{N}$) increases.
+
+
+%\subsubsection*{Convergence of RAS}
+
+The nonoverlapping and overlapping RAS scheme applied to the computation of MFA exhibits scalable convergence properties in the limit of decreasing subdomain size (i.e., as $\mathcal{N} \to \infty$). This is a favorable property for strong scaling, especially when tackling large datasets, as the net computational cost always remains bounded. This behavior can be explained by the nature of how the RAS iterative procedure resolves the shared DoFs.
+
+By using a weighted averaging procedure for all shared DoFs that reside in the $\Delta$ and $\delta$ domains, each outer iteration resolves any disparity in $\vec{P}$. The DoFs values on shared vertices ($d > 0$), edges ($d > 1$) and faces ($d > 2$) are resolved in the following order in consequent RAS iterations.
+%
+\begin{enumerate}
+	\item Singly-shared ($\mathcal{SS}$) DoFs that are shared between two adjacent, neighboring subdomains; e.g., direct interface data belonging to $(\Delta_i \cup \delta_i) \cap \Omega_j$ in \fig{fig:2d-schematic}, $\forall i \in [1, \mathcal{N}]$ and $j \in [1, \hat{\mathcal{N}}]$, where $\hat{\mathcal{N}}$ represents the set of nearest neighbors sharing an interface $\Omega_{i,j}$
+	\item Multi-shared ($\mathcal{MS}$) DoFs that are shared by multiple (more than 2) neighboring subdomains; e.g., diagonal corners that result from $\mathcal{S}_0 \cap \mathcal{S}_1 \cap \mathcal{S}_2 \cap \mathcal{S}_3$ in \fig{fig:2d-schematic}, where $\mathcal{S}_i=\Omega_i\cup\Delta_i\cup\delta_i$.
+\end{enumerate}
+%
+Given both these specific DoF groups, the overlapping RAS scheme applied to MFA computation {\em always converges in 2 outer iterations} for problems in \dimension{2} and \dimension{3}, and a single iteration in \dimension{1} (due to lack of $\mathcal{MS}$ DoFs). This result is demonstrated in \sect{sec:results}. Note that achieving full convergence with high-order continuity in a single iteration is possible by combining constraints for both $\mathcal{SS}$ and $\mathcal{MS}$ DoFs. However, due to complexities in the implementation of constraint matching in \eqt{eq:nonlinear-residuals} for this algorithmic optimization, it has not been pursued here.% \comment{demonstrate in results section}
+
+It is necessary to mention that we use a uniform weighting procedure to converge the shared DoFs between different subdomains, where the weights for each shared DoF is assigned as $w_i=\frac{1}{n_s}$, with $n_s$ being the number of subdomains containing DoF $i$ within its domain $\mathcal{S}$. This weighing procedure can be trivially replaced by Shephard's functions, especially in the context of adaptive discretizations with variable knot displacements.
+
+%\todo{Explain that the convergence of RAS strictly depends on the dimensionality of the problem i.e., for a given spatial dimension, the number of iterations to converge to a final solution with $C^p$ continuity is always fixed (independent of $n$ and $p$). For \dimension{1}, the iterations converge in 2 iterations, for \dimension{2} in 3 iterations and \dimension{3} in 4 iterations. This can be explained by the nature of how the shared DoFs are converged through linear constraints at every iterate. Provide an illustration in \dimension{3} how the errorchange converges to zero with first error getting resolved on vertices, then edges and faces.}
+
+
+
+
+\subsubsection{Note on Performance Characteristics}
+
+
+%
+%Once the interface constraint data terms are received, a Schur complement of \eqt{eq:coupled-operator} can be computed to eliminate the coupling terms, and to impose constraints in each subdomain independently. This leads to an augmented subdomain solution as shown in \eqt{eq:augmented-solution} that includes the control point, and optionally the derivative and weights at the interface obtained from the adjacent subdomain. 
+%
+%It is imperative to note that the only exchange of data between subdomains is performed through nearest neighbor communication that has bounded complexity and costs. 
+The volume of messages exchanged between subdomains depends on several computational factors.
+
+\begin{enumerate}
+	\item \textbf{Clamping}: If the boundary knots are pinned, or if they have a floating knot description at subdomain interfaces depending on whether $C^0$ or $C^{p-1}$ continuity is required,
+	\item \textbf{Parity}: Whether the MFA degree of expansion is odd or even, which determines the range of common knot spans shared between adjacent domains as given by $\Delta$ (refer to \fig{fig:DD-subdomain-illustration}),
+	%\item \textbf{Continuity}: The degree of continuity (up to $p-1$) determines the stencil needed to enforce the constraints on either side of the interface 
+	\item \textbf{Overlap}: The amount of augmented overlap ($\delta$), which determines the number of additional coupled data layers to be communicated between neighboring domains, both in terms of the input span space $\vec{Q}$, and control point DoFs $\vec{P}$ (refer to \fig{fig:DD-subdomain-illustration} and \fig{fig:2d-schematic}).
+\end{enumerate}
+
+At convergence, the interface data at $\partial \Omega_{1,2}$ will satisfy the higher-order continuity prescriptions specified by the user, thereby guaranteeing full regularity of $C^{p-1}$. The illustration in \fig{fig:DD-subdomain-illustration}, and the methodology description in this section can be generalized and extended to arbitrary dimensions in the tensor-product setting (with the parametric domain represented by a $d-$dimensional hypercube) as shown in \fig{fig:2d-schematic} for \dimension{2}. Using knot insertion and removal strategies based on deCasteljau subdivision procedures \cite{nurbs-book}, individual subdomains can also be adapted to resolve fast varying solutions and to reduce decoded error to be within user-specified tolerances \cite{nashed-rational}. While adaptivity has not been fully explored in the current work, enabling variable resolutions in different dimensions is a natural extension of the work that will still preserve high-order continuity.
+The implementation of the presented approach with domain decomposition strategies, combined with overlapping RAS scheme yields a scalable scheme that will be demonstrated to be suitable for tackling large-scale data analysis problems.
+
+\subsection{Implementation}
+\label{sec:implementation}
+
+%
+% \begin{algorithm}
+	% 	% \DontPrintSemicolon
+	% 	\KwData{Input dataset and coordinates}
+	% 	\KwData{Parameters: $\mathcal{N}, p$}
+	% 	\tcp*{decompose domain into blocks with DIY}
+	% 	\tcp*{solve local LSQ problem without constraints}
+	% 	\tcp*[h]{Outer RAS loop;}\;
+	% 	\While{ converged == False }
+	% 	{
+		% 		$\vec{P}(\Omega \cap \Delta)$ $\rightarrow$ enqueue outgoing constraints\;
+		% 		exchange constraints with nearest neighbor blocks\;
+		% 		$\vec{P}(\Delta)$ $\leftarrow$ dequeue incoming constraints\;
+		% 		\tcp*[h]{Inner $\ell$-BFGS/Krylov minimization solver}\;
+		% %		\For {$isub \in \mathcal{N}$}
+		%		 {
+			% 			$\vec{P}_i \leftarrow$ solve adaptive local MFA with constraints\;
+			% 			$E_i \leftarrow$ compute decoded local error\;
+			% 			$\delta \vec{P} (\Omega_i) \leftarrow \vec{P}_{iASM} (\Omega_i) - \vec{P}_{iASM-1} (\Omega_i)$\;
+			% 		}
+		% 		dPMax $\leftarrow \left\lVert \delta \vec{P} (\Omega_i) \right\rVert_{\infty}$\;
+		% 		iASM++\;
+		% 	}
+	% 	\tcp*[h]{Store subdomain solution data;}\;
+	%    Write MFA to disk for analysis and visualization
+	%
+	%
+	% \end{algorithm}
+
+
+\begin{algorithm}
+	\caption{Domain Decomposed MFA Solver}
+	\label{alg:pseudocode}
+	\begin{algorithmic}
+		\State{\textbf{Input:} Dataset and coordinates}
+		\State{\textbf{Parameters:} $\mathcal{N}, p, m$}
+		\State{\textbf{Setup:} Decompose domain into blocks with DIY, compute $R$}
+		\While{$\vec{P}(\Omega)$ not converged}
+		\For{$i \gets 1$ to $\mathcal{N}$}
+		\If{$\vec{P}_i = 0$}
+			\State{\textbf{Solve:} Unconstrained local LSQ problem}
+		\EndIf
+		\For{$j \gets 1$ to $\mathcal{\hat{N}}$}
+		\Comment{where $\mathcal{\hat{N}}$ = nearest neighbors}
+		\State{-- $\vec{P}_i(\Omega_i \cap (\Delta_j \cup \delta_j)) \rightarrow$ enqueue outgoing constraints}
+		\State{-- Exchange shared DoFs with all nearest neighbor blocks}
+		\State{-- $\vec{P}_i(\Delta_i \cup \delta_i)$ $\leftarrow$ dequeue incoming constraints}
+		%
+%		\State{-- Enforce constraints for $\vec{P}_i(\Delta_i \cup \delta_i) \cap \vec{P}_j, \forall j \in [1, \mathcal{N}]$ as illustrated in \eqt{eqn:vecp-layout}}
+%		%
+%		\State{-- Drive $\mathcal{F}_{ij} \rightarrow 0$ for all shared DoFs in $\Delta_i \cup \delta_i$}
+		%
+		\State{-- Enforce constraints for $\vec{P}_i(\Delta_i \cup \delta_i) \cap \vec{P}_j, \forall j \in [1, \mathcal{N}]$:  Drive $\mathcal{F}_{ij} \rightarrow 0$}
+		\EndFor
+		
+		\State{-- Update local error $E_i := \left\lVert \vec{Q}_i - R \vec{P}_i \right\rVert_{L_2} $}
+		
+		\EndFor
+
+		\State{Check convergence metrics}
+		
+		\EndWhile
+		\State{Write MFA to disk for analysis and visualization}
+	\end{algorithmic}
+\end{algorithm}
+
+The DD techniques presented here for MFA computation are primarily implemented in Python, with main dependencies on \texttt{SciPy} for B-spline bases evaluations and linear algebra routines. Additionally, the drivers utilize Python bindings (\texttt{PyDIY}) for the \texttt{DIY}~\cite{morozov16} C++ library. \texttt{DIY} is a programming model and runtime
+for block-parallel analytics on distributed-memory machines, built on \texttt{MPI-3}~\cite{dongarra13}.  Rather than programming
+for process parallelism directly in \texttt{MPI}, the programming model in \texttt{DIY} is based on block parallelism. In \texttt{DIY}, data are decomposed
+into subdomains called blocks; blocks are assigned to processing elements (processes or threads) and the computation is
+described over these blocks, and communication between blocks is defined by reusable patterns. 
+%The same \texttt{DIY} program consisting of a block-parallel decomposition can be run on different numbers of \texttt{MPI} processes and it is the responsibility of the \texttt{DIY} runtime to map between blocks and processes. 
+\texttt{PyDIY} utilizes \texttt{PyBind11}~\cite{jakob17} and \texttt{MPI4Py}~\cite{dalcin11} to expose the interfaces in the C++ library. In our implementation, \texttt{PyDIY} is exclusively used to manage the data decomposition, including specifications to share an interface $\partial \Omega_{i,j}$ and ghost layers that represent the $\Delta \cup  \delta$ overlapping domains.
+
+The overall approach is sketched in \algo{alg:pseudocode}.
+% \Remark{Vijay: finish the pseudocode and expand the discussion of it below.} 
+We begin by decomposing the domain into a set of regular blocks aligned with the principal axes
+of the global domain. Before enforcing constraints, the local subdomain solves are performed completely decoupled so that the discontinuous MFA to represent the partitioned input data is computed. %We also include adaptive knot placements to approximate the input data by introducing control point DoFs where needed to capture solution data variations. 
+%
+The control point solution from this decoupled LSQ problem solver is then used as the DoF data that needs to be constrained with RAS iterative method.
+We then begin iterating over the blocks to converge the shared DoFs through the linear constraints described in \sect{sec:solver-methodology}. 
+
+At the start of each iteration, the control point constraints are exchanged between neighboring blocks in a regular nearest-neighbor communication pattern. This is sufficient to update the constraints $\vec{P}(\Delta \cup \delta)$. \texttt{DIY} 
+%\texttt{enqueue} and \texttt{dequeue} data exchange API 
+sends and receives the constraint data to neighboring blocks based on the parallel data decomposition.
+The nonlinear residual error in each subdomain is a function of the tensor product mesh resolution and degree $p$. At convergence, we expect to recover the subdomain error that is identical to the single subdomain case.
+%Depending on whether the MFA residual or the decoded residual norms are to be minimized, a subdomain solver is chosen to drive the nonlinear residual for the local block within user-specified tolerances.
+
+%At the end of the outer iterative loop, we check for convergence across all subdomains, by evaluating whether the maxima of the $L_{\infty}$ error across all subdomains ($\mathcal{N}$) of the ASM update vector is within user-specified tolerance. If this condition is satisfied, the MFA computation is stopped.
+The final result, as described in \algo{alg:pseudocode}, is a global MFA that retains high-order continuity and accuracy of a single subdomain solve, but with excellent parallel efficiency to reduce total time to solution as the number of subdomains increases.
+
+%\Remark{\algo{alg:pseudocode} is just a skeleton. Details need to be filled in. Termination conditions, local (inner loop) iterative scheme, types of constraints (control points or decoded points), etc.}
+
+
+%\begin{equation}
+%	%\tikzset{left offset=-0.1,right offset=0.02,disable rounded corners=true}
+%	\tikzset{offset def/.style={
+		%			above left offset={-0.1,0.8},
+		%			below right offset={0.1,-0.65},
+		%		}
+	%	}
+%	\hfsetfillcolor{blue!10}
+%	\hfsetbordercolor{blue}
+%	%\begin{array}{@{} *{2}{ c @{} >{{}}c<{{}} @{} } c @{}}
+%	%16\cdot \tikzmarkin{A}I_1  & + & 11\cdot \tikzmarkin{B}I_2  & = & \tikzmarkin{C}13\\[1ex]
+%	%11\cdot I_1\tikzmarkend{A} & + & 16\cdot I_2\tikzmarkend{B} & = & 17\tikzmarkend{C}
+%	%\end{array}
+%	P_1^{'} =
+%	\left[
+%	\begin{array}{c}
+	%		\tikzmarkin{A}(1,-0.3)(-0.1,0.3) P_1(1)   \\
+	%		P_1 (2) \\
+	%		\vdots   \\
+	%		\tikzmarkend{A} P_1 (m) \\
+	%		$\quad$ \vspace*{-2mm} \\
+	%		\tikzmarkin{B}(0.6,-0.1)(-0.1,0.3) P_2(1) \\
+	%		0 \\
+	%		\vdots \\
+	%		\tikzmarkend{B} 0
+	%	\end{array}
+%	\right]
+%	,
+%	\hfsetfillcolor{red!10}
+%	\hfsetbordercolor{red}
+%	P_2^{'} =
+%	\left[
+%	\begin{array}{c}
+	%		\tikzmarkin{C}(1,-0.3)(-0.1,0.3) P_2(1)   \\
+	%		P_2 (2) \\
+	%		\vdots   \\
+	%		\tikzmarkend{C} P_2 (n) \\
+	%		$\quad$ \vspace*{-2mm} \\
+	%		\tikzmarkin{D}(0.6,-0.1)(-0.1,0.3) P_1(1) \\
+	%		0 \\
+	%		\vdots \\
+	%		\tikzmarkend{D} 0
+	%	\end{array}
+%	\right]
+%	\label{eq:augmented-solution}
+%\end{equation}
+%%
+%\begin{tikzpicture}[remember picture,overlay]
+%	\pgfsetarrowsend{latex} 
+%	%
+%	% adjust the shift from "col" to move the position of the annotation
+%	\coordinate (A-aa) at ($(A)+(-0.5,-1.0)$);
+%	\node[align=left,left] at (A-aa) {\footnotesize{$P_1$($\Omega_1$)}};
+%	\path[>=stealth,blue,draw] (A-aa) -- ($(A)+(0.2,-1.0)$);
+%	%
+%	% adjust the shift from "col" to move the position of the annotation
+%	\coordinate (B-aa) at ($(B)+(-0.5,-1.0)$);
+%	\node[align=left,left] at (B-aa) {\footnotesize{$P_1$($\Delta_1$)}};
+%	\path[>=stealth,blue,draw] (B-aa) -- ($(B)+(0.2,-1.0)$);
+%	%
+%	% adjust the shift from "col" to move the position of the annotation
+%	\coordinate (C-aa) at ($(C)+(1.4,-1.0)$);
+%	\node[align=right,right] at (C-aa) {\footnotesize{$P_2$($\Omega_2$)}};
+%	\path[>=stealth,red,draw] (C-aa) -- ($(C)+(0.75,-1.0)$);
+%	%
+%	% adjust the shift from "col" to move the position of the annotation
+%	\coordinate (D-aa) at ($(D)+(1.4,-1.0)$);
+%	\node[align=right,right] at (D-aa) {\footnotesize{$P_2$($\Delta_2$)}};
+%	\path[>=stealth,red,draw] (D-aa) -- ($(D)+(0.75,-1.0)$);
+%	%
+%\end{tikzpicture}
+%
+
