@@ -1,0 +1,28 @@
+\documentclass[]{letter}
+
+
+\begin{document}
+% If you want headings on subsequent pages,
+% remove the ``%'' on the next line:
+% \pagestyle{headings}
+
+\begin{letter}{Dear Editor,}
+\address{Mathematics and Computational Science Division,\\Argonne National Laboratory,\\9700 South Cass Avenue,\\Lemont,\\IL 60439, USA}
+
+\opening{}
+
+The attached manuscript details a scalable algorithm to compute Mutivariate Functional Approximations (MFA) using B-spline bases to compactly represent large datasets. Using domain decomposition approaches combined with an optimal Schwarz based scheme, we present an infrastructure that has bounded complexity in space and time to compute MFA in parallel. We provide analysis on using clamped vs floating B-spline knot descriptions at internal subdomain boundaries, and its effect in recovering high-order continuity. This is demonstrated well through several illustrative examples. Overlapping variants of the Schwarz algorithm are also evaluated to understand improvements in both error convergence and performance behavior. Additionally, strong and weak scaling studies for MFA computations on large datasets emphasize that the performance is primarily dominated by the cost of nearest-neighbor exchanges on large number of tasks. 
+
+
+We hope that you consider this manuscript for publication.
+
+
+\signature{Vijay S. Mahadevan}
+
+\closing{Yours sincerely,}
+
+%enclosure listing
+%\encl{}
+
+\end{letter}
+\end{document}

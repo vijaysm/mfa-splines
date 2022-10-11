@@ -8,7 +8,7 @@ Combining the application of DD schemes and NURBS bases with isogeometric analys
 %Note that when using NURBS bases in a multipatch setting, the B-splines on the patch boundaries are interpolatory, thereby ensuring $C^0$ continuity in the solution for free. 
 Directly imposing higher-order geometric continuity in IGA requires specialized parameterizations in order to preserve the approximation properties \cite{kapl2018construction}, which can be difficult to parallelize \cite{hofer2018fast} generally. 
 %
-In a similar vein, using B-spline bases to compute the MFA in parallel, while maintaining higher-order continuity across subdomain patches has not been fully explored previously. 
+In a similar vein, using B-spline bases to compute the MFA in parallel, while maintaining higher-order continuity across subdomains has not been fully explored previously. 
 
 To overcome some of these issues with discontinuities along NURBS or B-spline patches, Zhang et al. \cite{zhang-nurbs-continuity} proposed to use a gradient projection scheme to constrain the value ($C^0$), the gradient ($C^1$), and the Hessian ($C^2$) at a small number of test points for optimal shape recovery. Such a constrained projection yields coupled systems of equations for control point data for local patches, and results in a global minimization problem that needs to be solved.
 
