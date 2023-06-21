@@ -5,16 +5,19 @@ import splipy as sp
 import timeit
 from scipy.interpolate import BSpline
 
-from scipy.optimize import minimize, least_squares, shgo
-import scipy.sparse.linalg as sla
-from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import splu
-from scipy.sparse.linalg import cg, SuperLU
+from fnnls import fnnls
+from scipy.optimize import minimize, optimize, least_squares, shgo, lsq_linear, root
 
-from opt_einsum import contract, contract_path
+# import scipy.sparse.linalg as sla
+# from scipy.sparse import csc_matrix
+# from scipy.sparse.linalg import splu
+# from scipy.sparse.linalg import cg, SuperLU
 
-from numba import jit, vectorize
+# from opt_einsum import contract, contract_path
 
+# from numba import jit, vectorize
+
+from autograd import grad
 from autograd import elementwise_grad as egrad
 import autograd.numpy as autonp
 
@@ -92,9 +95,7 @@ class ProblemSolver3D:
                 basisFunction[dir] = sp.BSplineBasis(
                     order=self.degree + 1, knots=knotsAdaptive[dir]
                 )
-                NUVW[dir] = np.array(
-                    basisFunction[dir].evaluate(UVW[dir], sparse=False)
-                )
+                NUVW[dir] = np.array(basisFunction[dir].evaluate(UVW[dir], sparse=False))
             else:
                 if dir == "x":
                     bspl = BSpline(
@@ -115,9 +116,7 @@ class ProblemSolver3D:
                         k=self.degree,
                     )
                 # bspl = BSpline.basis_element(knotsAdaptive[dir][self.degree-1:self.degree*2+1]) #make_interp_spline(UVW[dir], y, k=self.degree)
-                NUVW[dir] = bspl.design_matrix(
-                    UVW[dir], bspl.t, k=self.degree
-                ).todense()
+                NUVW[dir] = bspl.design_matrix(UVW[dir], bspl.t, k=self.degree).todense()
 
     def compute_decode_operators(self, RN):
         # RN = self.inputCB.NUVW
@@ -168,13 +167,13 @@ class ProblemSolver3D:
                     "ijk,kl->ijl",
                     self.inputCB.refSolutionLocal,
                     self.inputCB.decodeOpXYZ["z"],
-                    optimize=True
+                    optimize=True,
                 ),
                 self.inputCB.decodeOpXYZ["y"],
-                optimize=True
+                optimize=True,
             ),
             self.inputCB.decodeOpXYZ["x"],
-            optimize=True
+            optimize=True,
         )
 
         # NxTQNy2 = contract("ijk,il,jm,kn->nml", self.inputCB.refSolutionLocal, self.inputCB.decodeOpXYZ["z"], self.inputCB.decodeOpXYZ["y"], self.inputCB.decodeOpXYZ["x"])
@@ -194,10 +193,9 @@ class ProblemSolver3D:
         # npo.matmul(np.matmul(self.inputCB.decodeOpXYZ['y'].T, np.matmul(self.inputCB.refSolutionLocal, self.inputCB.decodeOpXYZ['z'])), self.inputCB.decodeOpXYZ['x'], axes=0).shape
         finsol = np.einsum(
             "ijk,il->ljk",
-            np.einsum(
-                "ijk,jl->ilk", np.einsum("ijk,kl->ijl", NxTQNy, NTNzInv), NTNyInv
-            ),
-            NTNxInv, optimize=True
+            np.einsum("ijk,jl->ilk", np.einsum("ijk,kl->ijl", NxTQNy, NTNzInv), NTNyInv),
+            NTNxInv,
+            optimize=True,
         ).T
 
         # Rotate axis so that we can do logical indexing
@@ -218,48 +216,141 @@ class ProblemSolver3D:
 
         return sol
 
+    def linoperator_matvec(self, P):
+        RN = self.inputCB.NUVW
+        Pl = P.reshape(self.inputCB.controlPointData.shape)
+        # DD = np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
+        DD = np.einsum(
+            "ijk,lk->ijl",
+            np.einsum(
+                "ijk,lj->ilk",
+                np.einsum("ijk,li->ljk", Pl, RN["x"], optimize=True),
+                RN["y"],
+                optimize=True,
+            ),
+            RN["z"],
+            optimize=True,
+        )
+
+        return DD.reshape(-1)
+
+    def linoperator_matvec_transpose(self, P):
+        RN = self.inputCB.NUVW
+        Pl = P.reshape(self.inputCB.refSolutionLocal.shape).T
+        # DD = np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
+        DD = np.einsum(
+            "lk,ijk->ijl",
+            np.einsum(
+                "lj,ijk->ilk",
+                np.einsum("li,ijk->ljk", RN["z"].T, Pl, optimize=True),
+                RN["y"].T,
+                optimize=True,
+            ),
+            RN["x"].T,
+            optimize=True,
+        )
+
+        return DD.reshape(-1)
+
+    def linoperator_matvec2(self, inputvec):
+
+        Pin = Pin.reshape(initSol.shape)
+
+        NTNxInv = np.linalg.inv(
+            np.matmul(self.inputCB.decodeOpXYZ["x"].T, self.inputCB.decodeOpXYZ["x"])
+        )
+        NTNyInv = np.linalg.inv(
+            np.matmul(self.inputCB.decodeOpXYZ["y"].T, self.inputCB.decodeOpXYZ["y"])
+        )
+        NTNzInv = np.linalg.inv(
+            np.matmul(self.inputCB.decodeOpXYZ["z"].T, self.inputCB.decodeOpXYZ["z"])
+        )
+
+        Aop = inputvec
+
+        # np.matmul(np.matmul(np.matmul(RN['x'], P), RN['y'].T).T, RN['z'].T)
+        # NyTQNz = np.matmul(self.inputCB.decodeOpXYZ['y'].T, np.matmul(self.inputCB.refSolutionLocal, self.inputCB.decodeOpXYZ['z']))
+        # NxTQNy = np.matmul(NyTQNz.T, self.inputCB.decodeOpXYZ['x'])
+        # NxTQNy = np.matmul(np.matmul(np.matmul(self.inputCB.decodeOpXYZ['z'].T, self.inputCB.refSolutionLocal), self.inputCB.decodeOpXYZ['y']).T, self.inputCB.decodeOpXYZ['x'])
+
+        RHS = np.einsum(
+            "ijk,il->ljk",
+            np.einsum(
+                "ijk,jl->ilk",
+                np.einsum(
+                    "ijk,kl->ijl",
+                    self.inputCB.refSolutionLocal,
+                    self.inputCB.decodeOpXYZ["z"],
+                    optimize=True,
+                ),
+                self.inputCB.decodeOpXYZ["y"],
+                optimize=True,
+            ),
+            self.inputCB.decodeOpXYZ["x"],
+            optimize=True,
+        )
+        finsol = np.einsum(
+            "ijk,il->ljk",
+            np.einsum("ijk,jl->ilk", np.einsum("ijk,kl->ijl", NxTQNy, NTNzInv), NTNyInv),
+            NTNxInv,
+            optimize=True,
+        ).T
+
+        # Rotate axis so that we can do logical indexing
+        finsol = np.moveaxis(finsol, 0, -1)
+        finsol = np.moveaxis(finsol, 0, 1)
+
+        return finsol
+
     def lsqFit(self):
+        from scipy.sparse.linalg import LinearOperator
+
         initSol = self.lsqFit_internal()
 
         useBFGS = False
 
+        def residual(Pin):
+
+            # Residuals are in the decoded space - so direct way to constrain the boundary data
+            residual_decoded = (
+                self.decode(Pin.reshape(initSol.shape), self.inputCB.decodeOpXYZ)
+                - self.inputCB.refSolutionLocal
+            ).reshape(-1)
+            decoded_residual_norm = autonp.sqrt(
+                autonp.sum(residual_decoded**2) / len(residual_decoded)
+            )
+            # print("3D LSQ Residual = ", decoded_residual_norm)
+            return decoded_residual_norm
+
         if useBFGS:
 
-            nshape = self.inputCB.NUVW['x'].shape[1] * self.inputCB.NUVW['y'].shape[1] * self.inputCB.NUVW['z'].shape[1]
+            nshape = (
+                self.inputCB.NUVW["x"].shape[1]
+                * self.inputCB.NUVW["y"].shape[1]
+                * self.inputCB.NUVW["z"].shape[1]
+            )
             controlPointData = np.ones(nshape)
             bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
             # bnds = np.tensordot(np.ones(initSol.shape), [0, 1000], axes=0)
 
-            def residual(Pin):
-
-                # Residuals are in the decoded space - so direct way to constrain the boundary data
-                residual_decoded = (self.decode(Pin.reshape(initSol.shape), self.inputCB.decodeOpXYZ) - self.inputCB.refSolutionLocal).reshape(-1)
-                decoded_residual_norm = autonp.sqrt(
-                    autonp.sum(residual_decoded**2) / len(residual_decoded)
-                )
-                print("3D LSQ Residual = ", decoded_residual_norm)
-                return decoded_residual_norm
-
             result = minimize(
-                    residual,
-                    # x0=controlPointData,
-                    x0=initSol.reshape(-1),
-                    # x0=np.ones(initSol.shape).reshape(-1),
-                    method='L-BFGS-B',  # 'SLSQP', #'L-BFGS-B', #'TNC',
-                    bounds=bnds,
-                    jac=egrad(residual),
-                    # jac="2-point",
-                    # callback=print_iterate,
-                    tol=1e-14,
-                    options={
-                        "disp": False,
-                        "ftol": 1e-10,
-                        "gtol": 1e-14,
-                        "maxiter": 10,
-                        "maxfev": 100,
-                        'adaptive': True
-                    },
-                )
+                residual,
+                # x0=controlPointData,
+                x0=initSol.reshape(-1),
+                # x0=np.ones(initSol.shape).reshape(-1),
+                method="L-BFGS-B",  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                bounds=bnds,
+                # jac=egrad(residual),
+                jac="2-point",
+                # callback=print_iterate,
+                tol=1e-14,
+                options={
+                    "disp": False,
+                    "ftol": 1e-10,
+                    "gtol": 1e-14,
+                    "maxiter": 2,
+                },
+            )
             # result = least_squares(
             #         residual,
             #         # x0=controlPointData,
@@ -272,7 +363,10 @@ class ProblemSolver3D:
             #         jac='2-point',
             #         # callback=print_iterate,
             #     )
-            print("[%d] : %s with the final residual = %g" % (self.inputCB.gid, result.message, residual(result.x)))
+            print(
+                "[%d] : %s with the final residual = %g"
+                % (self.inputCB.gid, result.message, residual(result.x))
+            )
             res = result.x.reshape(initSol.shape)
             print(self.inputCB.gid, " : sol shape", res.shape)
 
@@ -280,7 +374,85 @@ class ProblemSolver3D:
 
         else:
 
-            return initSol
+            nshape = (
+                self.inputCB.NUVW["x"].shape[1]
+                * self.inputCB.NUVW["y"].shape[1]
+                * self.inputCB.NUVW["z"].shape[1]
+            )
+            B = self.inputCB.refSolutionLocal.reshape(-1)
+            print("Shapes: nshape=", nshape, " and A/B shapes = ", B.shape)
+            A = LinearOperator(
+                shape=(B.shape[0], nshape),
+                matvec=self.linoperator_matvec,
+                rmatvec=self.linoperator_matvec_transpose,
+            )
+            bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
+            # bnds = np.tensordot(np.ones(initSol.shape), [0, 1000], axes=0)
+
+            print("Min and max values of initsol: ", np.min(initSol.min()), np.max(initSol.max()))
+            NNLSolver = False
+            KrylovSolver = True
+            if NNLSolver:
+                # result = fnnls(A, B)  # , P_initial=initSol.reshape(-1)
+                result = least_squares(
+                    fun=residual,
+                    x0=(initSol + 200).reshape(-1),
+                    jac="cs",  # grad(residual),
+                    bounds=(0, 1000),
+                    verbose=2,
+                    # lsq_solver="lsmr",
+                    # verbose=2,
+                    # callback=print_iterate,
+                    # tol=1e-10
+                ).x
+            else:
+                if KrylovSolver:
+                    result = shgo(
+                        residual,
+                        # x0=controlPointData,
+                        # x0=initSol.reshape(-1),
+                        # x0=np.ones(initSol.shape).reshape(-1),
+                        # jac=A,
+                        # method='krylov',  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        bounds=bnds,
+                        iters=2,
+                        # lsq_solver="lsmr",
+                        # verbose=2,
+                        # callback=print_iterate,
+                        # tol=1e-10,
+                        options={
+                            "disp": True,
+                            "f_tol": 1e-6,
+                            "maxiter": 3,
+                        },
+                        # lsmr_tol='auto',
+                    ).xl
+                else:
+                    result = minimize(
+                        residual,
+                        # x0=controlPointData,
+                        x0=initSol.reshape(-1),
+                        # x0=np.ones(initSol.shape).reshape(-1),
+                        # jac=A,
+                        jac=egrad(residual),
+                        method="L-BFGS-B",  # 'SLSQP', #'L-BFGS-B', #'TNC',
+                        bounds=bnds,
+                        # lsq_solver="lsmr",
+                        # verbose=2,
+                        # callback=print_iterate,
+                        tol=1e-10,
+                        options={
+                            "disp": 2,
+                            "ftol": 1e-10,
+                            "gtol": 1e-14,
+                            "maxiter": 5,
+                        },
+                        # lsmr_tol='auto',
+                    ).x
+
+            return result.reshape(self.inputCB.controlPointData.shape)
+
+            # return initSol
 
     def update_bounds(self):
         return [
@@ -297,9 +469,7 @@ class ProblemSolver3D:
         decoded = self.decode(Pin, self.decodeOpXYZ)
         residual_decoded = (self.refSolutionLocal - decoded) / solutionRange
         residual_decoded = residual_decoded.reshape(-1)
-        decoded_residual_norm = np.sqrt(
-            np.sum(residual_decoded**2) / len(residual_decoded)
-        )
+        decoded_residual_norm = np.sqrt(np.sum(residual_decoded**2) / len(residual_decoded))
         if type(Pin) is not np.numpy_boxes.ArrayBox and printVerbose:
             print("Residual {0}-d: {1}".format(self.dimension, decoded_residual_norm))
         return decoded_residual_norm
@@ -347,9 +517,7 @@ class ProblemSolver3D:
                     # Hence we only consider 4 neighbor cases, instead of 8.
                     if dir[0] == 0:  # target is coupled in Y-direction
                         if dir[1] > 0:  # target block is above current subdomain
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:, -loffset:, :]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:, -loffset:, :])
                             # cp.enqueue(target, inputCB.controlPointData)
                             cp.enqueue(
                                 target,
@@ -370,12 +538,8 @@ class ProblemSolver3D:
 
                     # target is coupled in X-direction
                     elif dir[1] == 0:
-                        if (
-                            dir[0] > 0
-                        ):  # target block is to the right of current subdomain
-                            cp.enqueue(
-                                target, inputCB.controlPointData[-loffset:, :, :]
-                            )
+                        if dir[0] > 0:  # target block is to the right of current subdomain
+                            cp.enqueue(target, inputCB.controlPointData[-loffset:, :, :])
                             # cp.enqueue(target, inputCB.controlPointData)
                             cp.enqueue(
                                 target,
@@ -432,9 +596,7 @@ class ProblemSolver3D:
                         if (
                             dir[1] == 0
                         ):  # target block is directly above in z-direction (but same x-y)
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:, :, -loffset:]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:, :, -loffset:])
                             # cp.enqueue(target, inputCB.controlPointData)
                             cp.enqueue(
                                 target,
@@ -444,9 +606,7 @@ class ProblemSolver3D:
                             )
                             # cp.enqueue(
                             #     target, inputCB.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
-                        elif (
-                            dir[1] > 0
-                        ):  # target block is above current subdomain in y-direction
+                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
                             cp.enqueue(
                                 target,
                                 inputCB.controlPointData[:, -loffset:, -loffset:],
@@ -457,9 +617,7 @@ class ProblemSolver3D:
                             #     target, inputCB.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
 
                         else:  # target block is below current subdomain in y-direction
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:, :loffset, -loffset:]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:, :loffset, -loffset:])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][-1:-2-degree-augmentSpanSpace:-1])
                             # cp.enqueue(
@@ -467,9 +625,7 @@ class ProblemSolver3D:
 
                     # target is coupled in X-direction
                     elif dir[1] == 0:
-                        if (
-                            dir[0] > 0
-                        ):  # target block is to the right of current subdomain
+                        if dir[0] > 0:  # target block is to the right of current subdomain
                             cp.enqueue(
                                 target,
                                 inputCB.controlPointData[-loffset:, :, -loffset:],
@@ -481,9 +637,7 @@ class ProblemSolver3D:
                             #     target, inputCB.knotsAdaptive['x'][-1:-2-self.degree-self.augmentSpanSpace:-1])
 
                         else:  # target block is to the left of current subdomain
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:loffset, :, -loffset:]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:loffset, :, -loffset:])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][-1:-2-self.degree-self.augmentSpanSpace:-1])
                             # cp.enqueue(target, inputCB.knotsAdaptive['x'][0:(
@@ -496,36 +650,28 @@ class ProblemSolver3D:
                             if dir[0] > 0 and dir[1] > 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        -loffset:, -loffset:, -loffset:
-                                    ],
+                                    inputCB.controlPointData[-loffset:, -loffset:, -loffset:],
                                 )
 
                             # target block is diagonally top left to current subdomain
                             if dir[0] < 0 and dir[1] > 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        :loffset:, -loffset:, -loffset:
-                                    ],
+                                    inputCB.controlPointData[:loffset:, -loffset:, -loffset:],
                                 )
 
                             # target block is diagonally left bottom  current subdomain
                             if dir[0] < 0 and dir[1] < 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        :loffset:, :loffset, -loffset:
-                                    ],
+                                    inputCB.controlPointData[:loffset:, :loffset, -loffset:],
                                 )
 
                             # target block is diagonally right bottom of current subdomain
                             if dir[0] > 0 and dir[1] < 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        -loffset:, :loffset, -loffset:
-                                    ],
+                                    inputCB.controlPointData[-loffset:, :loffset, -loffset:],
                                 )
 
                 else:  # dir[2] < 0 - sending to layer of blocks below in z-direction
@@ -547,40 +693,28 @@ class ProblemSolver3D:
                             # cp.enqueue(
                             #     target, inputCB.knotsAdaptive['y'][-1:-2-degree-augmentSpanSpace:-1])
 
-                        elif (
-                            dir[1] > 0
-                        ):  # target block is above current subdomain in y-direction
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:, -loffset:, :loffset]
-                            )
+                        elif dir[1] > 0:  # target block is above current subdomain in y-direction
+                            cp.enqueue(target, inputCB.controlPointData[:, -loffset:, :loffset])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][:loffset])
                             # cp.enqueue(target, inputCB.knotsAdaptive['y'][-1:-2-self.degree-self.augmentSpanSpace:-1])
 
                         else:  # target block is below current subdomain in y-direction
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:, :loffset, :loffset]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:, :loffset, :loffset])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][:loffset])
                             # cp.enqueue(target, inputCB.knotsAdaptive['y'][0:1+self.degree+self.augmentSpanSpace])
 
                     # target is coupled in X-direction
                     elif dir[1] == 0:
-                        if (
-                            dir[0] > 0
-                        ):  # target block is to the right of current subdomain
-                            cp.enqueue(
-                                target, inputCB.controlPointData[-loffset:, :, :loffset]
-                            )
+                        if dir[0] > 0:  # target block is to the right of current subdomain
+                            cp.enqueue(target, inputCB.controlPointData[-loffset:, :, :loffset])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][:loffset])
                             # cp.enqueue(target, inputCB.knotsAdaptive['x'][-1:-2-self.degree-self.augmentSpanSpace:-1])
 
                         else:  # target block is to the left of current subdomain
-                            cp.enqueue(
-                                target, inputCB.controlPointData[:loffset, :, :loffset]
-                            )
+                            cp.enqueue(target, inputCB.controlPointData[:loffset, :, :loffset])
                             # cp.enqueue(target, inputCB.controlPointData)
                             # cp.enqueue(target, inputCB.knotsAdaptive['z'][:loffset])
                             # cp.enqueue(target, inputCB.knotsAdaptive['x'][0:(self.degree+self.augmentSpanSpace+1)])
@@ -592,36 +726,28 @@ class ProblemSolver3D:
                             if dir[0] > 0 and dir[1] > 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        -loffset:, -loffset:, :loffset
-                                    ],
+                                    inputCB.controlPointData[-loffset:, -loffset:, :loffset],
                                 )
 
                             # target block is diagonally top left to current subdomain
                             if dir[0] < 0 and dir[1] > 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        :loffset:, -loffset:, :loffset
-                                    ],
+                                    inputCB.controlPointData[:loffset:, -loffset:, :loffset],
                                 )
 
                             # target block is diagonally left bottom  current subdomain
                             if dir[0] < 0 and dir[1] < 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        :loffset:, :loffset, :loffset
-                                    ],
+                                    inputCB.controlPointData[:loffset:, :loffset, :loffset],
                                 )
 
                             # target block is diagonally right bottom of current subdomain
                             if dir[0] > 0 and dir[1] < 0:
                                 cp.enqueue(
                                     target,
-                                    inputCB.controlPointData[
-                                        -loffset:, :loffset, :loffset
-                                    ],
+                                    inputCB.controlPointData[-loffset:, :loffset, :loffset],
                                 )
 
         # if len(inputCB.controlPointData):
@@ -645,9 +771,7 @@ class ProblemSolver3D:
                 continue
 
             direction = (
-                (dir[2] + 1) * self.dimension**2
-                + (dir[1] + 1) * self.dimension
-                + (dir[0] + 1)
+                (dir[2] + 1) * self.dimension**2 + (dir[1] + 1) * self.dimension + (dir[0] + 1)
             )
             if self.verbose:
                 print(
@@ -691,21 +815,15 @@ class ProblemSolver3D:
                         # 2-Dimension = 0: left, 1: right, 2: top, 3: bottom, 4: top-left, 5: top-right, 6: bottom-left, 7: bottom-right
                         # sender block is diagonally right top to  current subdomain
                         if dir[0] > 0 and dir[1] > 0:
-                            inputCB.boundaryConstraints["top-right"] = cp.dequeue(
-                                target
-                            )
+                            inputCB.boundaryConstraints["top-right"] = cp.dequeue(target)
 
                         # sender block is diagonally left top to current subdomain
                         if dir[0] > 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints["bottom-right"] = cp.dequeue(
-                                target
-                            )
+                            inputCB.boundaryConstraints["bottom-right"] = cp.dequeue(target)
 
                         # sender block is diagonally left bottom  current subdomain
                         if dir[0] < 0 and dir[1] < 0:
-                            inputCB.boundaryConstraints["bottom-left"] = cp.dequeue(
-                                target
-                            )
+                            inputCB.boundaryConstraints["bottom-left"] = cp.dequeue(target)
 
                         # sender block is diagonally left to current subdomain
                         if dir[0] < 0 and dir[1] > 0:
@@ -717,15 +835,11 @@ class ProblemSolver3D:
                 # Hence we only consider 4 neighbor cases, instead of 8.
                 if dir[0] == 0:
 
-                    if (
-                        dir[1] == 0
-                    ):  # target block is directly above in z-direction (but same x-y)
+                    if dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
                         inputCB.boundaryConstraints["up"] = cp.dequeue(target)
                         inputCB.ghostKnots["up"] = cp.dequeue(target)
 
-                    elif (
-                        dir[1] > 0
-                    ):  # target block is above current subdomain in y-direction
+                    elif dir[1] > 0:  # target block is above current subdomain in y-direction
                         inputCB.boundaryConstraints["up-top"] = cp.dequeue(target)
 
                     else:  # target block is below current subdomain in y-direction
@@ -744,15 +858,11 @@ class ProblemSolver3D:
                     elif (
                         dir[0] > 0 and dir[1] < 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["up-bottom-right"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["up-bottom-right"] = cp.dequeue(target)
                     elif (
                         dir[0] < 0 and dir[1] < 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["up-bottom-left"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["up-bottom-left"] = cp.dequeue(target)
                     elif (
                         dir[0] < 0 and dir[1] > 0
                     ):  # target block is to the right of current subdomain
@@ -765,15 +875,11 @@ class ProblemSolver3D:
                 # This means either dir[0] or dir[1] has to be "0" for subdomain coupling to be active
                 # Hence we only consider 4 neighbor cases, instead of 8.
                 if dir[0] == 0:
-                    if (
-                        dir[1] == 0
-                    ):  # target block is directly above in z-direction (but same x-y)
+                    if dir[1] == 0:  # target block is directly above in z-direction (but same x-y)
                         inputCB.boundaryConstraints["down"] = cp.dequeue(target)
                         inputCB.ghostKnots["down"] = cp.dequeue(target)
 
-                    elif (
-                        dir[1] > 0
-                    ):  # target block is above current subdomain in y-direction
+                    elif dir[1] > 0:  # target block is above current subdomain in y-direction
                         inputCB.boundaryConstraints["down-top"] = cp.dequeue(target)
 
                     else:  # target block is below current subdomain in y-direction
@@ -788,35 +894,25 @@ class ProblemSolver3D:
                     elif (
                         dir[0] > 0 and dir[1] > 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["down-top-right"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["down-top-right"] = cp.dequeue(target)
                     elif (
                         dir[0] > 0 and dir[1] < 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["down-bottom-right"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["down-bottom-right"] = cp.dequeue(target)
                     elif (
                         dir[0] < 0 and dir[1] < 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["down-bottom-left"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["down-bottom-left"] = cp.dequeue(target)
                     elif (
                         dir[0] < 0 and dir[1] > 0
                     ):  # target block is to the right of current subdomain
-                        inputCB.boundaryConstraints["down-top-left"] = cp.dequeue(
-                            target
-                        )
+                        inputCB.boundaryConstraints["down-top-left"] = cp.dequeue(target)
                     else:  # target block is to the left of current subdomain
                         inputCB.boundaryConstraints["down-left"] = cp.dequeue(target)
 
         return
 
-    def initialize_solution(
-        self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned
-    ):
+    def initialize_solution(self, inputCB, idom, initSol, degree, augmentSpanSpace, fullyPinned):
 
         alpha = 0.5
         beta = 0.0
@@ -854,9 +950,7 @@ class ProblemSolver3D:
                 initSol[0, -1, :] += inputCB.boundaryConstraints["top-left"][-1, 0, :]
                 localAssemblyWeights[0, -1, :] += 1.0
             if "bottom-right" in inputCB.boundaryConstraints:
-                initSol[-1, 0, :] = inputCB.boundaryConstraints["bottom-right"][
-                    0, -1, :
-                ]
+                initSol[-1, 0, :] = inputCB.boundaryConstraints["bottom-right"][0, -1, :]
                 localAssemblyWeights[-1, 0, :] += 1.0
             if "bottom-left" in inputCB.boundaryConstraints:
                 initSol[0, 0, :] = inputCB.boundaryConstraints["bottom-left"][-1, -1, :]
@@ -879,8 +973,7 @@ class ProblemSolver3D:
             freeBounds[1] = (
                 initSol.shape[0]
                 if inputCB.isClamped["right"]
-                else initSol.shape[0]
-                - (nconstraints - 1 if oddDegree else nconstraints)
+                else initSol.shape[0] - (nconstraints - 1 if oddDegree else nconstraints)
             )
 
             freeBounds[2] = (
@@ -891,8 +984,7 @@ class ProblemSolver3D:
             freeBounds[3] = (
                 initSol.shape[1]
                 if inputCB.isClamped["top"]
-                else initSol.shape[1]
-                - (nconstraints - 1 if oddDegree else nconstraints)
+                else initSol.shape[1] - (nconstraints - 1 if oddDegree else nconstraints)
             )
 
             freeBounds[4] = (
@@ -903,8 +995,7 @@ class ProblemSolver3D:
             freeBounds[5] = (
                 initSol.shape[2]
                 if inputCB.isClamped["up"]
-                else initSol.shape[2]
-                - (nconstraints - 1 if oddDegree else nconstraints)
+                else initSol.shape[2] - (nconstraints - 1 if oddDegree else nconstraints)
             )
 
             initSol[: freeBounds[0], :, :] = 0.0
@@ -1767,9 +1858,7 @@ class ProblemSolver3D:
                         ] += inputCB.boundaryConstraints["up-top-left"][
                             -nconstraints, nconstraints - 1, nconstraints - 1
                         ]
-                        localAssemblyWeights[
-                            nconstraints - 1, -nconstraints, -nconstraints
-                        ] += 1.0
+                        localAssemblyWeights[nconstraints - 1, -nconstraints, -nconstraints] += 1.0
 
                         if nconstraints > 1:
                             assert freeBounds[0] == nconstraints - 1
@@ -1798,9 +1887,7 @@ class ProblemSolver3D:
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
                         ]
-                        localAssemblyWeights[
-                            :nconstraints, -nconstraints:, -nconstraints:
-                        ] = 1.0
+                        localAssemblyWeights[:nconstraints, -nconstraints:, -nconstraints:] = 1.0
 
                 if "up-bottom-right" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -1809,9 +1896,7 @@ class ProblemSolver3D:
                         ] += inputCB.boundaryConstraints["up-bottom-right"][
                             nconstraints - 1, -nconstraints, nconstraints - 1
                         ]
-                        localAssemblyWeights[
-                            -nconstraints, nconstraints - 1, -nconstraints
-                        ] += 1.0
+                        localAssemblyWeights[-nconstraints, nconstraints - 1, -nconstraints] += 1.0
 
                         if nconstraints > 1:
                             # assert(freeBounds[2] == nconstraints - 1)
@@ -1837,9 +1922,7 @@ class ProblemSolver3D:
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
                         ]
-                        localAssemblyWeights[
-                            -nconstraints:, :nconstraints, -nconstraints:
-                        ] = 1.0
+                        localAssemblyWeights[-nconstraints:, :nconstraints, -nconstraints:] = 1.0
 
                 if "up-bottom-left" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -1876,9 +1959,7 @@ class ProblemSolver3D:
                             -degree - loffset : -nconstraints,
                             nconstraints : degree + loffset,
                         ]
-                        localAssemblyWeights[
-                            :nconstraints, :nconstraints, -nconstraints:
-                        ] = 1.0
+                        localAssemblyWeights[:nconstraints, :nconstraints, -nconstraints:] = 1.0
 
                 if "up-top-right" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -1887,9 +1968,7 @@ class ProblemSolver3D:
                         ] += inputCB.boundaryConstraints["up-top-right"][
                             nconstraints - 1, nconstraints - 1, nconstraints - 1
                         ]
-                        localAssemblyWeights[
-                            -nconstraints, -nconstraints, -nconstraints
-                        ] += 1.0
+                        localAssemblyWeights[-nconstraints, -nconstraints, -nconstraints] += 1.0
 
                         if nconstraints > 1:
                             initSol[
@@ -1914,9 +1993,7 @@ class ProblemSolver3D:
                             nconstraints : degree + loffset,
                             nconstraints : degree + loffset,
                         ]
-                        localAssemblyWeights[
-                            -nconstraints:, -nconstraints:, -nconstraints:
-                        ] = 1.0
+                        localAssemblyWeights[-nconstraints:, -nconstraints:, -nconstraints:] = 1.0
 
                 if "down-top-left" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -1953,9 +2030,7 @@ class ProblemSolver3D:
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
                         ]
-                        localAssemblyWeights[
-                            :nconstraints, -nconstraints:, :nconstraints
-                        ] = 1.0
+                        localAssemblyWeights[:nconstraints, -nconstraints:, :nconstraints] = 1.0
 
                 if "down-bottom-right" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -1992,9 +2067,7 @@ class ProblemSolver3D:
                             -degree - loffset : -nconstraints,
                             -degree - loffset : -nconstraints,
                         ]
-                        localAssemblyWeights[
-                            -nconstraints:, :nconstraints, :nconstraints
-                        ] = 1.0
+                        localAssemblyWeights[-nconstraints:, :nconstraints, :nconstraints] = 1.0
 
                 if "down-bottom-left" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -2031,9 +2104,7 @@ class ProblemSolver3D:
                             -degree - loffset : -nconstraints,
                             -degree - loffset : -nconstraints,
                         ]
-                        localAssemblyWeights[
-                            :nconstraints, :nconstraints, :nconstraints
-                        ] = 1.0
+                        localAssemblyWeights[:nconstraints, :nconstraints, :nconstraints] = 1.0
 
                 if "down-top-right" in inputCB.boundaryConstraints:
                     if oddDegree:
@@ -2042,9 +2113,7 @@ class ProblemSolver3D:
                         ] += inputCB.boundaryConstraints["down-top-right"][
                             nconstraints - 1, nconstraints - 1, -nconstraints
                         ]
-                        localAssemblyWeights[
-                            -nconstraints, -nconstraints, nconstraints - 1
-                        ] += 1.0
+                        localAssemblyWeights[-nconstraints, -nconstraints, nconstraints - 1] += 1.0
 
                         if nconstraints > 1:
                             initSol[
@@ -2069,9 +2138,7 @@ class ProblemSolver3D:
                             nconstraints : degree + loffset,
                             -degree - loffset : -nconstraints,
                         ]
-                        localAssemblyWeights[
-                            -nconstraints:, -nconstraints:, :nconstraints
-                        ] = 1.0
+                        localAssemblyWeights[-nconstraints:, -nconstraints:, :nconstraints] = 1.0
 
             localAssemblyWeights[
                 freeBounds[0] : freeBounds[1],

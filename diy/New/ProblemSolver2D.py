@@ -206,7 +206,7 @@ class ProblemSolver2D:
                 # print("2D LSQ Residual = ", decoded_residual_norm)
                 return decoded_residual_norm
 
-            useBFGS = True
+            useBFGS = False
 
             if useBFGS:
 

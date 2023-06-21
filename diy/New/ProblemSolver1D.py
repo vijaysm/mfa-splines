@@ -79,6 +79,18 @@ class ProblemSolver1D:
         else:
             RN["x"].multiply(P)
 
+    def compute_derivatives(self, RN, derorder):
+        bspl = BSpline(
+            self.inputCB.knotsAdaptive["x"],
+            c=self.inputCB.controlPointData[:],
+            k=self.degree,
+        )
+        for dir in ["x"]:
+            Nder = bspl.derivative(derorder).design_matrix(
+                self.inputCB.UVW["x"], bspl.t, k=derorder
+            )
+            RN[dir] = ( Nder / np.sum(Nder, axis=1)[:, np.newaxis] )
+
     def compute_decode_operators(self, RN):
         for dir in ["x"]:
             RN[dir] = (

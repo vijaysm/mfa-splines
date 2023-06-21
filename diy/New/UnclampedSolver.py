@@ -14,7 +14,7 @@ from pstats import SortKey
 
 from functools import reduce
 
-import pandas as pd
+#import pandas as pd
 
 ## TODO: Add an option to turn off
 
