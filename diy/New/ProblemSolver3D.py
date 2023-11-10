@@ -306,6 +306,12 @@ class ProblemSolver3D:
         from scipy.sparse.linalg import LinearOperator
 
         initSol = self.lsqFit_internal()
+        return initSol
+
+        nshape = self.inputCB.NUVW["x"].shape[1] * self.inputCB.NUVW["y"].shape[1] * self.inputCB.NUVW["z"].shape[1]
+
+        print("Solution bounds: ", [1.1*np.min(initSol), 1.1*np.max(initSol)])
+        bnds = np.tensordot(np.ones(nshape), [np.min(initSol), np.max(initSol)], axes=0)
 
         useBFGS = False
 
@@ -324,13 +330,7 @@ class ProblemSolver3D:
 
         if useBFGS:
 
-            nshape = (
-                self.inputCB.NUVW["x"].shape[1]
-                * self.inputCB.NUVW["y"].shape[1]
-                * self.inputCB.NUVW["z"].shape[1]
-            )
             controlPointData = np.ones(nshape)
-            bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
             # bnds = np.tensordot(np.ones(initSol.shape), [0, 1000], axes=0)
 
             result = minimize(
@@ -339,9 +339,9 @@ class ProblemSolver3D:
                 x0=initSol.reshape(-1),
                 # x0=np.ones(initSol.shape).reshape(-1),
                 method="L-BFGS-B",  # 'SLSQP', #'L-BFGS-B', #'TNC',
-                bounds=bnds,
+                # bounds=bnds,
                 # jac=egrad(residual),
-                jac="2-point",
+                # jac="2-point",
                 # callback=print_iterate,
                 tol=1e-14,
                 options={
@@ -374,11 +374,6 @@ class ProblemSolver3D:
 
         else:
 
-            nshape = (
-                self.inputCB.NUVW["x"].shape[1]
-                * self.inputCB.NUVW["y"].shape[1]
-                * self.inputCB.NUVW["z"].shape[1]
-            )
             B = self.inputCB.refSolutionLocal.reshape(-1)
             print("Shapes: nshape=", nshape, " and A/B shapes = ", B.shape)
             A = LinearOperator(
@@ -386,7 +381,6 @@ class ProblemSolver3D:
                 matvec=self.linoperator_matvec,
                 rmatvec=self.linoperator_matvec_transpose,
             )
-            bnds = np.tensordot(np.ones(nshape), [0, 1000], axes=0)
             # bnds = np.tensordot(np.ones(initSol.shape), [0, 1000], axes=0)
 
             print("Min and max values of initsol: ", np.min(initSol.min()), np.max(initSol.max()))

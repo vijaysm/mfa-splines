@@ -12,7 +12,7 @@ import scipy.linalg as la
 
 # from scipy.sparse.linalg import cg, SuperLU
 
-from numba import jit, vectorize
+#from numba import jit, vectorize
 
 from autograd import elementwise_grad as egrad
 import autograd.numpy as autonp
@@ -219,12 +219,11 @@ class ProblemSolver2D:
                     # res = lu.solve(Brhs)
                     initSol = la.solve(Aoper, Brhs)
 
-                controlPointData = np.ones(nshape)
-                bnds = np.tensordot(np.ones(nshape), [0, 130], axes=0)
+                bnds = np.tensordot(np.ones(nshape), [-31, 111], axes=0)
                 result = minimize(
                         residual,
-                        # x0=controlPointData,
-                        x0=initSol,
+                        # x0=np.ones(nshape).reshape(-1),
+                        x0=initSol.reshape(-1),
                         method='L-BFGS-B',  # 'SLSQP', #'L-BFGS-B', #'TNC',
                         bounds=bnds,
                         jac=egrad(residual),

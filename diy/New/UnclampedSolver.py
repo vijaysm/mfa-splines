@@ -36,7 +36,7 @@ from scipy import linalg
 from mpi4py import MPI
 import diy
 
-from numba import jit, vectorize, guvectorize, float64
+# from numba import jit, vectorize, guvectorize, float64
 
 # from line_profiler import LineProfiler
 
@@ -50,7 +50,8 @@ from ProblemSolver1D import ProblemSolver1D
 from ProblemSolver2D import ProblemSolver2D
 from ProblemSolver3D import ProblemSolver3D
 
-plt.style.use(["seaborn-whitegrid"])
+#plt.style.use(["seaborn-whitegrid"])
+plt.style.use(["seaborn-v0_8-whitegrid"])
 params = {
     "ytick.color": "b",
     "xtick.color": "b",
@@ -114,7 +115,8 @@ outputCPData = False
 # Initialize DIY
 # commWorld = diy.mpi.MPIComm()           # world
 commWorld = MPI.COMM_WORLD
-masterControl = diy.Master(commWorld)  # master
+diyComm = diy.mpi.MPIComm(commWorld)
+masterControl = diy.Master(diyComm)  # master
 nprocs = commWorld.size
 rank = commWorld.rank
 
@@ -461,7 +463,7 @@ elif dimension == 2:
         # solution = solution * (1 + noise)
 
         # solution = lambda x, y: scale * x * y
-        @vectorize(target="cpu")
+        # @vectorize(target="cpu")
         def solution(x, y):
             return scale * (
                 np.sinc(np.sqrt(x**2 + y**2)) + np.sinc(2 * ((x - 2) ** 2 + (y + 2) ** 2))
@@ -768,7 +770,7 @@ elif dimension == 3:
         #         np.sinc(np.sqrt(x**2 + y**2 + z**2))
         #         + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
         #     )
-        @vectorize(target="cpu")
+        # @vectorize(target="cpu")
         def solution(x, y, z):
             # return scale * (np.sinc(np.sqrt(x**2 + y**2 + z**2)))
             return scale * (np.sinc(x) * np.sinc(y) * np.sinc(z))
@@ -789,14 +791,14 @@ elif dimension == 3:
         # def solution(x,y,z):
         #   return scale * (z**4)
 
-        @vectorize(target="cpu")
+        # @vectorize(target="cpu")
         def solution2(x, y, z):
             return scale * (
                 np.sinc(np.sqrt(x**2 + y**2 + z**2))
                 + np.sinc(2 * (x - 2) ** 2 + (y + 2) ** 2 + (z - 2) ** 2)
             )
 
-        @vectorize(target="cpu")
+        # @vectorize(target="cpu")
         def solution3(x, y, z):
             return scale * (z**4)
 
@@ -1032,9 +1034,9 @@ if rank == 0:
     if not closedFormFunctional:
         print("Input File = ", inputFilename)
     print("degree = ", degree)
-    print("nSubDomains = {0}, Total = {1}", nSubDomains, np.prod(nSubDomains))
-    print("Input points = {0}, Total = {1}", nPoints, np.prod(nPoints))
-    print("nControlPoints = {0}, Total = {1}", nControlPointsInput, np.prod(nControlPointsInput))
+    print("nSubDomains = ", nSubDomains, ", Total = ", np.prod(nSubDomains))
+    print("Input points = ", nPoints, ", Total = ", np.prod(nPoints))
+    print("nControlPoints = ", nControlPointsInput, ", Total = ", np.prod(nControlPointsInput))
     print("nASMIterations = ", nASMIterations)
     print("augmentSpanSpace = ", augmentSpanSpace)
     print("useAdditiveSchwartz = ", useAdditiveSchwartz)
@@ -3113,16 +3115,16 @@ def add_input_control_block2(gid, core, bounds, domain, link):
 
 pr = cProfile.Profile()
 
-domain_control = diy.DiscreteBounds(np.zeros((dimension, 1), dtype=np.uintc), nPoints - 1)
+domain_control = diy.DiscreteBounds(np.zeros((dimension), dtype=np.uintc), nPoints - 1)
 
 # TODO: If working in parallel with MPI or DIY, do a global reduce here
 # Store L2, Linf errors as function of iteration
 errors = np.zeros([nASMIterations + 1, 2])
 
 # Let us initialize DIY and setup the problem
-share_face = np.ones((dimension, 1)) > 0
-wrap = np.ones((dimension, 1)) < 0
-ghosts = np.zeros((dimension, 1), dtype=np.uintc)
+share_face = np.ones((dimension)) > 0
+wrap = np.ones((dimension)) < 0
+ghosts = np.zeros((dimension), dtype=np.uintc)
 
 # pr.enable()
 discreteDec = diy.DiscreteDecomposer(
@@ -3432,6 +3434,6 @@ if not scalingstudy and rank == 0:
     print(s.getvalue())
 
 sys.stdout.flush()
-commWorld.Barrier()
+# diyComm.finalize()
 
 # ---------------- END MAIN FUNCTION -----------------
